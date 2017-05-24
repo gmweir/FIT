@@ -40,6 +40,53 @@ __metaclass__ = type
 # ======================================================================== #
 
 
+def polyeval(a, x):
+    """
+    p(x) = polyeval(a, x)
+         = a[0] + a[1]x + a[2]x^2 +...+ a[n-1]x^{n-1} + a[n]x^n
+         = a[0] + x(a[1] + x(a[2] +...+ x(a[n-1] + a[n]x)...)
+    """
+    p = 0
+    for coef in a[::-1]:
+        p = p * x + coef
+    return p
+# end def polyeval
+
+
+def polyderiv(a):
+    """
+    p'(x) = polyderiv(a)
+          = b[0] + b[1]x + b[2]x^2 +...+ b[n-2]x^{n-2} + b[n-1]x^{n-1}
+    where
+        b[i] = (i+1)a[i+1]
+    """
+    b = [i * x for i,x in enumerate(a)][1:]
+    return b
+# end def polyderiv
+
+def polyreduce(a, root):
+    """
+    Given x = r is a root of n'th degree polynomial p(x) = (x-r)q(x),
+    divide p(x) by linear factor (x-r) using the same algorithm as
+    polynomial evaluation.  Then, return the (n-1)'th degree quotient
+    q(x) = polyreduce(a, r)
+         = c[0] + c[1]x + c[2]x^2 +...+ c[n-2]x^{n-2} + c[n-1]x^{n-1}
+    """
+    c, p = [], 0
+    a.reverse()
+    for coef in a:
+        p = p * root + coef
+        c.append(p)
+    a.reverse()
+    c.reverse()
+    return c[1:]
+# end def polyreduce
+
+
+
+# ======================================================================== #
+
+
 def piecewise_2line(x, x0, y0, k1, k2):
     """
     function y = piecewise_2line(x, x0, y0, k1, k2)
@@ -66,6 +113,67 @@ def piecewise_2line(x, x0, y0, k1, k2):
 #                       [lambda x:k1*x + y0-k1*x0, lambda x:k2*x + y0-k2*x0])
 #   return yy
 # # end def piecewise_linear   
+    
+# ========================================================================== #
+
+
+
+def linreg(X, Y, verbose=True):
+    """
+    Returns coefficients to the regression line "y=ax+b" from x[] and
+    y[].  Basically, solves
+        Sxx a + Sx b = Sxy
+         Sx a +  N b = Sy
+    where Sxy = \sum_i x_i y_i, Sx = \sum_i x_i, and Sy = \sum_i y_i.  The
+    solution is
+        a = (Sxy N - Sy Sx)/det
+        b = (Sxx Sy - Sx Sxy)/det
+    where det = Sxx N - Sx^2.  In addition,
+        Var|a| = s^2 |Sxx Sx|^-1 = s^2 | N  -Sx| / det
+           |b|       |Sx  N |          |-Sx Sxx|
+        s^2 = {\sum_i (y_i - \hat{y_i})^2 \over N-2}
+            = {\sum_i (y_i - ax_i - b)^2 \over N-2}
+            = residual / (N-2)
+        R^2 = 1 - {\sum_i (y_i - \hat{y_i})^2 \over \sum_i (y_i - \mean{y})^2}
+            = 1 - residual/meanerror
+    
+    It also prints to <stdout> few other data,
+        N, a, b, R^2, s^2,
+    which are useful in assessing the confidence of estimation.
+    """
+    if len(X) != len(Y):  raise ValueError('unequal length')
+
+    N = len(X)
+    Sx = Sy = Sxx = Syy = Sxy = 0.0
+    for x, y in zip(X, Y):
+        Sx += x
+        Sy += y
+        Sxx += x*x
+        Syy += y*y
+        Sxy += x*y
+    det = Sxx * N - Sx * Sx
+    a, b = (Sxy * N - Sy * Sx)/det, (Sxx * Sy - Sx * Sxy)/det
+
+    meanerror = residual = 0.0
+    for x, y in zip(X, Y):
+        meanerror += (y - Sy/N)**2
+        residual += (y - a * x - b)**2
+    RR = 1 - residual/meanerror
+    ss = residual / (N-2)
+    Var_a, Var_b = ss * N / det, ss * Sxx / det
+
+    if verbose:
+        print("y=ax+b")
+        print("N= %d" % N )
+        print("a= %g \\pm t_{%d;\\alpha/2} %g" % (a, N-2, _np.sqrt(Var_a)) )
+        print("b= %g \\pm t_{%d;\\alpha/2} %g" % (b, N-2, _np.sqrt(Var_b)) )
+        print("R^2= %g" % RR)
+        print("s^2= %g" % ss)
+    # end if
+    
+    return a, b, Var_a, Var_b
+# end def linreg
+
     
 # ======================================================================== #
 
