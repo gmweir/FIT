@@ -7,8 +7,7 @@ Created on Mon Jul 18 14:59:28 2016
 
 import numpy as _np
 import matplotlib.pyplot as _plt
-from pybaseutils.utils import Struct
-# from PBA._StelltranUtils import Struct
+import pybaseutils as _pyut
 
 # -------------------------------------------------------------------------- #
 # -------------------------------------------------------------------------- #
@@ -32,7 +31,7 @@ def model_qparab(XX, af=None):
         af = _np.array([5.0, 0.002, 2.0, 0.7, -0.24, 0.30], dtype=_np.float64)
     # endif
 
-    info = Struct()
+    info = _pyut.Struct()
     info.Lbounds = _np.array([0.0, 0.0, -_np.inf, -_np.inf,
                               -_np.inf, -_np.inf], dtype=_np.float64)
     info.Ubounds = _np.inf*_np.ones_like(af)
@@ -92,7 +91,7 @@ def model_ProdExp(XX, af=None, npoly=4):
     # endif
     npoly = _np.size(af)-1
 
-    info = Struct()
+    info = _pyut.Struct()
     info.Lbounds = _np.array([], dtype=_np.float64)
     info.Ubounds = _np.array([], dtype=_np.float64)
     info.af = af
@@ -158,7 +157,7 @@ def model_poly(XX, af=None, npoly=4):
     # endif
     npoly = _np.size(af)-1
 
-    info = Struct()
+    info = _pyut.Struct()
     info.Lbounds = -_np.inf*_np.ones((npoly+1,), dtype=_np.float64)
     info.Ubounds = _np.inf*_np.ones((npoly+1,), dtype=_np.float64)
     info.af = af
@@ -207,7 +206,7 @@ def model_evenpoly(XX, af=None, npoly=4):
     # endif
     npoly = _np.int(2*(_np.size(af)-1))  # Polynomial order from input af
 
-    info = Struct()
+    info = _pyut.Struct()
     info.Lbounds = -_np.inf*_np.ones((npoly/2+1,), dtype=_np.float64)
     info.Ubounds = _np.inf*_np.ones((npoly/2+1,), dtype=_np.float64)
     info.af = af
@@ -261,7 +260,7 @@ def model_PowerLaw(XX, af=None, npoly=4):
     npoly = num_fit-2
     nx = _np.size(XX)
 
-    info = Struct()
+    info = _pyut.Struct()
     info.Lbounds = _np.hstack(
         (-_np.inf * _np.ones((npoly,), dtype=_np.float64), -_np.inf, 0))
     info.Ubounds = _np.hstack(
@@ -324,7 +323,7 @@ def model_Exponential(XX, af=None, npoly=4):
     num_fit = _np.size(af)  # Number of fitting parameters
     nx = _np.size(XX)
 
-    info = Struct()
+    info = _pyut.Struct()
     info.Lbounds = -_np.inf*_np.ones((num_fit,), dtype=_np.float64)
     info.Ubounds = _np.inf*_np.ones((num_fit,), dtype=_np.float64)
     info.Lbounds[0] = 0
@@ -390,7 +389,7 @@ def model_Heaviside(XX, af=None, npoly=4, rinits=[0.30, 0.35]):
     num_fit = _np.size(af)  # Number of fitting parameters
     nx = _np.size(XX)
 
-    info = Struct()
+    info = _pyut.Struct()
     info.Lbounds = _np.hstack(
         (-_np.inf*_np.ones((num_fit-3,), dtype=_np.float64), 0, 0, -_np.inf))
     info.Ubounds = _np.hstack(
@@ -474,7 +473,7 @@ def model_StepSeries(XX, af=None, npoly=4):
     nx = _np.size(XX)
     zz = 50
 
-    info = Struct()
+    info = _pyut.Struct()
     info.Lbounds = _np.hstack(
         (0, -_np.inf*_np.ones((num_fit-1,), dtype=_np.float64)))
     info.Ubounds = _np.hstack(
@@ -538,7 +537,7 @@ def model_parabolic(XX, af):
         af = _np.array([1.0], dtype=_np.float64)
     # endif
 
-    info = Struct()
+    info = _pyut.Struct()
     info.Lbounds = _np.array([0.0], dtype=_np.float64)
     info.Ubounds = _np.array([_np.inf], dtype=_np.float64)
     info.af = af
@@ -571,7 +570,7 @@ def model_flattop(XX, af):
     nx = len(XX)
     XX = _np.abs(XX)
 
-    info = Struct()
+    info = _pyut.Struct()
     info.Lbounds = _np.array([0.0, 0.0, 1.0], dtype=_np.float64)
     info.Ubounds = _np.array([_np.inf, 1.0, _np.inf], dtype=_np.float64)
     info.af = af
@@ -614,7 +613,7 @@ def model_massberg(XX, af):
     nx = len(XX)
     XX = _np.abs(XX)
 
-    info = Struct()
+    info = _pyut.Struct()
     info.Lbounds = _np.array([0.0, 0.0, 1.0, -_np.inf], dtype=_np.float64)
     info.Ubounds = _np.array(
         [_np.inf, 1.0, _np.inf, _np.inf], dtype=_np.float64)
@@ -660,7 +659,7 @@ def model_2power(XX, af):
     nx = len(XX)
     XX = _np.abs(XX)
 
-    info = Struct()
+    info = _pyut.Struct()
     info.Lbounds = _np.array([0.0, 0.0, -_np.inf, -_np.inf], dtype=_np.float64)
     info.Ubounds = _np.array(
                     [_np.inf, _np.inf, _np.inf, _np.inf], dtype=_np.float64)

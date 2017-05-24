@@ -16,6 +16,7 @@ from scipy.optimize import curve_fit, leastsq
 import matplotlib.pyplot as _plt
 import numpy as _np 
 
+import pybaseutils as _pyut
 from pybaseutils import utils as _ut   # for normal use
 #import utils as _ut    # for local testing
 
@@ -1106,7 +1107,7 @@ def spline_bs(xvar, yvar, vary, xf=None, func="spline", nmonti=300, deg=3, bbox=
 # ======================================================================== #
 
 
-class fitNL(_ut.Struct):
+class fitNL(_pyut.Struct):
     """
     To use this first generate a class that is a chil of this one
     class Prob(fitNL)
