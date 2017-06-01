@@ -16,9 +16,8 @@ from scipy.optimize import curve_fit, leastsq
 import matplotlib.pyplot as _plt
 import numpy as _np 
 
-import pybaseutils as _pyut
-from pybaseutils import utils as _ut   # for normal use
-#import utils as _ut    # for local testing
+from ..Struct import Struct
+from .. import utils as _ut   # for normal use
 
 # There are annoying differences in the context between scipy version of
 # leastsq and curve_fit, and the method least_squares doesn't exist before 0.17
@@ -1214,7 +1213,7 @@ def spline_bs(xvar, yvar, vary, xf=None, func="spline", nmonti=300, deg=3, bbox=
 # ======================================================================== #
 
 
-class fitNL(_pyut.Struct):
+class fitNL(Struct):
     """
     To use this first generate a class that is a chil of this one
     class Prob(fitNL)
