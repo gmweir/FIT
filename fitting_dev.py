@@ -1244,7 +1244,9 @@ class fitNL(Struct):
         
         options["nmonti"] = options.get("nmonti", 300)        
         options["af0"] = options.get("af0", self.af0)
-        
+        options["LB"] = options.get("LB", [])
+        options["UB"] = options.get("UB", [])
+                
         # 1) Least-squares, 2) leastsq, 3) Curve_fit
         options["lsqfitmethod"] = options.get("lsqfitmethod",'lm')        
         if _scipyversion >= 0.17:
