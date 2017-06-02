@@ -1244,8 +1244,8 @@ class fitNL(Struct):
         
         options["nmonti"] = options.get("nmonti", 300)        
         options["af0"] = options.get("af0", self.af0)
-        options["LB"] = options.get("LB", [])
-        options["UB"] = options.get("UB", [])
+        options["LB"] = options.get("LB", -_np.Inf*_np.ones_like(self.af0))
+        options["UB"] = options.get("UB",  _np.Inf*_np.ones_like(self.af0))
                 
         # 1) Least-squares, 2) leastsq, 3) Curve_fit
         options["lsqfitmethod"] = options.get("lsqfitmethod",'lm')        
@@ -1271,11 +1271,11 @@ class fitNL(Struct):
         self.__dict__.update(kwargs)
         
         if self.lsqmethod == 1:
-            self.__use_least_squares(**kwargs)
+            self.__use_least_squares(kwargs)
         elif self.lsqmethod == 2:
-            self.__use_leastsq(**kwargs)
+            self.__use_leastsq(kwargs)
         elif self.lsqmethod == 3:
-            self.__use_curvefit(**kwargs)
+            self.__use_curvefit(kwargs)
         return self.af, self.covmat
     # end def run
 
@@ -1288,26 +1288,29 @@ class fitNL(Struct):
 
     # ========================== #
         
-    def __use_least_squares(self, **kwargs):
+    def __use_least_squares(self, options):
         """
         Wrapper around the scipy least_squares function
         """
-        lsqfitmethod = kwargs.get("lsqfitmethod", 'lm')
+        lsqfitmethod = options.get("lsqfitmethod", 'lm')
 
         self.numfit = len(self.af0)        
 
-        self.af, chi2, resid, jac = \
-            least_squares(self.calc_chi2, self.af0, bounds=(self.LB, self.UB),
-                          method=lsqfitmethod, 
-                          **kwargs)
+        res = least_squares(self.calc_chi2, self.af0, bounds=(self.LB, self.UB),
+                          method=lsqfitmethod, **options)
                           # args=(self.xdat,self.ydat,self.vary), kwargs)
-
+        self.af = res.x
+        # chi2 
+        resid = res.fun
+        jac = res.jac
+        
         # Make a final call to the fitting function to update object values
         self.calc_chi2(self.af)
 
         # Estimate of covariance in solution
         # jac = _np.full(jac) #Sparse matrix form
-        self.covmat = (resid*_np.eye[self.numfit]) / self.numfit / \
+        # resid*
+        self.covmat = (_np.eye(self.numfit)) / self.numfit / \
             _np.dot(jac[:, 0:self.numfit].T, jac[:, 0:self.numfit])
 
         return self.af, self.covmat
@@ -1447,7 +1450,7 @@ class fitNL(Struct):
 
     # ========================== #
 
-    def properror(self, xvec, gvec):
+    def properror(self, xvec, gvec):  # (x-positions, gvec = dqparabda)
         if gvec is None: gvec = self.fjac # endif
         sh = _np.shape(xvec)
 
