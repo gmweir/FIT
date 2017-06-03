@@ -1366,7 +1366,7 @@ class fitNL(Struct):
                           # args=(self.xdat,self.ydat,self.vary), kwargs)
         self.af = res.x
         # chi2 
-        resid = res.fun
+        #resid = res.fun
         jac = res.jac
         
         # Make a final call to the fitting function to update object values
