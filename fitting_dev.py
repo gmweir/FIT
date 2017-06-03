@@ -1150,9 +1150,9 @@ def spline(xvar, yvar, xf, vary=None, nmonti=300, deg=5, bbox=None):
                 function
     :param vary: Variance in y, used as weights (1/sqrt(vary)) for spline
                     fitting. Must be positive. If None (default), weights are
-                    all equal.
+                    all equal and no uncertainties are returned.
     :param nmonti: Number of Monte Carlo iterations for nonlinear error
-                    propagation. Default is 300.
+                    propagation. Default is 300. 
     :param deg: Degree of the smoothing spline. Must be <= 5. Default is k=3,
                 a cubic spline.
     :param bbox: 2-sequence specifying the boundary of the approximation
@@ -1166,8 +1166,10 @@ def spline(xvar, yvar, xf, vary=None, nmonti=300, deg=5, bbox=None):
     :type deg: int, optional
     :type bbox: (2,) array_like, optional
 
-    :return: the interpolation values at xf and the first derivative at xf
-    :rtype: ndarray, ndarray
+    :return: the interpolation values at xf and the first derivative at xf or,
+                if yary is given, the interpolation values at xf + the variance
+                and the first derivative at xf + the variance
+    :rtype: [ndarray, ndarray] resp. [ndarray, ndarray, ndarray, ndarray]
 
     .. note::
     The number of data points must be larger than the spline degree deg. 
@@ -1176,34 +1178,55 @@ def spline(xvar, yvar, xf, vary=None, nmonti=300, deg=5, bbox=None):
     if bbox is None:
         bbox = [xvar[0], xvar[-1]]
     # end if
+
     if vary is None:
-        vary = _np.ones_like(yvar)
+        pobj = _int.UnivariateSpline(xvar, yvar, bbox=bbox, k=deg,
+                                     check_finite=True)
+        yf_val = pobj.__call__(xf)
+        dyf_val = pobj.derivative(n=1).__call__(xf)
+        return [yf_val, dyf_val]
     # end if
 
     # ============= #
+    # Monte Carlo
+    yf = []
+    dyf = []
+    for ii in range(nmonti):
+        yvar_mc = yvar + _np.random.normal(0., vary, len(yvar))
+        
+        pobj = _int.UnivariateSpline(xvar, yvar_mc, bbox=bbox, k=deg,
+                                     check_finite=True)
+        yf_val = pobj.__call__(xf)
+        dyf_val = pobj.derivative(n=1).__call__(xf)
 
-    pobj = _int.UnivariateSpline(xvar, yvar, w=1.0/_np.sqrt(vary), bbox=bbox,
-                                 k=deg, check_finite=True)
-    yf = pobj.__call__(xf)
+        yf.append(yf_val)
+        dyf.append(dyf_val)
+    # end for
 
-    pobj = pobj.derivative(n=1)
-    dydx = pobj.__call__(xf)
-
-    return yf, dydx
+    return [_np.mean(yf), _np.std(yf)**2, _np.mean(dyf), _np.std(dyf)**2]
 
 
-def pchip(xvar, yvar, xf):
+def pchip(xvar, yvar, xf, vary=None, nmonti=300):
     """
     PCHIP 1-d monotonic cubic interpolation (from scipy)
     :param xvar: x values for interpolation
     :param yvar: y values for interpolation
     :param xf: values at which you request the values of the interpolation
                 function
+    :param vary: Variance in y, used as weights (1/sqrt(vary)) for spline
+                    fitting. Must be positive. If None (default), weights are
+                    all equal and no uncertainties are returned.
+    :param nmonti: Number of Monte Carlo iterations for nonlinear error
+                    propagation. Default is 300. 
     :type xvar: ndarray
     :type yvar: ndarray
     :type xf: ndarray
-    :return: the interpolation values at xf and the first derivative at xf
-    :rtype: ndarray, ndarray
+    :type vary: (N,) array_like, optional
+    :type nmonti: int, optional
+    :return: the interpolation values at xf and the first derivative at xf or,
+                if yary is given, the interpolation values at xf + the variance
+                and the first derivative at xf + the variance
+    :rtype: [ndarray, ndarray] resp. [ndarray, ndarray, ndarray, ndarray]
 
     .. note::
     The interpolator preserves monotonicity in the interpolation data and does
@@ -1212,11 +1235,29 @@ def pchip(xvar, yvar, xf):
     derivatives may jump at xf.
     """
 
-    pobj = _int.pchip(xvar, yvar, axis=0)
-    
-    yf = pobj.__call__(xf)
-    dydx = pobj.derivative(xf, der=1)            
-    return yf, dydx
+    if vary is None:
+        pobj = _int.pchip(xvar, yvar, axis=0)
+        yf_val = pobj.__call__(xf)
+        dyf_val = pobj.derivative(n=1).__call__(xf)
+        return [yf_val, dyf_val]
+    # end if
+
+    # ============= #
+    # Monte Carlo
+    yf = []
+    dyf = []
+    for ii in range(nmonti):
+        yvar_mc = yvar + _np.random.normal(0., vary, len(yvar))
+        
+        pobj = _int.pchip(xvar, yvar_mc, axis=0)
+        yf_val = pobj.__call__(xf)
+        dyf_val = pobj.derivative(nu=1).__call__(xf)
+
+        yf.append(yf_val)
+        dyf.append(dyf_val)
+    # end for
+
+    return [_np.mean(yf), _np.std(yf)**2, _np.mean(dyf), _np.std(dyf)**2]
 
 
 def spline_bs(xvar, yvar, vary, xf=None, func="spline", nmonti=300, deg=3,
