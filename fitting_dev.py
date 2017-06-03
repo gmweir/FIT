@@ -1146,16 +1146,51 @@ def fit_mcleastsq(p0, xdat, ydat, func, yerr_systematic=0.0, nmonti=300):
 
 
 def spline(xvar, yvar, xf, vary=None, nmonti=300, deg=5, bbox=None):
-    #spline(xvar, yvar, xf=None, vary=None, nmonti=300, deg=3, bbox=None):
+    """
+    One-dimensional smoothing spline fit to a given set of data points (scipy).
+    Fits a spline y = spl(xf) of degree deg to the provided xvar, yvar data.
+    :param xvar: 1-D array of independent input data. Must be increasing.
+    :param yvar: 1-D array of dependent input data, of the same length as x.
+    :param xf: values at which you request the values of the interpolation
+                function
+    :param vary: Variance in y, used as weights (1/sqrt(vary)) for spline
+                    fitting. Must be positive. If None (default), weights are
+                    all equal.
+    :param nmonti: Number of Monte Carlo iterations for nonlinear error
+                    propagation. Default is 300.
+    :param deg: Degree of the smoothing spline. Must be <= 5. Default is k=3,
+                a cubic spline.
+    :param bbox: 2-sequence specifying the boundary of the approximation
+                    interval. If None (default), bbox=[xvar[0], xvar[-1]].
 
-    if bbox is None:  bbox = [xvar[0], xvar[-1]]    # end if
-    if vary is None:  vary = _np.ones_like(yvar)  # end if        
+    :type xvar: (N,) array_like
+    :type yvar: (N,) array_like
+    :type xf: (N,) array_like
+    :type vary: (N,) array_like, optional
+    :type nmonti: int, optional
+    :type deg: int, optional
+    :type bbox: (2,) array_like, optional
+
+    :return: the interpolation values at xf and the first derivative at xf
+    :rtype: ndarray, ndarray
+
+    .. note::
+    The number of data points must be larger than the spline degree deg. 
+    """
+
+    if bbox is None:
+        bbox = [xvar[0], xvar[-1]]
+    # end if
+    if vary is None:
+        vary = _np.ones_like(yvar)
+    # end if
 
     # ============= #
-                    
-    pobj = _int.UnivariateSpline(xvar, yvar, w=1.0/_np.sqrt(vary), bbox=bbox, k=deg)    
+
+    pobj = _int.UnivariateSpline(xvar, yvar, w=1.0/_np.sqrt(vary), bbox=bbox,
+                                 k=deg, check_finite=True)
     yf = pobj.__call__(xf)
-    
+
     pobj = pobj.derivative(n=1)
     dydx = pobj.__call__(xf)
 
@@ -1163,6 +1198,25 @@ def spline(xvar, yvar, xf, vary=None, nmonti=300, deg=5, bbox=None):
 
 
 def pchip(xvar, yvar, xf):
+    """
+    PCHIP 1-d monotonic cubic interpolation (from scipy)
+    :param xvar: x values for interpolation
+    :param yvar: y values for interpolation
+    :param xf: values at which you request the values of the interpolation
+                function
+    :type xvar: ndarray
+    :type yvar: ndarray
+    :type xf: ndarray
+    :return: the interpolation values at xf and the first derivative at xf
+    :rtype: ndarray, ndarray
+
+    .. note::
+    The interpolator preserves monotonicity in the interpolation data and does
+    not overshoot if the data is not smooth.
+    The first derivatives are guaranteed to be continuous, but the second
+    derivatives may jump at xf.
+    """
+
     pobj = _int.pchip(xvar, yvar, axis=0)
     
     yf = pobj.__call__(xf)
@@ -1170,9 +1224,15 @@ def pchip(xvar, yvar, xf):
     return yf, dydx
 
 
-def spline_bs(xvar, yvar, vary, xf=None, func="spline", nmonti=300, deg=3, bbox=None):    
+def spline_bs(xvar, yvar, vary, xf=None, func="spline", nmonti=300, deg=3,
+              bbox=None):  
+    """
+    
+    """  
 
-    if xf is None:      xf = xvar.copy()        # endif        
+    if xf is None:
+        xf = xvar.copy()
+    # endif        
     # ============= #
 
     yvar = _np.atleast_2d(yvar)
@@ -1225,14 +1285,14 @@ class fitNL(Struct):
 
         def __init__(self, xdata, ydata, yvar, options, **kwargs)
             # call super init 
-            super(fitNL, self).__init__(xdat, ydat, vary, af0, self.func, options, kwargs)       
+            super(fitNL, self).__init__(xdat, ydat, vary, af0, self.func, options, kwargs)
         # end def
 
         def func(self, af):
-            return y-2*af[0]+af[1]            
-        
+            return y-2*af[0]+af[1]
+
     """
-        
+
     def __init__(self, xdat, ydat, vary, af0, func, fjac=None,
                  options={}):
 
@@ -1240,32 +1300,34 @@ class fitNL(Struct):
         self.ydat = ydat
         self.vary = vary
         self.af0 = af0
-        self.func = func        
+        self.func = func
         self.fjac = fjac
-        
+
         # ========================== #
 
         # options.update(kwargs)
-        
-        options["nmonti"] = options.get("nmonti", 300)        
+
+        options["nmonti"] = options.get("nmonti", 300)
         options["af0"] = options.get("af0", self.af0)
-        
+        options["LB"] = options.get("LB", -_np.Inf*_np.ones_like(self.af0))
+        options["UB"] = options.get("UB",  _np.Inf*_np.ones_like(self.af0))
+
         # 1) Least-squares, 2) leastsq, 3) Curve_fit
-        options["lsqfitmethod"] = options.get("lsqfitmethod",'lm')        
+        options["lsqfitmethod"] = options.get("lsqfitmethod", 'lm')
         if _scipyversion >= 0.17:
             options["lsqmethod"] = options.get("lsqmethod", int(1))
         else:
             options["lsqmethod"] = options.get("lsqmethod", int(2))
         # end if
-                 
+
         # ========================== #
 
         # Pull out the run data from the options dictionary
         #  possibilities include
-        #   - lsqfitmetod - from leastsquares - 'lm' (levenberg-marquardt, etc.) 
+        #   - lsqfitmetod - from leastsquares - 'lm' (levenberg-marquardt,etc.) 
         #   - LB, UB - Lower and upper bounds on fitting parameters (af)
         self.__dict__.update(options)
-        
+
     # end def __init__
         
     # ========================== #
@@ -1274,11 +1336,11 @@ class fitNL(Struct):
         self.__dict__.update(kwargs)
         
         if self.lsqmethod == 1:
-            self.__use_least_squares(**kwargs)
+            self.__use_least_squares(kwargs)
         elif self.lsqmethod == 2:
-            self.__use_leastsq(**kwargs)
+            self.__use_leastsq(kwargs)
         elif self.lsqmethod == 3:
-            self.__use_curvefit(**kwargs)
+            self.__use_curvefit(kwargs)
         return self.af, self.covmat
     # end def run
 
@@ -1291,26 +1353,29 @@ class fitNL(Struct):
 
     # ========================== #
         
-    def __use_least_squares(self, **kwargs):
+    def __use_least_squares(self, options):
         """
         Wrapper around the scipy least_squares function
         """
-        lsqfitmethod = kwargs.get("lsqfitmethod", 'lm')
+        lsqfitmethod = options.get("lsqfitmethod", 'lm')
 
         self.numfit = len(self.af0)        
 
-        self.af, chi2, resid, jac = \
-            least_squares(self.calc_chi2, self.af0, bounds=(self.LB, self.UB),
-                          method=lsqfitmethod, 
-                          **kwargs)
+        res = least_squares(self.calc_chi2, self.af0, bounds=(self.LB, self.UB),
+                          method=lsqfitmethod, **options)
                           # args=(self.xdat,self.ydat,self.vary), kwargs)
-
+        self.af = res.x
+        # chi2 
+        resid = res.fun
+        jac = res.jac
+        
         # Make a final call to the fitting function to update object values
         self.calc_chi2(self.af)
 
         # Estimate of covariance in solution
         # jac = _np.full(jac) #Sparse matrix form
-        self.covmat = (resid*_np.eye[self.numfit]) / self.numfit / \
+        # resid*
+        self.covmat = (_np.eye(self.numfit)) / self.numfit / \
             _np.dot(jac[:, 0:self.numfit].T, jac[:, 0:self.numfit])
 
         return self.af, self.covmat
@@ -1450,7 +1515,7 @@ class fitNL(Struct):
 
     # ========================== #
 
-    def properror(self, xvec, gvec):
+    def properror(self, xvec, gvec):  # (x-positions, gvec = dqparabda)
         if gvec is None: gvec = self.fjac # endif
         sh = _np.shape(xvec)
 
