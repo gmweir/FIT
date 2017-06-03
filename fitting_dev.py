@@ -806,7 +806,7 @@ def gaussian_peak_width(tt,sig_in,param):
 # ======================================================================== #
 
 # Set the plasma density, temperature, and Zeff profiles (TRAVIS INPUTS)      
-def qparab_fit(XX, *aa, nohollow=False):
+def qparab_fit(XX, *aa, **kwargs):
     """
     ex// ne_parms = [0.30, 0.002, 2.0, 0.7, -0.24, 0.30]
     This subfunction calculates the quasi-parabolic fit
@@ -817,6 +817,11 @@ def qparab_fit(XX, *aa, nohollow=False):
     aa[2],aa[3]-  pp, qq - power scaling parameters
     aa[4],aa[5]-  hh, ww - hole depth and width
     """
+    options = {}
+    options.update(kwargs)
+    nohollow = options.get('nohollow', False)
+    if len(aa)>6:
+        nohollow = aa.pop(6)
     XX = _np.abs(XX)
     if (type(aa) is tuple) and (len(aa) == 1):
         aa = aa[0]
@@ -936,7 +941,7 @@ def qparab_lsfit(xdata, ydata, vary=None, xx=None,
 
         af = _np.asarray(af, dtype=_np.float64)
         if (len(ydata) > len(af)) and pcov is not None:
-            pcov = pcov * (((qparab_fit(xdata,af)-ydata)**2).sum()
+            pcov = pcov * (((FitAlias(xdata,af)-ydata)**2).sum()
                            / (len(ydata)-len(af)))
         else:
             pcov = _np.inf
@@ -1402,7 +1407,7 @@ class fitNL(Struct):
                           # args=(self.xdat,self.ydat,self.vary), kwargs)
         self.af = res.x
         # chi2 
-        resid = res.fun
+        #resid = res.fun
         jac = res.jac
         
         # Make a final call to the fitting function to update object values
