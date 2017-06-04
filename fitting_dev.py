@@ -1197,7 +1197,7 @@ def spline(xvar, yvar, xf, vary=None, nmonti=300, deg=5, bbox=None):
     yf = []
     dyf = []
     for ii in range(nmonti):
-        yvar_mc = yvar + _np.random.normal(0., vary, len(yvar))
+        yvar_mc = yvar + _np.random.normal(0., _np.sqrt(vary), len(yvar))
         
         pobj = _int.UnivariateSpline(xvar, yvar_mc, bbox=bbox, k=deg,
                                      check_finite=True)
@@ -1208,7 +1208,8 @@ def spline(xvar, yvar, xf, vary=None, nmonti=300, deg=5, bbox=None):
         dyf.append(dyf_val)
     # end for
 
-    return [_np.mean(yf), _np.std(yf)**2, _np.mean(dyf), _np.std(dyf)**2]
+    return [_np.mean(yf, axis=0), _np.var(yf, axis=0), _np.mean(dyf, axis=0),
+            _np.var(dyf, axis=0)]
 
 
 def pchip(xvar, yvar, xf, vary=None, nmonti=300):
@@ -1252,7 +1253,7 @@ def pchip(xvar, yvar, xf, vary=None, nmonti=300):
     yf = []
     dyf = []
     for ii in range(nmonti):
-        yvar_mc = yvar + _np.random.normal(0., vary, len(yvar))
+        yvar_mc = yvar + _np.random.normal(0., _np.sqrt(vary), len(yvar))
         
         pobj = _int.pchip(xvar, yvar_mc, axis=0)
         yf_val = pobj.__call__(xf)
@@ -1262,58 +1263,123 @@ def pchip(xvar, yvar, xf, vary=None, nmonti=300):
         dyf.append(dyf_val)
     # end for
 
-    return [_np.mean(yf), _np.std(yf)**2, _np.mean(dyf), _np.std(dyf)**2]
+    return [_np.mean(yf, axis=0), _np.var(yf, axis=0), _np.mean(dyf, axis=0),
+            _np.var(dyf, axis=0)]
 
 
 def spline_bs(xvar, yvar, vary, xf=None, func="spline", nmonti=300, deg=3,
               bbox=None):  
     """
-    
+    :param xvar: x values for interpolation (2D)
+    :param yvar: y values for interpolation (2D)
+    :param xf: values at which you request the values of the interpolation
+                function. Default is None, which just uses the xvar values.
+    :param vary: Variance in y, used as weights (1/sqrt(vary)) for spline
+                    fitting. Must be positive. If None (default), weights are
+                    all equal and no uncertainties are returned. (2D)
+    :param nmonti: Number of Monte Carlo iterations for nonlinear error
+                    propagation. Default is 300.
+    :param deg: Degree of the smoothing spline. Must be <= 5. Default is k=3,
+                a cubic spline. Only valid for func="spline".
+    :param bbox: 2-sequence specifying the boundary of the approximation
+                    interval. If None (default), bbox=[xvar[0], xvar[-1]].
+                     Only valid for func="spline".
+    :type xvar: (N,) ndarray
+    :type yvar: (N,) ndarray
+    :type xf: (N,) ndarray, optional
+    :type vary: (N,) array_like, optional
+    :type nmonti: int, optional
+    :type deg: int, optional
+    :type bbox: (2,) array_like, optional
+    :return: the interpolation values at xf and the first derivative at xf or,
+                if yary is given, the interpolation values at xf + the variance
+                and the first derivative at xf + the variance
+    :rtype: [ndarray, ndarray] resp. [ndarray, ndarray, ndarray, ndarray]
     """  
 
     if xf is None:
         xf = xvar.copy()
-    # endif        
+    # endif
+    
     # ============= #
-
+    # get right shape
     yvar = _np.atleast_2d(yvar)
     vary = _np.atleast_2d(vary)
-    nsh = _np.shape(yvar)
-    nsh = _np.atleast_1d(nsh)
-    if nsh[0] == 1:
-        yvar = yvar.T
-        vary = vary.T
-        nsh = _np.flipud(nsh)
+#     nsh = _np.shape(yvar)
+#     nsh = _np.atleast_1d(nsh)
+#     if nsh[0] == 1:
+#         yvar = yvar.T
+#         vary = vary.T
+#         nsh = _np.flipud(nsh)
     # end if
-                
+    #print(nsh[0])
+    #xvar = xvar.reshape((nsh[0],), order='C')
     # ============= #
-        
-    xvar = xvar.reshape((nsh[0],), order='C')
-    
-    dydx = _np.zeros( (nmonti, nsh[0], nsh[1]), dtype=_np.float64)    
-    yf = _np.zeros( (nmonti, nsh[0], nsh[1]), dtype=_np.float64)
-    for ii in range(nmonti):        
-        utemp = yvar + _np.sqrt(vary)*_np.random.normal(0.0, 1.0, _np.shape(yvar))
-        if func == 'pchip':
-            yf[ii, :], dydx[ii, :] = pchip(xvar, utemp, xf)        
-        else:
-            tmp1 = _np.zeros_like(utemp)
-            tmp2 = _np.zeros_like(utemp)
-            for jj in range(nsh[1]):
-                tmp1[:,jj], tmp2[:,jj] = spline(xvar, utemp[:,jj], xf, vary[:,jj], nmonti, deg, bbox)
-            # end for
-            yf[ii, :] = tmp1.reshape((nsh[0], nsh[1]), order='C')
-            dydx[ii, :] = tmp2.reshape((nsh[0], nsh[1]), order='C')
 
-        # endif
-    # end for
-        
-    vardydx = _np.var(dydx, axis=0)
-    dydx = _np.mean(dydx, axis=0)
-    varf = _np.var( yf, axis=0)
-    yf = _np.mean(yf, axis=0)
+    # ============= #
+    yf = list()
+    varf = list()
+    dydx = list()
+    vardydx = list()
     
+    if func == 'spline':
+        for ii in range(len(yvar)):
+            lst = spline(xvar, yvar[ii, :], vary[ii, :], xf, nmonti, deg, bbox)
+            yf.append(lst[0])
+            varf.append(lst[1])
+            dydx.append(lst[2])
+            vardydx.append(lst[3])
+
+    elif func == 'pchip':
+        for ii in range(len(yvar)):
+            lst = pchip(xvar, yvar[ii, :], vary[ii, :], xf, nmonti)
+            yf.append(lst[0])
+            varf.append(lst[1])
+            dydx.append(lst[2])
+            vardydx.append(lst[3])
+    else:
+        raise("Unknown func for spline. I know currently only 'spline' and " +
+              "'pchip'")
+    
+    yf = _np.asarray(yf)
+    varf = _np.asarray(varf)
+    dydx = _np.asarray(dydx)
+    vardydx = _np.asarray(vardydx)
     return yf, varf, dydx, vardydx
+    
+
+
+
+
+
+
+# 
+# 
+# 
+#     dydx = _np.zeros( (nmonti, nsh[0], nsh[1]), dtype=_np.float64)    
+#     yf = _np.zeros( (nmonti, nsh[0], nsh[1]), dtype=_np.float64)
+#     for ii in range(nmonti):        
+#         utemp = yvar + _np.sqrt(vary)*_np.random.normal(0.0, 1.0, _np.shape(yvar))
+#         if func == 'pchip':
+#             yf[ii, :], dydx[ii, :] = pchip(xvar, utemp, xf)        
+#         else:
+#             tmp1 = _np.zeros_like(utemp)
+#             tmp2 = _np.zeros_like(utemp)
+#             for jj in range(nsh[1]):
+#                 tmp1[:,jj], tmp2[:,jj] = spline(xvar, utemp[:,jj], xf, vary[:,jj], nmonti, deg, bbox)
+#             # end for
+#             yf[ii, :] = tmp1.reshape((nsh[0], nsh[1]), order='C')
+#             dydx[ii, :] = tmp2.reshape((nsh[0], nsh[1]), order='C')
+# 
+#         # endif
+#     # end for
+#         
+#     vardydx = _np.var(dydx, axis=0)
+#     dydx = _np.mean(dydx, axis=0)
+#     varf = _np.var( yf, axis=0)
+#     yf = _np.mean(yf, axis=0)
+#     
+#     return yf, varf, dydx, vardydx
 
 
 # ======================================================================== #
