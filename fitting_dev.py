@@ -16,6 +16,9 @@ from scipy.optimize import curve_fit, leastsq
 import matplotlib.pyplot as _plt
 import numpy as _np 
 
+#from pybaseutils.Struct import Struct
+#from pybaseutils import utils as _ut
+
 from ..Struct import Struct
 from .. import utils as _ut   # for normal use
 
@@ -1188,7 +1191,7 @@ def spline(xvar, yvar, xf, vary=None, nmonti=300, deg=5, bbox=None):
     # ============= #
 
     pobj = _int.UnivariateSpline(xvar, yvar, w=1.0/_np.sqrt(vary), bbox=bbox,
-                                 k=deg, check_finite=True)
+                                 k=deg) #, check_finite=True)
     yf = pobj.__call__(xf)
 
     pobj = pobj.derivative(n=1)
@@ -1783,37 +1786,39 @@ def test_derivatives():
 #    p, e = fit_leastsq(p0, x, y, fmodel, (mn, np, 1) )
 #    _plt.plot(xd, fmodel(*p, XX=xd, model_number=mn, npoly=np, nargout=1) )
 
-    yxp, yxvp, dydxp, vardydxp = spline_bs(x, y, vary, x, nmonti=300, func="spline")
+    yxp, yxvp, dydxp, vardydxp = spline_bs(x, y, vary, x, nmonti=30000, func="pchip")
+#    yxp, yxvp, dydxp, vardydxp = spline_bs(x, y, vary, x, nmonti=30000, func="pchip")
+#    yxp, yxvp, dydxp, vardydxp = spline_bs(x, y, vary, x, nmonti=300, func="spline")
 
-    dydx, vardydx = deriv_bsgaussian(x, y, vary, axis=0, nmonti=300,
-                                     sigma=1, mode='nearest')
-
-    dydx0, vardydx0 = findiff1d(x, y, vary, order=1)
-#    dydx2,vardydx2 = findiff1d(x, y, vary, order=2)
-#    dydx4,vardydx4 = findiff1d(x, y, vary, order=4)
-
-    ndydx0, nvardydx0 = findiffnp( x, y, vary, order=1 )
-    ndydx2, nvardydx2 = findiffnp( x, y, vary, order=2 )
-#    dydx4,vardydx4 = findiff1dr(x, y, vary)
-
-    # integrate derivative and compare to source
-    _, _, yx, yxv = _ut.trapz_var(x, dydx, None, vardydx) 
-    yx += (y[0] - _ut.interp(x, yx, ei=None, xo=x[0]))
-
-    _, _, yx0, yxv0 = _ut.trapz_var(x, dydx0, None, vardydx0) 
-    yx0 += (y[0] - _ut.interp(x, yx0, ei=None, xo=x[0]))
-
-    _, _, nyx0, nyxv0 = _ut.trapz_var(x, ndydx0, None, nvardydx0) 
-    nyx0 += (y[0] - _ut.interp(x, nyx0, ei=None, xo=x[0]))
-        
-#    _, _, yx2, yxv2 = _ut.trapz_var(x, dydx2, None, vardydx2) 
-#    yx2 += (y[0] - _ut.interp(x, yx2, ei=None, xo=x[0]))
-
-    _, _, nyx2, nyxv2 = _ut.trapz_var(x, ndydx2, None, nvardydx2) 
-    nyx2 += (y[0] - _ut.interp(x, nyx2, ei=None, xo=x[0]))
-    
-#    _, _, yx4, yxv4 = _ut.trapz_var(x, dydx4, None, vardydx4) 
-#    yx4 += (y[0] - _ut.interp(x, yx4, ei=None, xo=x[0]))
+#    dydx, vardydx = deriv_bsgaussian(x, y, vary, axis=0, nmonti=300,
+#                                     sigma=1, mode='nearest')
+#
+#    dydx0, vardydx0 = findiff1d(x, y, vary, order=1)
+##    dydx2,vardydx2 = findiff1d(x, y, vary, order=2)
+##    dydx4,vardydx4 = findiff1d(x, y, vary, order=4)
+#
+#    ndydx0, nvardydx0 = findiffnp( x, y, vary, order=1 )
+#    ndydx2, nvardydx2 = findiffnp( x, y, vary, order=2 )
+##    dydx4,vardydx4 = findiff1dr(x, y, vary)
+#
+#    # integrate derivative and compare to source
+#    _, _, yx, yxv = _ut.trapz_var(x, dydx, None, vardydx) 
+#    yx += (y[0] - _ut.interp(x, yx, ei=None, xo=x[0]))
+#
+#    _, _, yx0, yxv0 = _ut.trapz_var(x, dydx0, None, vardydx0) 
+#    yx0 += (y[0] - _ut.interp(x, yx0, ei=None, xo=x[0]))
+#
+#    _, _, nyx0, nyxv0 = _ut.trapz_var(x, ndydx0, None, nvardydx0) 
+#    nyx0 += (y[0] - _ut.interp(x, nyx0, ei=None, xo=x[0]))
+#        
+##    _, _, yx2, yxv2 = _ut.trapz_var(x, dydx2, None, vardydx2) 
+##    yx2 += (y[0] - _ut.interp(x, yx2, ei=None, xo=x[0]))
+#
+#    _, _, nyx2, nyxv2 = _ut.trapz_var(x, ndydx2, None, nvardydx2) 
+#    nyx2 += (y[0] - _ut.interp(x, nyx2, ei=None, xo=x[0]))
+#    
+##    _, _, yx4, yxv4 = _ut.trapz_var(x, dydx4, None, vardydx4) 
+##    yx4 += (y[0] - _ut.interp(x, yx4, ei=None, xo=x[0]))
 
 
     # ==== #
@@ -1824,30 +1829,30 @@ def test_derivatives():
     ax1.plot(x, y, "ko")
     
     # Integrals
-    ax1.plot(x, yx, 'k-',
-             x, yx+_np.sqrt(yxv), 'k--',    
-             x, yx-_np.sqrt(yxv), 'k--')     
+#    ax1.plot(x, yx, 'k-',
+#             x, yx+_np.sqrt(yxv), 'k--',    
+#             x, yx-_np.sqrt(yxv), 'k--')     
 
     ax1.plot(x, yxp, 'g-',
              x, yxp+_np.sqrt(yxvp), 'g--',    
              x, yxp-_np.sqrt(yxvp), 'g--')     
              
-    ax1.plot(x, yx0, 'r-',
-             x, yx0+_np.sqrt(yxv0), 'r--',    
-             x, yx0-_np.sqrt(yxv0), 'r--')     
+#    ax1.plot(x, yx0, 'r-',
+#             x, yx0+_np.sqrt(yxv0), 'r--',    
+#             x, yx0-_np.sqrt(yxv0), 'r--')     
 
-    ax1.plot(x, nyx0, 'b-',
-             x, nyx0+_np.sqrt(nyxv0), 'b--',    
-             x, nyx0-_np.sqrt(nyxv0), 'b--')     
+#    ax1.plot(x, nyx0, 'b-',
+#             x, nyx0+_np.sqrt(nyxv0), 'b--',    
+#             x, nyx0-_np.sqrt(nyxv0), 'b--')     
 
 
 #    ax1.plot(x, yx2, 'g-',
 #             x, yx2+_np.sqrt(yxv2), 'g--',    
 #             x, yx2-_np.sqrt(yxv2), 'g--')     
 
-    ax1.plot(x, nyx2, 'm-',
-             x, nyx2+_np.sqrt(nyxv2), 'm--',    
-             x, nyx2-_np.sqrt(nyxv2), 'm--')     
+#    ax1.plot(x, nyx2, 'm-',
+#             x, nyx2+_np.sqrt(nyxv2), 'm--',    
+#             x, nyx2-_np.sqrt(nyxv2), 'm--')     
 
 #    ax1.plot(x, yx4, 'y-',
 #             x, yx4+_np.sqrt(yxv4), 'y--',    
@@ -1856,29 +1861,29 @@ def test_derivatives():
     # Derivatives
     ax2 = _plt.subplot(2,1,2, sharex=ax1)
 
-    ax2.plot(x, dydx, 'k-',
-             x, dydx+_np.sqrt(vardydx), 'k--',
-             x, dydx-_np.sqrt(vardydx), 'k--')
+#    ax2.plot(x, dydx, 'k-',
+#             x, dydx+_np.sqrt(vardydx), 'k--',
+#             x, dydx-_np.sqrt(vardydx), 'k--')
 
     ax2.plot(x, dydxp, 'g-',
              x, dydxp+_np.sqrt(vardydxp), 'g--',
              x, dydxp-_np.sqrt(vardydxp), 'g--')
              
-    ax2.plot(x, dydx0, 'r-',
-             x, dydx0+_np.sqrt(vardydx0), 'r--',
-             x, dydx0-_np.sqrt(vardydx0), 'r--')
+#    ax2.plot(x, dydx0, 'r-',
+#             x, dydx0+_np.sqrt(vardydx0), 'r--',
+#             x, dydx0-_np.sqrt(vardydx0), 'r--')
 
-    ax2.plot(x, ndydx0, 'b-',
-             x, ndydx0+_np.sqrt(nvardydx0), 'b--',
-             x, ndydx0-_np.sqrt(nvardydx0), 'b--')
+#    ax2.plot(x, ndydx0, 'b-',
+#             x, ndydx0+_np.sqrt(nvardydx0), 'b--',
+#             x, ndydx0-_np.sqrt(nvardydx0), 'b--')
     
 #    ax2.plot(x, dydx2, 'g-',
 #             x, dydx2+_np.sqrt(vardydx2), 'g--',
 #             x, dydx2-_np.sqrt(vardydx2), 'g--')
 
-    ax2.plot(x, ndydx2, 'm-',
-             x, ndydx2+_np.sqrt(nvardydx2), 'm--',
-             x, ndydx2-_np.sqrt(nvardydx2), 'm--')
+#    ax2.plot(x, ndydx2, 'm-',
+#             x, ndydx2+_np.sqrt(nvardydx2), 'm--',
+#             x, ndydx2-_np.sqrt(nvardydx2), 'm--')
              
 #    ax2.plot(x, dydx4, 'y-',
 #             x, dydx4+_np.sqrt(vardydx4), 'y--',
