@@ -16,8 +16,11 @@ from scipy.optimize import curve_fit, leastsq
 import matplotlib.pyplot as _plt
 import numpy as _np 
 
-from ..Struct import Struct
-from .. import utils as _ut   # for normal use
+from pybaseutils.Struct import Struct
+from pybaseutils import utils as _ut   # for normal use
+
+#from ..Struct import Struct
+#from .. import utils as _ut   # for normal use
 
 # There are annoying differences in the context between scipy version of
 # leastsq and curve_fit, and the method least_squares doesn't exist before 0.17
@@ -1145,7 +1148,7 @@ def fit_mcleastsq(p0, xdat, ydat, func, yerr_systematic=0.0, nmonti=300):
 # ======================================================================== #
 
 
-def spline(xvar, yvar, xf, vary=None, nmonti=300, deg=5, bbox=None):
+def spline(xvar, yvar, xf, vary=None, deg=5, bbox=None):
     """
     One-dimensional smoothing spline fit to a given set of data points (scipy).
     Fits a spline y = spl(xf) of degree deg to the provided xvar, yvar data.
@@ -1155,9 +1158,9 @@ def spline(xvar, yvar, xf, vary=None, nmonti=300, deg=5, bbox=None):
                 function
     :param vary: Variance in y, used as weights (1/sqrt(vary)) for spline
                     fitting. Must be positive. If None (default), weights are
-                    all equal and no uncertainties are returned.
+                    all equal.
     :param nmonti: Number of Monte Carlo iterations for nonlinear error
-                    propagation. Default is 300. 
+                    propagation. Default is 300.
     :param deg: Degree of the smoothing spline. Must be <= 5. Default is k=3,
                 a cubic spline.
     :param bbox: 2-sequence specifying the boundary of the approximation
@@ -1171,10 +1174,8 @@ def spline(xvar, yvar, xf, vary=None, nmonti=300, deg=5, bbox=None):
     :type deg: int, optional
     :type bbox: (2,) array_like, optional
 
-    :return: the interpolation values at xf and the first derivative at xf or,
-                if yary is given, the interpolation values at xf + the variance
-                and the first derivative at xf + the variance
-    :rtype: [ndarray, ndarray] resp. [ndarray, ndarray, ndarray, ndarray]
+    :return: the interpolation values at xf and the first derivative at xf
+    :rtype: ndarray, ndarray
 
     .. note::
     The number of data points must be larger than the spline degree deg. 
@@ -1183,56 +1184,35 @@ def spline(xvar, yvar, xf, vary=None, nmonti=300, deg=5, bbox=None):
     if bbox is None:
         bbox = [xvar[0], xvar[-1]]
     # end if
-
     if vary is None:
-        pobj = _int.UnivariateSpline(xvar, yvar, bbox=bbox, k=deg,
-                                     check_finite=True)
-        yf_val = pobj.__call__(xf)
-        dyf_val = pobj.derivative(n=1).__call__(xf)
-        return [yf_val, dyf_val]
+        vary = _np.ones_like(yvar)
     # end if
-
+    # _ut.interp_irregularities()
     # ============= #
-    # Monte Carlo
-    yf = []
-    dyf = []
-    for ii in range(nmonti):
-        yvar_mc = yvar + _np.random.normal(0., _np.sqrt(vary), len(yvar))
-        
-        pobj = _int.UnivariateSpline(xvar, yvar_mc, bbox=bbox, k=deg,
-                                     check_finite=True)
-        yf_val = pobj.__call__(xf)
-        dyf_val = pobj.derivative(n=1).__call__(xf)
 
-        yf.append(yf_val)
-        dyf.append(dyf_val)
-    # end for
-
-    return [_np.mean(yf, axis=0), _np.var(yf, axis=0), _np.mean(dyf, axis=0),
-            _np.var(dyf, axis=0)]
+    pobj = _int.UnivariateSpline(xvar, yvar, w=1.0/_np.sqrt(vary), bbox=bbox,
+                                 k=deg, check_finite=True)
+    yf = pobj.__call__(xf)
+#
+#    pobj = pobj.derivative(n=1)
+#    dydx = pobj.__call__(xf)
+    dydx = pobj.derivative(n=1).__call__(xf)
+    
+    return yf, dydx
 
 
-def pchip(xvar, yvar, xf, vary=None, nmonti=300):
+def pchip(xvar, yvar, xf):
     """
     PCHIP 1-d monotonic cubic interpolation (from scipy)
     :param xvar: x values for interpolation
     :param yvar: y values for interpolation
     :param xf: values at which you request the values of the interpolation
                 function
-    :param vary: Variance in y, used as weights (1/sqrt(vary)) for spline
-                    fitting. Must be positive. If None (default), weights are
-                    all equal and no uncertainties are returned.
-    :param nmonti: Number of Monte Carlo iterations for nonlinear error
-                    propagation. Default is 300. 
     :type xvar: ndarray
     :type yvar: ndarray
     :type xf: ndarray
-    :type vary: (N,) array_like, optional
-    :type nmonti: int, optional
-    :return: the interpolation values at xf and the first derivative at xf or,
-                if yary is given, the interpolation values at xf + the variance
-                and the first derivative at xf + the variance
-    :rtype: [ndarray, ndarray] resp. [ndarray, ndarray, ndarray, ndarray]
+    :return: the interpolation values at xf and the first derivative at xf
+    :rtype: ndarray, ndarray
 
     .. note::
     The interpolator preserves monotonicity in the interpolation data and does
@@ -1241,146 +1221,268 @@ def pchip(xvar, yvar, xf, vary=None, nmonti=300):
     derivatives may jump at xf.
     """
 
-    if vary is None:
-        pobj = _int.pchip(xvar, yvar, axis=0)
-        yf_val = pobj.__call__(xf)
-        dyf_val = pobj.derivative(n=1).__call__(xf)
-        return [yf_val, dyf_val]
-    # end if
-
-    # ============= #
-    # Monte Carlo
-    yf = []
-    dyf = []
-    for ii in range(nmonti):
-        yvar_mc = yvar + _np.random.normal(0., _np.sqrt(vary), len(yvar))
-        
-        pobj = _int.pchip(xvar, yvar_mc, axis=0)
-        yf_val = pobj.__call__(xf)
-        dyf_val = pobj.derivative(nu=1).__call__(xf)
-
-        yf.append(yf_val)
-        dyf.append(dyf_val)
-    # end for
-
-    return [_np.mean(yf, axis=0), _np.var(yf, axis=0), _np.mean(dyf, axis=0),
-            _np.var(dyf, axis=0)]
+    pobj = _int.pchip(xvar, yvar, axis=0)
+    
+    yf = pobj.__call__(xf)
+#    dydx = pobj.derivative(nu=1).__call__(xf)          
+    dydx = pobj.__call__(xf, nu=1)            
+    return yf, dydx
 
 
-def spline_bs(xvar, yvar, vary, xf=None, func="spline", nmonti=300, deg=3,
+def spline_bs(xvar, yvar, vary, xf=None, func="spline", nmonti=300000, deg=3,
               bbox=None):  
     """
-    :param xvar: x values for interpolation (2D)
-    :param yvar: y values for interpolation (2D)
-    :param xf: values at which you request the values of the interpolation
-                function. Default is None, which just uses the xvar values.
-    :param vary: Variance in y, used as weights (1/sqrt(vary)) for spline
-                    fitting. Must be positive. If None (default), weights are
-                    all equal and no uncertainties are returned. (2D)
-    :param nmonti: Number of Monte Carlo iterations for nonlinear error
-                    propagation. Default is 300.
-    :param deg: Degree of the smoothing spline. Must be <= 5. Default is k=3,
-                a cubic spline. Only valid for func="spline".
-    :param bbox: 2-sequence specifying the boundary of the approximation
-                    interval. If None (default), bbox=[xvar[0], xvar[-1]].
-                     Only valid for func="spline".
-    :type xvar: (N,) ndarray
-    :type yvar: (N,) ndarray
-    :type xf: (N,) ndarray, optional
-    :type vary: (N,) array_like, optional
-    :type nmonti: int, optional
-    :type deg: int, optional
-    :type bbox: (2,) array_like, optional
-    :return: the interpolation values at xf and the first derivative at xf or,
-                if yary is given, the interpolation values at xf + the variance
-                and the first derivative at xf + the variance
-    :rtype: [ndarray, ndarray] resp. [ndarray, ndarray, ndarray, ndarray]
+    
     """  
 
     if xf is None:
         xf = xvar.copy()
-    # endif
+    # endif    
+    nxf = len(xf)
     
     # ============= #
-    # get right shape
+
     yvar = _np.atleast_2d(yvar)
     vary = _np.atleast_2d(vary)
-#     nsh = _np.shape(yvar)
-#     nsh = _np.atleast_1d(nsh)
-#     if nsh[0] == 1:
-#         yvar = yvar.T
-#         vary = vary.T
-#         nsh = _np.flipud(nsh)
+    nsh = _np.shape(yvar)
+    nsh = _np.atleast_1d(nsh)
+    if nsh[0] == 1:
+        yvar = yvar.T
+        vary = vary.T
+        nsh = _np.flipud(nsh)
     # end if
-    #print(nsh[0])
-    #xvar = xvar.reshape((nsh[0],), order='C')
+                
     # ============= #
+        
+    xvar = xvar.reshape((nsh[0],), order='C')
 
-    # ============= #
-    yf = list()
-    varf = list()
-    dydx = list()
-    vardydx = list()
-    
-    if func == 'spline':
-        for ii in range(len(yvar)):
-            lst = spline(xvar, yvar[ii, :], vary[ii, :], xf, nmonti, deg, bbox)
-            yf.append(lst[0])
-            varf.append(lst[1])
-            dydx.append(lst[2])
-            vardydx.append(lst[3])
+    dydx = _np.zeros( (nmonti, nxf, nsh[1]), dtype=_np.float64)    
+    yf = _np.zeros( (nmonti, nxf, nsh[1]), dtype=_np.float64)
+    for ii in range(nmonti):        
+        utemp = yvar + _np.sqrt(vary)*_np.random.normal(0.0, 1.0, _np.shape(yvar))
+        if func == 'pchip':
+            yf[ii, :], dydx[ii, :] = pchip(xvar, utemp, xf)        
+        else:
+            tmp1 = _np.zeros((nxf, nsh[1]), dtype=utemp.dtype)
+            tmp2 = _np.zeros_like(tmp1)
+            for jj in range(nsh[1]):
+#                vtemp = (utemp-yvar)
+#                tmp1[:,jj], tmp2[:,jj] = spline(xvar, utemp[:,jj], xf, vary=vary[:,jj], deg=deg, bbox=bbox)
+                tmp1[:,jj], tmp2[:,jj] = spline(xvar, utemp[:,jj], xf, vary=None, deg=deg, bbox=bbox)
+            # end for
+#            print(_np.shape(tmp1))
+#            print(nsh)
+#            print(_np.shape(yf))
+#            print(_np.shape(yvar))
+            yf[ii, :] = tmp1.reshape((nxf, nsh[1]), order='C')
+            dydx[ii, :] = tmp2.reshape((nxf, nsh[1]), order='C')
 
-    elif func == 'pchip':
-        for ii in range(len(yvar)):
-            lst = pchip(xvar, yvar[ii, :], vary[ii, :], xf, nmonti)
-            yf.append(lst[0])
-            varf.append(lst[1])
-            dydx.append(lst[2])
-            vardydx.append(lst[3])
-    else:
-        raise("Unknown func for spline. I know currently only 'spline' and " +
-              "'pchip'")
+        # endif
+    # end for
+        
+    vardydx = _np.var(dydx, axis=0)
+    dydx = _np.mean(dydx, axis=0)
+    varf = _np.var( yf, axis=0)
+    yf = _np.mean(yf, axis=0)
     
-    yf = _np.asarray(yf)
-    varf = _np.asarray(varf)
-    dydx = _np.asarray(dydx)
-    vardydx = _np.asarray(vardydx)
     return yf, varf, dydx, vardydx
-    
 
 
-
-
-
-
-# 
-# 
-# 
-#     dydx = _np.zeros( (nmonti, nsh[0], nsh[1]), dtype=_np.float64)    
-#     yf = _np.zeros( (nmonti, nsh[0], nsh[1]), dtype=_np.float64)
-#     for ii in range(nmonti):        
-#         utemp = yvar + _np.sqrt(vary)*_np.random.normal(0.0, 1.0, _np.shape(yvar))
-#         if func == 'pchip':
-#             yf[ii, :], dydx[ii, :] = pchip(xvar, utemp, xf)        
-#         else:
-#             tmp1 = _np.zeros_like(utemp)
-#             tmp2 = _np.zeros_like(utemp)
-#             for jj in range(nsh[1]):
-#                 tmp1[:,jj], tmp2[:,jj] = spline(xvar, utemp[:,jj], xf, vary[:,jj], nmonti, deg, bbox)
-#             # end for
-#             yf[ii, :] = tmp1.reshape((nsh[0], nsh[1]), order='C')
-#             dydx[ii, :] = tmp2.reshape((nsh[0], nsh[1]), order='C')
-# 
-#         # endif
-#     # end for
-#         
-#     vardydx = _np.var(dydx, axis=0)
-#     dydx = _np.mean(dydx, axis=0)
-#     varf = _np.var( yf, axis=0)
-#     yf = _np.mean(yf, axis=0)
-#     
-#     return yf, varf, dydx, vardydx
-
+#def spline(xvar, yvar, xf, vary=None, nmonti=300, deg=5, bbox=None):
+#    """
+#    One-dimensional smoothing spline fit to a given set of data points (scipy).
+#    Fits a spline y = spl(xf) of degree deg to the provided xvar, yvar data.
+#    :param xvar: 1-D array of independent input data. Must be increasing.
+#    :param yvar: 1-D array of dependent input data, of the same length as x.
+#    :param xf: values at which you request the values of the interpolation
+#                function
+#    :param vary: Variance in y, used as weights (1/sqrt(vary)) for spline
+#                    fitting. Must be positive. If None (default), weights are
+#                    all equal and no uncertainties are returned.
+#    :param nmonti: Number of Monte Carlo iterations for nonlinear error
+#                    propagation. Default is 300.
+#    :param deg: Degree of the smoothing spline. Must be <= 5. Default is k=3,
+#                a cubic spline.
+#    :param bbox: 2-sequence specifying the boundary of the approximation
+#                    interval. If None (default), bbox=[xvar[0], xvar[-1]].
+#
+#    :type xvar: (N,) array_like
+#    :type yvar: (N,) array_like
+#    :type xf: (N,) array_like
+#    :type vary: (N,) array_like, optional
+#    :type nmonti: int, optional
+#    :type deg: int, optional
+#    :type bbox: (2,) array_like, optional
+#
+#    :return: the interpolation values at xf and the first derivative at xf or,
+#                if yary is given, the interpolation values at xf + the variance
+#                and the first derivative at xf + the variance
+#    :rtype: [ndarray, ndarray] resp. [ndarray, ndarray, ndarray, ndarray]
+#
+#    .. note::
+#    The number of data points must be larger than the spline degree deg.
+#    """
+#
+#    if bbox is None:
+#        bbox = [xvar[0], xvar[-1]]
+#    # end if
+#
+#    if vary is None:
+#        pobj = _int.UnivariateSpline(xvar, yvar, bbox=bbox, k=deg,
+#                                     check_finite=True)
+#        yf_val = pobj.__call__(xf)
+#        dyf_val = pobj.derivative(n=1).__call__(xf)
+#        return yf_val, dyf_val
+#    # end if
+#
+#    # ============= #
+#    # Monte Carlo
+#    yf = []
+#    dyf = []
+#    for _ in range(nmonti):
+#        yvar_mc = yvar + _np.random.normal(0., _np.sqrt(vary), len(yvar))
+#
+#        pobj = _int.UnivariateSpline(xvar, yvar_mc, bbox=bbox, k=deg,
+#                                     check_finite=True)
+#        yf_val = pobj.__call__(xf)
+#        dyf_val = pobj.derivative(n=1).__call__(xf)
+#
+#        yf.append(yf_val)
+#        dyf.append(dyf_val)
+#    # end for
+#
+#    return _np.mean(yf, axis=0), _np.var(yf, axis=0), _np.mean(dyf, axis=0), _np.var(dyf, axis=0)
+#
+#
+#def pchip(xvar, yvar, xf, vary=None, nmonti=300):
+#    """
+#    PCHIP 1-d monotonic cubic interpolation (from scipy)
+#    :param xvar: x values for interpolation
+#    :param yvar: y values for interpolation
+#    :param xf: values at which you request the values of the interpolation
+#                function
+#    :param vary: Variance in y, used as weights (1/sqrt(vary)) for spline
+#                    fitting. Must be positive. If None (default), weights are
+#                    all equal and no uncertainties are returned.
+#    :param nmonti: Number of Monte Carlo iterations for nonlinear error
+#                    propagation. Default is 300.
+#    :type xvar: ndarray
+#    :type yvar: ndarray
+#    :type xf: ndarray
+#    :type vary: (N,) array_like, optional
+#    :type nmonti: int, optional
+#    :return: the interpolation values at xf and the first derivative at xf or,
+#                if yary is given, the interpolation values at xf + the variance
+#                and the first derivative at xf + the variance
+#    :rtype: [ndarray, ndarray] resp. [ndarray, ndarray, ndarray, ndarray]
+#
+#    .. note::
+#    The interpolator preserves monotonicity in the interpolation data and does
+#    not overshoot if the data is not smooth.
+#    The first derivatives are guaranteed to be continuous, but the second
+#    derivatives may jump at xf.
+#    """
+#
+#    if vary is None:
+#        pobj = _int.pchip(xvar, yvar, axis=0)
+#        yf_val = pobj.__call__(xf)
+#        dyf_val = pobj.derivative(n=1).__call__(xf)
+#        return yf_val, dyf_val
+#    # end if
+#
+#    # ============= #
+#    # Monte Carlo
+#    yf = []
+#    dyf = []
+#    for _ in range(nmonti):
+#        yvar_mc = yvar + _np.random.normal(0., _np.sqrt(vary), len(yvar))
+#
+#        pobj = _int.pchip(xvar, yvar_mc, axis=0)
+#        yf_val = pobj.__call__(xf)
+#        dyf_val = pobj.derivative(nu=1).__call__(xf)
+#
+#        yf.append(yf_val)
+#        dyf.append(dyf_val)
+#    # end for
+#
+#    return _np.mean(yf, axis=0), _np.var(yf, axis=0), _np.mean(dyf, axis=0), _np.var(dyf, axis=0)
+#
+#
+#def spline_bs(xvar, yvar, vary, xf=None, func="spline", nmonti=300, deg=3,
+#              bbox=None):
+#    """
+#    :param xvar: x values for interpolation (2D)
+#    :param yvar: y values for interpolation (2D)
+#    :param xf: values at which you request the values of the interpolation
+#                function. Default is None, which just uses the xvar values.
+#    :param vary: Variance in y, used as weights (1/sqrt(vary)) for spline
+#                    fitting. Must be positive. If None (default), weights are
+#                    all equal and no uncertainties are returned. (2D)
+#    :param nmonti: Number of Monte Carlo iterations for nonlinear error
+#                    propagation. Default is 300.
+#    :param deg: Degree of the smoothing spline. Must be <= 5. Default is k=3,
+#                a cubic spline. Only valid for func="spline".
+#    :param bbox: 2-sequence specifying the boundary of the approximation
+#                    interval. If None (default), bbox=[xvar[0], xvar[-1]].
+#                     Only valid for func="spline".
+#    :type xvar: (N,) ndarray
+#    :type yvar: (N,) ndarray
+#    :type xf: (N,) ndarray, optional
+#    :type vary: (N,) array_like, optional
+#    :type nmonti: int, optional
+#    :type deg: int, optional
+#    :type bbox: (2,) array_like, optional
+#    :return: the interpolation values at xf and the first derivative at xf or,
+#                if yary is given, the interpolation values at xf + the variance
+#                and the first derivative at xf + the variance
+#    :rtype: [ndarray, ndarray] resp. [ndarray, ndarray, ndarray, ndarray]
+#    """
+#
+#    if xf is None:
+#        xf = xvar.copy()
+#    # endif
+#
+#    yvar = _np.atleast_2d(yvar)
+#    vary = _np.atleast_2d(vary)
+#
+#    nsh = _np.shape(yvar)
+#    nsh = _np.atleast_1d(nsh)
+#    if nsh[0] == 1:
+#        yvar = yvar.T
+#        vary = vary.T
+#        nsh = _np.flipud(nsh)
+#
+#    # ============= #
+#    yf = list()
+#    varf = list()
+#    dydx = list()
+#    vardydx = list()
+#
+#    if func == 'spline':
+#        for ii in range(yvar.shape[1]):
+#            tmp1, tmp2, tmp3, tmp4 = spline(xvar, yvar[:, ii], xf, vary=vary[:, ii],
+#                         nmonti=nmonti, deg=deg, bbox=bbox)
+#            yf.append(tmp1.copy())
+#            varf.append(tmp2.copy())
+#            dydx.append(tmp3.copy())
+#            vardydx.append(tmp4.copy())
+#
+#    elif func == 'pchip':
+#        for ii in range(yvar.shape[1]):
+#            tmp1, tmp2, tmp3, tmp4 = pchip(xvar, yvar[:, ii], xf, vary=vary[:, ii], nmonti=nmonti)
+#            yf.append(tmp1.copy())
+#            varf.append(tmp2.copy())
+#            dydx.append(tmp3.copy())
+#            vardydx.append(tmp4.copy())
+#    else:
+#        raise("Unknown func for spline. I know currently only 'spline' and " +
+#              "'pchip'")
+#
+#    yf = _np.asarray(yf)
+#    varf = _np.asarray(varf)
+#    dydx = _np.asarray(dydx)
+#    vardydx = _np.asarray(vardydx)
+#    return yf, varf, dydx, vardydx
 
 # ======================================================================== #
 
@@ -1870,6 +1972,12 @@ def test_derivatives():
     x = x[isort]
     y = y[isort]
     vary = vary[isort]
+
+    y = _np.transpose( _np.vstack((y, _np.sin(x))) )
+    vary = _np.transpose(_np.vstack((vary, (1e-5+0.1*_np.sin(x))**2.0)))   
+
+#    y = _np.hstack((y, _np.sin(x)))    
+#    vary = _np.hstack((vary, 0.1*_np.sin(x)))    
     
     # ======================= # 
     
@@ -1890,17 +1998,19 @@ def test_derivatives():
 #    p, e = fit_leastsq(p0, x, y, fmodel, (mn, np, 1) )
 #    _plt.plot(xd, fmodel(*p, XX=xd, model_number=mn, npoly=np, nargout=1) )
 
-    yxp, yxvp, dydxp, vardydxp = spline_bs(x, y, vary, x, nmonti=300, func="spline")
+    yxp, yxvp, dydxp, vardydxp = spline_bs(x, y, vary, x, func="spline", nmonti=3000, deg=1)
 
-    dydx, vardydx = deriv_bsgaussian(x, y, vary, axis=0, nmonti=300,
+#    yxpc, yxvpc, dydxpc, vardydxpc = spline_bs(x, y, vary, x, func="pchip", nmonti=3000)
+
+    dydx, vardydx = deriv_bsgaussian(x, y, vary, axis=0, nmonti=3000,
                                      sigma=1, mode='nearest')
 
     dydx0, vardydx0 = findiff1d(x, y, vary, order=1)
 #    dydx2,vardydx2 = findiff1d(x, y, vary, order=2)
 #    dydx4,vardydx4 = findiff1d(x, y, vary, order=4)
 
-    ndydx0, nvardydx0 = findiffnp( x, y, vary, order=1 )
-    ndydx2, nvardydx2 = findiffnp( x, y, vary, order=2 )
+#    ndydx0, nvardydx0 = findiffnp( x, y, vary, order=1 )
+#    ndydx2, nvardydx2 = findiffnp( x, y, vary, order=2 )
 #    dydx4,vardydx4 = findiff1dr(x, y, vary)
 
     # integrate derivative and compare to source
@@ -1910,14 +2020,14 @@ def test_derivatives():
     _, _, yx0, yxv0 = _ut.trapz_var(x, dydx0, None, vardydx0) 
     yx0 += (y[0] - _ut.interp(x, yx0, ei=None, xo=x[0]))
 
-    _, _, nyx0, nyxv0 = _ut.trapz_var(x, ndydx0, None, nvardydx0) 
-    nyx0 += (y[0] - _ut.interp(x, nyx0, ei=None, xo=x[0]))
+#    _, _, nyx0, nyxv0 = _ut.trapz_var(x, ndydx0, None, nvardydx0) 
+#    nyx0 += (y[0] - _ut.interp(x, nyx0, ei=None, xo=x[0]))
         
 #    _, _, yx2, yxv2 = _ut.trapz_var(x, dydx2, None, vardydx2) 
 #    yx2 += (y[0] - _ut.interp(x, yx2, ei=None, xo=x[0]))
 
-    _, _, nyx2, nyxv2 = _ut.trapz_var(x, ndydx2, None, nvardydx2) 
-    nyx2 += (y[0] - _ut.interp(x, nyx2, ei=None, xo=x[0]))
+#    _, _, nyx2, nyxv2 = _ut.trapz_var(x, ndydx2, None, nvardydx2) 
+#    nyx2 += (y[0] - _ut.interp(x, nyx2, ei=None, xo=x[0]))
     
 #    _, _, yx4, yxv4 = _ut.trapz_var(x, dydx4, None, vardydx4) 
 #    yx4 += (y[0] - _ut.interp(x, yx4, ei=None, xo=x[0]))
@@ -1931,30 +2041,34 @@ def test_derivatives():
     ax1.plot(x, y, "ko")
     
     # Integrals
-    ax1.plot(x, yx, 'k-',
-             x, yx+_np.sqrt(yxv), 'k--',    
-             x, yx-_np.sqrt(yxv), 'k--')     
+#    ax1.plot(x, yx, 'k-',
+#             x, yx+_np.sqrt(yxv), 'k--',    
+#             x, yx-_np.sqrt(yxv), 'k--')     
 
     ax1.plot(x, yxp, 'g-',
              x, yxp+_np.sqrt(yxvp), 'g--',    
              x, yxp-_np.sqrt(yxvp), 'g--')     
+
+#    ax1.plot(x, yxpc, 'm-',
+#             x, yxpc+_np.sqrt(yxvpc), 'm--',    
+#             x, yxpc-_np.sqrt(yxvpc), 'm--')     
              
-    ax1.plot(x, yx0, 'r-',
-             x, yx0+_np.sqrt(yxv0), 'r--',    
-             x, yx0-_np.sqrt(yxv0), 'r--')     
-
-    ax1.plot(x, nyx0, 'b-',
-             x, nyx0+_np.sqrt(nyxv0), 'b--',    
-             x, nyx0-_np.sqrt(nyxv0), 'b--')     
-
+#    ax1.plot(x, yx0, 'r-',
+#             x, yx0+_np.sqrt(yxv0), 'r--',    
+#             x, yx0-_np.sqrt(yxv0), 'r--')     
+#
+#    ax1.plot(x, nyx0, 'b-',
+#             x, nyx0+_np.sqrt(nyxv0), 'b--',    
+#             x, nyx0-_np.sqrt(nyxv0), 'b--')     
+#
 
 #    ax1.plot(x, yx2, 'g-',
 #             x, yx2+_np.sqrt(yxv2), 'g--',    
 #             x, yx2-_np.sqrt(yxv2), 'g--')     
 
-    ax1.plot(x, nyx2, 'm-',
-             x, nyx2+_np.sqrt(nyxv2), 'm--',    
-             x, nyx2-_np.sqrt(nyxv2), 'm--')     
+#    ax1.plot(x, nyx2, 'm-',
+#             x, nyx2+_np.sqrt(nyxv2), 'm--',    
+#             x, nyx2-_np.sqrt(nyxv2), 'm--')     
 
 #    ax1.plot(x, yx4, 'y-',
 #             x, yx4+_np.sqrt(yxv4), 'y--',    
@@ -1963,33 +2077,37 @@ def test_derivatives():
     # Derivatives
     ax2 = _plt.subplot(2,1,2, sharex=ax1)
 
-    ax2.plot(x, dydx, 'k-',
-             x, dydx+_np.sqrt(vardydx), 'k--',
-             x, dydx-_np.sqrt(vardydx), 'k--')
+#    ax2.plot(x, dydx, 'k-',
+#             x, dydx+_np.sqrt(vardydx), 'k--',
+#             x, dydx-_np.sqrt(vardydx), 'k--')
 
     ax2.plot(x, dydxp, 'g-',
              x, dydxp+_np.sqrt(vardydxp), 'g--',
              x, dydxp-_np.sqrt(vardydxp), 'g--')
-             
-    ax2.plot(x, dydx0, 'r-',
-             x, dydx0+_np.sqrt(vardydx0), 'r--',
-             x, dydx0-_np.sqrt(vardydx0), 'r--')
 
-    ax2.plot(x, ndydx0, 'b-',
-             x, ndydx0+_np.sqrt(nvardydx0), 'b--',
-             x, ndydx0-_np.sqrt(nvardydx0), 'b--')
-    
-#    ax2.plot(x, dydx2, 'g-',
-#             x, dydx2+_np.sqrt(vardydx2), 'g--',
-#             x, dydx2-_np.sqrt(vardydx2), 'g--')
-
-    ax2.plot(x, ndydx2, 'm-',
-             x, ndydx2+_np.sqrt(nvardydx2), 'm--',
-             x, ndydx2-_np.sqrt(nvardydx2), 'm--')
+#    ax2.plot(x, dydxpc, 'm-',
+#             x, dydxpc+_np.sqrt(vardydxpc), 'm--',
+#             x, dydxpc-_np.sqrt(vardydxpc), 'm--')
              
-#    ax2.plot(x, dydx4, 'y-',
-#             x, dydx4+_np.sqrt(vardydx4), 'y--',
-#             x, dydx4-_np.sqrt(vardydx4), 'y--')
+#    ax2.plot(x, dydx0, 'r-',
+#             x, dydx0+_np.sqrt(vardydx0), 'r--',
+#             x, dydx0-_np.sqrt(vardydx0), 'r--')
+#
+#    ax2.plot(x, ndydx0, 'b-',
+#             x, ndydx0+_np.sqrt(nvardydx0), 'b--',
+#             x, ndydx0-_np.sqrt(nvardydx0), 'b--')
+#    
+##    ax2.plot(x, dydx2, 'g-',
+##             x, dydx2+_np.sqrt(vardydx2), 'g--',
+##             x, dydx2-_np.sqrt(vardydx2), 'g--')
+#
+#    ax2.plot(x, ndydx2, 'm-',
+#             x, ndydx2+_np.sqrt(nvardydx2), 'm--',
+#             x, ndydx2-_np.sqrt(nvardydx2), 'm--')
+#             
+##    ax2.plot(x, dydx4, 'y-',
+##             x, dydx4+_np.sqrt(vardydx4), 'y--',
+##             x, dydx4-_np.sqrt(vardydx4), 'y--')
 # end main()
     
     
