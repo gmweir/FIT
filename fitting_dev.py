@@ -1465,6 +1465,8 @@ class fitNL(Struct):
         """
         lsqfitmethod = options.get("lsqfitmethod", 'lm')
 
+        if _np.isscalar(self.af0):
+            self.af0 = [self.af0]
         self.numfit = len(self.af0)        
 
         res = least_squares(self.calc_chi2, self.af0, bounds=(self.LB, self.UB),
