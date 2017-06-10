@@ -16,11 +16,15 @@ from scipy.optimize import curve_fit, leastsq
 import matplotlib.pyplot as _plt
 import numpy as _np 
 
-from pybaseutils.Struct import Struct
-from pybaseutils import utils as _ut   # for normal use
+#from pybaseutils.Struct import Struct
+#from pybaseutils import utils as _ut   # for testing
 
-#from ..Struct import Struct
-#from .. import utils as _ut   # for normal use
+from ..Struct import Struct
+from .. import utils as _ut   # for normal use
+
+from . import model_spec as _ms
+
+# ==== #
 
 # There are annoying differences in the context between scipy version of
 # leastsq and curve_fit, and the method least_squares doesn't exist before 0.17
@@ -175,7 +179,77 @@ def linreg(X, Y, verbose=True):
     return a, b, Var_a, Var_b
 # end def linreg
 
+
+def weightedPolyfit(xvar, yvar, xo, vary=None, deg=1, nargout=2):
+    if vary is None:    
+        weights = _np.ones_like(yvar)
+    else:
+        weights = 1.0/_np.sqrt(vary)
+    # endif
+
+    af, Vcov = _np.polyfit(xvar, yvar, deg=deg, full=False, w=weights, cov=True)
+
+    if nargout == 0:
+        return af, Vcov
+    # endif
+
+    def _func(af, xvec):
+        yf, _, _ = _ms.model_poly(xvec, af, npoly=deg)
+        return yf
+
+    _, gvec, info = _ms.model_poly(xo, af, npoly=deg)
+    # The g-vector contains the partial derivatives used for error propagation
+    # f = a1*x^2+a2*x+a3
+    # dfda1 = x^2;
+    # dfda2 = x;
+    # dfda3 = 1;
+    # gvec(1,1:nx) = XX**2;
+    # gvec(2,1:nx) = XX   ;
+    # gvec(3,1:nx) = 1;        
+        
+    fitter = fitNL(xvar, yvar, vary, af0=af, func=_func, fjac=None)
+    fitter.af = af
+    fitter.covmat = Vcov
+    varyf = fitter.properror(xo, gvec)
+    yf = fitter.mfit
     
+    if nargout == 2:
+        return yf, varyf
+
+    elif nargout == 4:
+
+        def _derivfunc(af, xvec):
+            dydx, _, _ = _ms.model_poly(xvec, af, npoly=deg-1)
+            return dydx
+            
+        # The g-vector for the derivative, ex for quadratic:
+        # dfdx = 2*a1*x+a2
+        # dfda1 = 2*x;
+        # dfda2 = 1;
+        # gvec(1,1:nx) = 2*XX
+        # gvec(2,1:nx) = 1.0   
+    
+        gvec = _np.zeros((deg, len(xo)), dtype=_np.float64)
+        for ii in range(deg):  # ii=1:num_fit
+            # kk = num_fit - (ii + 1)
+            kk = deg - (ii + 1)
+            gvec[ii, :] = (kk+1)*xo**kk
+        # endfor
+
+        af = _np.polyder(af, m=1)
+        fitter = fitNL(xvar, yvar, vary, af0=af, func=_derivfunc, fjac=None)
+        fitter.af = af  # first derivative
+
+        Vcov = _np.atleast_3d(Vcov)    
+        fitter.covmat = _np.squeeze(Vcov[:-1, :-1, :])
+    
+        vardydf = fitter.properror(xo, gvec)
+        dydf = fitter.mfit
+        # dydf = info.dchidx
+        
+        return yf, varyf, dydf, vardydf
+# end def weightedPolyfit    
+        
 # ======================================================================== #
 
 
