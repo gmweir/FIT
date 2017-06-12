@@ -16,12 +16,14 @@ from scipy.optimize import curve_fit, leastsq
 import matplotlib.pyplot as _plt
 import numpy as _np 
 
+##  For local testing
 #from pybaseutils.Struct import Struct
-#from pybaseutils import utils as _ut   # for testing
+#from pybaseutils import utils as _ut   
+#from pybaseutils.FIT import model_spec as _ms
 
+#  For normal (non-circular import) use
 from ..Struct import Struct
 from .. import utils as _ut   # for normal use
-
 from . import model_spec as _ms
 
 # ==== #
@@ -121,9 +123,65 @@ def piecewise_2line(x, x0, y0, k1, k2):
     
 # ========================================================================== #
 
+#def linreg(X, Y, verbose=True, varY=None, varX=None, cov=False, xo=None):
+#    """
+#
+#    """
+#    N = len(X)        
+#    if len(X) != len(Y):  raise ValueError('unequal length')    
+#
+#    if varX is not None:
+#        p, _ = linreg(X, Y, varY=varY)
+#        varY += _np.polyval( _np.asarray(_np.polyder(_np.poly1d(p))), X)*varX
+#    # endif       
+#
+#    X = _np.atleast_2d(X)
+#    Y = _np.atleast_2d(Y)
+#    if _np.size(X, axis=0) == 1:   X = X.T  # endif
+#    if _np.size(Y, axis=0) == 1:   Y = Y.T  # endif
+#    
+#    if varY is None:
+#        W = _np.ones_like(Y)
+#    else:
+#        varY = _np.atleast_2d(varY)
+#        if _np.size(varY, axis=0) == 1:   varY = varY.T  # endif
+#
+#        W = 1.0/varY
+#        W /= _np.sum(W)/N   # normalized
+#    # endif    
+#
+#    W = _np.eye(N)*W
+#    X = _np.hstack((_np.ones((N,1), dtype=float), X))
+#    
+#    # Model parameters
+#    p = _np.dot( _np.linalg.pinv(_np.dot(X.T, _np.dot(W, X))), 
+#                 _np.dot(X.T, _np.dot(W, Y)) )
+#   
+#    # Variance in residuals
+#    ss = _np.dot(_np.sqrt(varY.T), _np.dot(W, _np.sqrt(varY))) / (N-2)
+#    
+#    # Variance in model parameters
+#    varP = ss*_np.linalg.pinv(_np.dot( X.T, _np.dot(W, X)))
+#
+#    if xo is not None:
+#        xo = _np.atleast_2d(xo)
+#        if _np.size(xo, axis=0) == 1:   xo = xo.T  # endif
+#    
+#        # Evalulate model at measurement locations
+#        Yo = _np.dot(p.T, xo)
+#    
+#        # Return the evaluated function with propagated variance
+#        varYo = _np.dot(_np.hstack((1.0,xo.T)), _np.dot(varP, _np.vstack((1.0, xo))))
+#        varYo += ss
+#        
+#        return Yo, varYo
+#    elif cov:
+#        return p, varP
+#    else:
+#        return p[0], p[1], varP[0], varP[1]
+## end if
 
-
-def linreg(X, Y, verbose=True):
+def linreg(X, Y, verbose=True, varY=None, varX=None, cov=False, plotit=False):
     """
     Returns coefficients to the regression line "y=ax+b" from x[] and
     y[].  Basically, solves
@@ -146,27 +204,49 @@ def linreg(X, Y, verbose=True):
         N, a, b, R^2, s^2,
     which are useful in assessing the confidence of estimation.
     """
-    if len(X) != len(Y):  raise ValueError('unequal length')
+    N = len(X)        
+    if len(X) != len(Y):  raise ValueError('unequal length')    
 
-    N = len(X)
-    Sx = Sy = Sxx = Syy = Sxy = 0.0
-    for x, y in zip(X, Y):
-        Sx += x
-        Sy += y
-        Sxx += x*x
-        Syy += y*y
-        Sxy += x*y
-    det = Sxx * N - Sx * Sx
-    a, b = (Sxy * N - Sy * Sx)/det, (Sxx * Sy - Sx * Sxy)/det
+    if varX is not None:
+        a, b, _, _ = linreg(X, Y, varY=varY)
+        varY += a*varX
+    # endif       
+
+    if varY is None:
+        weights = _np.ones_like(Y)
+    else:
+        weights = 1.0/varY
+#        weights /= _np.sum(1.0/varY)   # normalized
+    # endif
+
+    Sw = Sx = Sy = Sxx = Syy = Sxy = 0.0
+    for x, y, w in zip(X, Y, weights):
+        Sw += w
+        Sx += w*x
+        Sy += w*y
+        Sxx += w*x*x
+        Syy += w*y*y
+        Sxy += w*x*y
+    det = Sxx * Sw - Sx * Sx         # delta
+    a, b = (Sxy * Sw - Sy * Sx)/det, (Sxx * Sy - Sx * Sxy)/det
 
     meanerror = residual = 0.0
-    for x, y in zip(X, Y):
-        meanerror += (y - Sy/N)**2
-        residual += (y - a * x - b)**2
-    RR = 1 - residual/meanerror
-    ss = residual / (N-2)
-    Var_a, Var_b = ss * N / det, ss * Sxx / det
+    for x, y, w in zip(X, Y, weights):
+#        meanerror += (w*y - Sy/Sw)**2.0
+#        residual += (w/Sw)*(y - a * x - b)**2.0
+        meanerror += (y - _np.mean(Y))**2.0
+        residual += (y - a * x - b)**2.0
+    RR = 1.0 - residual/meanerror
+    ss = residual / (N-2.0)
+    Var_a, Var_b = ss * Sw / det, ss * Sxx / det
 
+    Cov_ab = _np.sqrt(Var_a)*_np.sqrt(Var_b)
+    Cov_ab *= RR
+    
+#    tst = _np.cov( _np.vstack((X, Y)) )
+#    corrcoef = tst[0,1]/_np.sqrt(tst[0,0]*tst[1,1])
+#    Cov_ab *= corrcoef
+    
     if verbose:
         print("y=ax+b")
         print("N= %d" % N )
@@ -174,21 +254,74 @@ def linreg(X, Y, verbose=True):
         print("b= %g \\pm t_{%d;\\alpha/2} %g" % (b, N-2, _np.sqrt(Var_b)) )
         print("R^2= %g" % RR)
         print("s^2= %g" % ss)
+        print(r"$\chi^2_\nu$ = %g, $\nu$ = %g" % (ss*1.0 / (_np.sum(weights)/N), N-2))
     # end if
-    
-    return a, b, Var_a, Var_b
+        
+    if plotit:
+        xo = _np.linspace(_np.min(X)-_np.abs(0.05*_np.min(X)), _np.max(X)+_np.abs(0.05*_np.min(X)))
+
+        _plt.figure()
+        if varX is not None:
+            _plt.errorbar(X.flatten(), Y.flatten(), 
+                          xerr=_np.sqrt(varX.flatten()), 
+                          yerr=_np.sqrt(varY.flatten()), fmt='bo' )
+        elif varY is not None:
+            _plt.errorbar(X.flatten(), Y.flatten(), 
+                          yerr=_np.sqrt(varY.flatten()), fmt='bo' )
+        else: 
+            _plt.plot(X.flatten(), Y.flatten(), 'bo')
+        # endif
+        yo = a*xo+b
+        vyo = Var_a*(xo)**2.0 + Var_b*(1.0)**2.0
+#        vyo += 2.0*Cov_ab
+        _plt.plot(xo, yo, 'r-')
+        _plt.plot(xo, yo+_np.sqrt(vyo), 'r--')
+        _plt.plot(xo, yo-_np.sqrt(vyo), 'r--')
+        _plt.title('Linear regression')
+    # endif
+        
+    if cov:
+        return _np.asarray([a, b]), _np.asarray([[Var_a, Cov_ab],[Cov_ab, Var_b]])         
+    else:
+        return a, b, Var_a, Var_b
+    # end if
 # end def linreg
 
 
 def weightedPolyfit(xvar, yvar, xo, vary=None, deg=1, nargout=2):
     if vary is None:    
         weights = _np.ones_like(yvar)
-    else:
-        weights = 1.0/_np.sqrt(vary)
+    # end if
+    
+    if (vary==0).any():
+        vary[vary==0] = _np.finfo(float).eps
     # endif
+        
+    weights = 1.0/vary
+        
+    # intel compiler error with infinite weight (zero variance ... fix above)        
+#    if _np.isinf(weights).any():
+#        xvar = xvar[~_np.isinf(weights)]
+#        yvar = yvar[~_np.isinf(weights)]
+#        weights = weights[~_np.isinf(weights)]
 
-    af, Vcov = _np.polyfit(xvar, yvar, deg=deg, full=False, w=weights, cov=True)
-
+    try:        
+        af, Vcov = _np.polyfit(xvar, yvar, deg=deg, full=False, w=weights, cov=True)
+    except:
+        print('err check')
+        
+    # end try
+#    if (len(xvar) - deg - 2.0) == 0.0:
+    if _np.isinf(Vcov).all():
+        print('insufficient data points (d.o.f.) for true covariance calculation in fitting routine')
+        # this concatenation effectively reduces the number of degrees of freedom ... it's a kluge
+        af, Vcov = _np.polyfit(_np.hstack((xvar, xvar[-1:])), 
+                               _np.hstack((yvar, yvar[-1:])), 
+                               deg=deg, full=False, 
+                               w=_np.hstack( (weights, _np.finfo(float).eps) ), 
+                               cov=True)        
+    # endif
+        
     if nargout == 0:
         return af, Vcov
     # endif
@@ -219,7 +352,10 @@ def weightedPolyfit(xvar, yvar, xo, vary=None, deg=1, nargout=2):
     elif nargout == 4:
 
         def _derivfunc(af, xvec):
-            dydx, _, _ = _ms.model_poly(xvec, af, npoly=deg-1)
+            if deg-1 == 0:
+                dydx = af[0]*_np.ones_like(xvec)
+            else:                
+                dydx, _, _ = _ms.model_poly(xvec, af, npoly=deg-1)
             return dydx
             
         # The g-vector for the derivative, ex for quadratic:
@@ -368,7 +504,7 @@ def fit_profile(roa, ne, varne, rvec, loggradient=True):
 # ======================================================================== #
 
     
-def deriv_bsgaussian(xvar, u, varu, axis=0, nmonti=300, sigma=1, mode='nearest'):
+def deriv_bsgaussian(xvar, u, varu, axis=0, nmonti=300, sigma=1, mode='nearest', derivorder=1):
     """
     function [dudx, vardudx] = deriv_bsgaussian(xvar, u, varu, axis=1, 
                            nmonti=300, derivorder=1, sigma=1, mode='nearest')
@@ -386,7 +522,10 @@ def deriv_bsgaussian(xvar, u, varu, axis=0, nmonti=300, sigma=1, mode='nearest')
         sigma - Breadth of the Gaussian kernel default: sigma=1 
         mode - Extrapolation method at boundary when the Guassian kernel 
                passes the convex hull of the data.  default: mode='nearest'
-
+        derivorder - order of the derivative.  default: derivorder=1
+            derivorder = 0 - No derivative!  Just a convolution with a gaussian (smoothing)
+            derivorder = 1 - First derivative!  Convolution with derivative of a gaussian
+            derivorder = 2 or 3 ... second and third derivatives (higher order not supported)
     Outputs
         dudx - derivative of u wrt x of order 'derivorder', 
                     derivorder = 2, outputs d2udx2
@@ -416,7 +555,7 @@ def deriv_bsgaussian(xvar, u, varu, axis=0, nmonti=300, sigma=1, mode='nearest')
     #============================================================== #
     # Input data formatting.  All of this is undone before output    
     # xvar, _, _ = _derivative_inputcondition(xvar)
-    derivorder=1
+
     u, ush, transp = _derivative_inputcondition(u)
     varu, _, _ = _derivative_inputcondition(varu)
     if transp:
@@ -475,21 +614,23 @@ def deriv_bsgaussian(xvar, u, varu, axis=0, nmonti=300, sigma=1, mode='nearest')
         vardudx = vardudx.T
     # endif
        
-    # Do the derivative part now
-#    dx = xvar[1]-xvar[0]
-    dx = _np.concatenate((_np.diff(xvar[:2], axis=axis),
-                          0.5*(_np.diff(xvar[:-1], axis=axis)+_np.diff(xvar[1:], axis=axis)), 
-                          _np.diff(xvar[-2:], axis=axis)))        
-
-    dx = _np.atleast_2d(dx).T
-    # if nsh[1]>1:
-    if _np.shape(dx) != _np.shape(dudx):
-        dx = _np.tile(dx, (1,nsh[1]))
-    # endif
-
-    vardudx /= dx**2.0
-    dudx /= dx
-
+    if derivorder > 0:   
+        # Do the derivative part now
+    #    dx = xvar[1]-xvar[0]
+        dx = _np.concatenate((_np.diff(xvar[:2], axis=axis),
+                              0.5*(_np.diff(xvar[:-1], axis=axis)+_np.diff(xvar[1:], axis=axis)), 
+                              _np.diff(xvar[-2:], axis=axis)))        
+    
+        dx = _np.atleast_2d(dx).T
+        # if nsh[1]>1:
+        if _np.shape(dx) != _np.shape(dudx):
+            dx = _np.tile(dx, (1,nsh[1]))
+        # endif
+    
+        vardudx /= dx**2.0
+        dudx /= dx
+    # end if
+        
     # Match the input data shape in the output data
     vardudx = vardudx.reshape(ush)
     dudx = dudx.reshape(ush)
@@ -1909,9 +2050,8 @@ def fit_TSneprofile(QTBdat, rvec, loggradient=True, plotit=False):
 #    return pFit, vF, info 
 
 # ------------------------------------------------------------------------ #
-    
-def test_derivatives(): 
 
+def test_dat(multichannel=True):
 #    x = _np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
 #                  dtype=_np.float64)
 #    y = _np.array([5, 7, 9, 11, 13, 15, 28.92, 42.81, 56.7, 70.59, 84.47,
@@ -1937,11 +2077,31 @@ def test_derivatives():
     y = y[isort]
     vary = vary[isort]
 
-    y = _np.transpose( _np.vstack((y, _np.sin(x))) )
-    vary = _np.transpose(_np.vstack((vary, (1e-5+0.1*_np.sin(x))**2.0)))   
+    if multichannel:
+        y = _np.transpose( _np.vstack((y, _np.sin(x))) )
+        vary = _np.transpose(_np.vstack((vary, (1e-5+0.1*_np.sin(x))**2.0)))   
+    
+#        y = _np.hstack((y, _np.sin(x)))    
+#        vary = _np.hstack((vary, 0.1*_np.sin(x)))    
+    # endif
+    
+    return x, y, vary
 
-#    y = _np.hstack((y, _np.sin(x)))    
-#    vary = _np.hstack((vary, 0.1*_np.sin(x)))    
+
+def test_linreg():
+    x = _np.linspace(-2, 15, 100)
+    af = [0.2353335600009, 3.1234563234]
+    y =  af[0]* x + af[1] 
+    y += 0.1*_np.sin(0.53 * 2*_np.pi*x/(_np.max(x)-_np.min(x)))
+#    vary = None
+    vary = ( 0.3*_np.mean(y)*_np.random.normal(0.0, 1.0, len(y)) )**2.0
+
+    a, b, Var_a, Var_b = linreg(x, y, verbose=True, varY=vary, varX=None, cov=False, plotit=True)
+    print(a-af[0], b-af[1] )    
+    
+def test_derivatives(): 
+
+    x, y, vary = test_dat(multichannel=True)
     
     # ======================= # 
     
@@ -1968,6 +2128,9 @@ def test_derivatives():
 
     dydx, vardydx = deriv_bsgaussian(x, y, vary, axis=0, nmonti=300,
                                      sigma=0.8, mode='nearest')
+
+    yxp, yxvp = deriv_bsgaussian(x, y, vary, axis=0, nmonti=300,
+                                 sigma=0.8, mode='nearest', derivorder=0)
                                      
 #
 #    dydx0, vardydx0 = findiff1d(x, y, vary, order=1)
@@ -2010,9 +2173,9 @@ def test_derivatives():
              x, yx+_np.sqrt(yxv), 'k--',    
              x, yx-_np.sqrt(yxv), 'k--')     
 #
-#    ax1.plot(x, yxp, 'g-',
-#             x, yxp+_np.sqrt(yxvp), 'g--',    
-#             x, yxp-_np.sqrt(yxvp), 'g--')     
+    ax1.plot(x, yxp, 'g-',
+             x, yxp+_np.sqrt(yxvp), 'g--',    
+             x, yxp-_np.sqrt(yxvp), 'g--')     
 
              
 #    ax1.plot(x, yx0, 'r-',
@@ -2077,7 +2240,8 @@ def test_derivatives():
     
     
 if __name__=="__main__":
-    test_derivatives()
+    test_linreg()
+#    test_derivatives()
 
 #    x = _np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10 ,11, 12, 13, 14, 15], dtype=float)
 #    y = _np.array([5, 7, 9, 11, 13, 15, 28.92, 42.81, 56.7, 70.59, 84.47, 98.36, 112.25, 126.14, 140.03])
