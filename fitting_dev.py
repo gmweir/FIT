@@ -882,100 +882,14 @@ def gaussian_peak_width(tt,sig_in,param):
 
 # ======================================================================== #
 
-# Set the plasma density, temperature, and Zeff profiles (TRAVIS INPUTS)      
 def qparab_fit(XX, *aa, **kwargs):
-    """
-    ex// ne_parms = [0.30, 0.002, 2.0, 0.7, -0.24, 0.30]
-    This subfunction calculates the quasi-parabolic fit
-    Y/Y0 = aa[1]-aa[4]+(1-aa[1]+aa[4])*(1-xx^aa[2])^aa[3]+aa[4]*(1-exp(-xx^2/aa[5]^2)) 
-        xx - r/a
-    aa[0] - Y0 - function value on-axis
-    aa[1] - gg - Y1/Y0 - function value at edge over core
-    aa[2],aa[3]-  pp, qq - power scaling parameters
-    aa[4],aa[5]-  hh, ww - hole depth and width
-    """
-    options = {}
-    options.update(kwargs)
-    nohollow = options.get('nohollow', False)
-    if len(aa)>6:
-        nohollow = aa.pop(6)
-    XX = _np.abs(XX)
-    if (type(aa) is tuple) and (len(aa) == 1):
-        aa = aa[0]
-    # endif
-    aa = _np.asarray(aa, dtype=_np.float64)
-    if nohollow and (_np.size(aa)==4):
-        aa = _np.vstack((aa,_np.atleast_1d(0.0)))
-        aa = _np.vstack((aa,_np.atleast_1d(1.0)))
-    elif nohollow:
-        aa[4] = 0.0
-        aa[5] = 1.0
-    # endif
-    prof = aa[0]*( aa[1]-aa[4]
-                   + (1.0-aa[1]+aa[4])*_np.abs(1.0-XX**aa[2])**aa[3]
-                   + aa[4]*(1.0-_np.exp(-XX**2.0/aa[5]**2.0)) )
-    return prof
-# end def qparab_fit
+    return _ms.qparab(XX, *aa, **kwargs)
 
 def dqparabdx(XX, aa=[0.30, 0.002, 2.0, 0.7, -0.24, 0.30], nohollow=False):
-    """    
-    ex// ne_parms = [0.30, 0.002 2.0 0.7 -0.24 0.30]
-    This subfunction calculates the quasi-parabolic fit
-    Y/Y0 = aa[1]-aa[4]+(1-aa[1]+aa[4])*(1-xx^aa[2])^aa[3]+aa[4]*(1-exp(-xx^2/aa[5]^2)) 
-        xx - r/a
-    aa[0] - Y0 - function value on-axis
-    aa[1] - gg - Y1/Y0 - function value at edge over core
-    aa[2],aa[3]-  pp, qq - power scaling parameters
-    aa[4],aa[5]-  hh, ww - hole depth and width
-    """    
-    XX = _np.abs(XX)
-    aa = _np.asarray(aa,dtype=_np.float64)
-    if nohollow and (_np.size(aa)==4):
-        aa = _np.vstack((aa,_np.atleast_1d(0.0)))
-        aa = _np.vstack((aa,_np.atleast_1d(1.0)))
-    elif nohollow:
-        aa[4] = 0.0
-        aa[5] = 1.0
-    # endif  
-    dpdx = aa[0]*( (1.0-aa[1]+aa[4])*(-1.0*aa[2]*XX**(aa[2]-1.0))*aa[3]*(1.0-XX**aa[2])**(aa[3]-1.0)
-                   - aa[4]*(-2.0*XX/aa[5]**2.0)*_np.exp(-XX**2.0/aa[5]**2.0) )
-    return dpdx
-# end def dqparabdx
-    
+    return _ms.deriv_qparab(XX, aa, nohollow)
+        
 def dqparabda(XX, aa=[0.30, 0.002, 2.0, 0.7, -0.24, 0.30], nohollow=False):
-    """    
-    ex// ne_parms = [0.30, 0.002 2.0 0.7 -0.24 0.30]
-    This subfunction calculates the quasi-parabolic fit
-    Y/Y0 = aa[1]-aa[4]+(1-aa[1]+aa[4])*(1-xx^aa[2])^aa[3]+aa[4]*(1-exp(-xx^2/aa[5]^2)) 
-        xx - r/a
-    aa[0] - Y0 - function value on-axis
-    aa[1] - gg - Y1/Y0 - function value at edge over core
-    aa[2],aa[3]-  pp, qq - power scaling parameters
-    aa[4],aa[5]-  hh, ww - hole depth and width
-    """    
-    XX = _np.abs(XX)
-    aa = _np.asarray(aa,dtype=_np.float64)
-    if nohollow and (_np.size(aa)==4):
-        aa = _np.vstack((aa,_np.atleast_1d(0.0)))
-        aa = _np.vstack((aa,_np.atleast_1d(1.0)))
-    elif nohollow:
-        aa[4] = 0.0
-        aa[5] = 1.0
-    # endif    
-    gvec = _np.zeros( (6,_np.size(XX)), dtype=_np.float64)
-    gvec[0,:] = ( aa[1]-aa[4]
-                   + (1.0-aa[1]+aa[4])*_np.abs(1.0-XX**aa[2])**aa[3]
-                   + aa[4]*(1.0-_np.exp(-XX**2.0/aa[5]**2.0)) )    
-    gvec[1,:] = aa[0]
-    gvec[2,:] = aa[0]*(1.0-aa[1]+aa[4])*(-1.0*_np.log(XX)*XX**aa[2])*aa[2]*_np.abs(1.0-XX**aa[2])**(aa[3]-1.0)
-    gvec[3,:] = aa[0]*(1.0-aa[1]+aa[4])*_np.log(1.0-XX**aa[2])*_np.abs(1.0-XX**aa[2])**aa[3]
-    gvec[4,:] = aa[0]*( -1.0
-                   + _np.abs(1.0-XX**aa[2])**aa[3]
-                   + (1.0-_np.exp(-XX**2.0/aa[5]**2.0)) )
-    gvec[5,:] = aa[0]*aa[4]*( -1.0*_np.exp(-XX**2.0/aa[5]**2.0) )*( 2.0*XX**2.0/aa[5]**3 )                        
-
-    return gvec
-# end def dqparabda
+    return _ms.partial_qparab(XX, aa, nohollow)    
 
 # ========================= #
 
@@ -1642,7 +1556,7 @@ class fitNL(Struct):
         
 # end class fitNL        
         
-# ------------------------------------------------------------------------- #
+# ======================================================================= #
         
 
 def savitzky_golay(y, window_size, order, deriv=0):
@@ -1717,6 +1631,157 @@ def savitzky_golay(y, window_size, order, deriv=0):
     y = _np.concatenate((firstvals, y, lastvals))
     return _np.convolve( m, y, mode='valid')
 
+
+# ======================================================================= #
+
+def fit_TSneprofile(QTBdat, rvec, loggradient=True, plotit=False):
+   
+    roa = QTBdat['roa']
+    ne = QTBdat['ne']
+    varn =  _np.sqrt(QTBdat['varNL']*QTBdat['varNH'])
+    # ne *= 1e-20
+    # varn *= (1e-20)**2.0
+
+    def fitqparab(af, XX):
+        return qparab_fit(XX, af)
+
+    def fitdqparabdx(af, XX):
+        return dqparabdx(XX, af)
+        
+    af0 = _np.asarray([0.30, 0.002, 2.0, 0.7, -0.24, 0.30], dtype=_np.float64)
+    NLfit = fitNL(roa, 1e-20*ne, 1e-40*varn, af0, fitqparab)
+    NLfit.run()
+
+    nef, gvec, info = _ms.model_qparab(_np.abs(rvec), NLfit.af)    
+    varnef = NLfit.properror(_np.abs(rvec), gvec)
+    varnef = varnef.copy()
+    
+    NLfit.func = fitdqparabdx   
+    dlnnedrho = info.dprofdx / nef
+    vardlnnedrho = NLfit.properror(_np.abs(rvec), info.dgdx)    
+    vardlnnedrho = (dlnnedrho)**2.0 * ( vardlnnedrho/(info.dprofdx**2.0) + varnef/(nef**2.0)  )    
+
+    # Convert back to absolute units (particles per m-3 not 1e20 m-3)
+    nef = 1e20*nef
+    varnef = 1e40*varnef    
+
+#    nef = 1e20*fitqparab(NLfit.af, _np.abs(rvec))
+#    varnef = (0.05*nef)**2.0   # uncertainties in Thomson are too small to be real
+
+#    NLfit.bootstrapper(_np.abs(rvec))
+#    varnef = 1e40*NLfit.vfit
+#    nef = 1e20*NLfit.mfit
+
+#    dlnnedrho = dqparabdx(_np.abs(rvec), aa=NLfit.af) 
+#    dlnnedrho /= nef
+
+    # ========================= #
+
+#    isort = _np.argsort(_np.abs(rvec))
+#    iunsort = _np.argsort(isort)
+#    rtemp, idx, unidx = _np.unique(_np.abs(rvec[isort]), return_index=True,
+#                                           return_inverse=True)
+#    nef = nef[isort][idx]
+#    varnef = varnef[isort][idx]
+#    
+#    varlogne = varnef / nef**2.0
+#    logne = _np.log(nef)
+#    if loggradient:
+#        dlnnedrho, vardlnnedrho = _fd.findiffnp(rtemp, logne, varlogne, order=1)
+#    else:
+#        dlnnedrho, vardlnnedrho = _fd.findiffnp(rtemp, nef, varnef, order=1)
+#    
+#    # endif          
+#    nef = nef[unidx][iunsort]
+#    varnef = varnef[unidx][iunsort]
+#    dlnnedrho = dlnnedrho[unidx][iunsort]
+#    vardlnnedrho = vardlnnedrho[unidx][iunsort]
+#    logne = logne[unidx][iunsort]
+#    varlogne = varlogne[unidx][iunsort]
+
+
+#    isort = _np.argsort(_np.abs(rvec))
+#    iunsort = _np.argsort(isort) # _np.asarray(range(len(rvec)), dtype=int) #    iunsort = iunsort[isort]
+#    rtemp = _np.abs(rvec[isort])
+#    nef = nef[isort]
+#    varnef = varnef[isort]
+
+    varlogne = varnef / nef**2.0
+    logne = _np.log(nef)
+#    if loggradient:
+#        dlnnedrho, vardlnnedrho = _fd.findiffnp(rtemp, logne, varlogne, order=1)
+#    else:
+#        dlnnedrho, vardlnnedrho = _fd.findiffnp(rtemp, nef, varnef, order=1)
+#    
+#    # endif          
+#    nef = nef[iunsort]
+#    varnef = varnef[iunsort]
+#    dlnnedrho = dlnnedrho[iunsort]
+#    vardlnnedrho = vardlnnedrho[iunsort]
+#    logne = logne[iunsort]
+#    varlogne = varlogne[iunsort]
+    
+    # ================== #
+
+    if plotit:
+        _plt.figure()
+        ax1 = _plt.subplot(3,1,1)
+        ax2 = _plt.subplot(3,1,2, sharex=ax1)
+        ax3 = _plt.subplot(3,1,3, sharex=ax1)
+        
+        ax1.grid()
+        ax2.grid()
+        ax3.grid()
+
+        ax1.set_title(r'Density Profile Info')
+        ax1.set_ylabel(r'$n_\mathrm{e}\ \mathrm{in}\ 10^{20}\mathrm{m}^{-3}$')
+        ax2.set_ylabel(r'$\ln(n_\mathrm{e})$')   # ax2.set_ylabel(r'ln(n$_e$[10$^20$m$^-3$])')
+        ax3.set_ylabel(r'$\ln(n_\mathrm{e})^{-1}$')
+        ax3.set_xlabel(r'$r/a$')
+
+        ax1.errorbar(roa, 1e-20*ne, yerr=1e-20*_np.sqrt(varn), fmt='bo', color='b' )
+        ax2.errorbar(roa, _np.log(ne), yerr=_np.sqrt(varn/ne**2.0), fmt='bo', color='b' )
+
+        ax1.plot(rvec, 1e-20*nef, 'b-', lw=2)
+        ax1.plot(rvec, 1e-20*(nef+_np.sqrt(varnef)), 'b--', lw=1)
+        ax1.plot(rvec, 1e-20*(nef-_np.sqrt(varnef)), 'b--', lw=1)
+        ax2.plot(rvec, logne, 'b-', lw=2)
+        ax2.plot(rvec, logne+_np.sqrt(varlogne), 'b--', lw=1)
+        ax2.plot(rvec, logne-_np.sqrt(varlogne), 'b--', lw=1)
+
+        # _, _, nint, nvar = _ut.trapz_var(rvec, dlnnedrho, vary=vardlnnedrho)
+
+        if loggradient:
+            idx = _np.where(_np.abs(rvec) < 0.05)
+            plotdlnnedrho = dlnnedrho.copy()
+            plotvardlnnedrho = vardlnnedrho.copy()
+            plotdlnnedrho[idx] = _np.nan
+            plotvardlnnedrho[idx] = _np.nan
+            ax3.plot(rvec, -plotdlnnedrho, 'b-',
+                     rvec, -plotdlnnedrho+_np.sqrt(plotvardlnnedrho), 'b--',
+                     rvec, -plotdlnnedrho-_np.sqrt(plotvardlnnedrho), 'b--')
+
+            # nint += (_np.log(ne[0]) - _ut.interp(rvec, nint, xo=roa[0]))
+            # nint = _np.exp(nint)
+        else:
+            vardlnnedrho = (dlnnedrho/logne)**2.0 * (vardlnnedrho/dlnnedrho**2.0+varlogne/logne**2.0)
+            dlnnedrho = dlnnedrho/logne
+
+            ax3.plot(rvec, -dlnnedrho, 'b-',
+                     rvec, -dlnnedrho+_np.sqrt(vardlnnedrho), 'b--',
+                     rvec, -dlnnedrho-_np.sqrt(vardlnnedrho), 'b--')
+
+            # nint += (ne[0] - _ut.interp(rvec, nint, xo=roa[0]))
+        # end if
+        # ax1.plot(rvec, 1e-20*nint, 'b--', lw=1)
+        # ax2.plot(rvec, _np.log(nint), 'b--', lw=1)
+        _plt.tight_layout()
+
+    # end if plotit
+
+    # ==================== #
+
+    return logne, varlogne, dlnnedrho, vardlnnedrho
 
 # ------------------------------------------------------------------------- #
 # ------------------------------------------------------------------------- #

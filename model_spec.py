@@ -50,29 +50,38 @@ def model_qparab(XX, af=None):
     if _np.isfinite(af).any() == 0:
         print("checkit!")
 #    print(_np.shape(af))
-    prof = af[0]*(af[1]-af[4]
-                  + (1.0-af[1]+af[4])*_np.abs(1.0-XX**af[2])**af[3]
-                  + af[4]*(1.0-_np.exp(-XX**2.0/af[5]**2.0)))
+        
+    prof = qparab(XX, af)        
 
-    gvec = _np.zeros((6, _np.size(XX)), dtype=_np.float64)
-    gvec[0, :] = (af[1]-af[4]
-                  + (1.0-af[1]+af[4])*_np.abs(1.0-XX**af[2])**af[3]
-                  + af[4]*(1.0-_np.exp(-XX**2.0/af[5]**2.0)))
-    gvec[1, :] = af[0]
-    gvec[2, :] = (af[0]*(1.0-af[1]+af[4])*(-1.0*_np.log(XX)*XX**af[2])
-                  * af[2]*_np.abs(1.0-XX**af[2])**(af[3]-1.0))
-    gvec[3, :] = (af[0]*(1.0-af[1]+af[4])*_np.log(1.0-XX**af[2])
-                  * _np.abs(1.0-XX**af[2])**af[3])
-    gvec[4, :] = (af[0]*(-1.0 + _np.abs(1.0-XX**af[2])**af[3]
-                  + (1.0-_np.exp(-XX**2.0/af[5]**2.0))))
-    gvec[5, :] = (af[0]*af[4]*(-1.0*_np.exp(-XX**2.0/af[5]**2.0))
-                  * (2.0*XX**2.0/af[5]**3))
-
-    info.dprofdx = (af[0]*((1.0-af[1]+af[4])*(-1.0*af[2]*XX**(af[2]-1.0))
-                    * af[3]*(1.0-XX**af[2])**(af[3]-1.0)
-                    - af[4]*(-2.0*XX/af[5]**2.0)*_np.exp(-XX**2.0/af[5]**2.0)))
-
-#    
+    gvec = partial_qparab(XX, af)         
+    
+    info.dprofdx = deriv_qparab(XX, af)
+    
+    info.dgdx = partial_deriv_qparab(XX, af)
+    
+#    prof = af[0]*(af[1]-af[4]
+#                  + (1.0-af[1]+af[4])*_np.abs(1.0-XX**af[2])**af[3]
+#                  + af[4]*(1.0-_np.exp(-XX**2.0/af[5]**2.0)))
+#
+#    gvec = _np.zeros((6, _np.size(XX)), dtype=_np.float64)
+#    gvec[0, :] = (af[1]-af[4]
+#                  + (1.0-af[1]+af[4])*_np.abs(1.0-XX**af[2])**af[3]
+#                  + af[4]*(1.0-_np.exp(-XX**2.0/af[5]**2.0)))
+#    gvec[1, :] = af[0]
+#    gvec[2, :] = (af[0]*(1.0-af[1]+af[4])*(-1.0*_np.log(XX)*XX**af[2])
+#                  * af[2]*_np.abs(1.0-XX**af[2])**(af[3]-1.0))
+#    gvec[3, :] = (af[0]*(1.0-af[1]+af[4])*_np.log(1.0-XX**af[2])
+#                  * _np.abs(1.0-XX**af[2])**af[3])
+#    gvec[4, :] = (af[0]*(-1.0 + _np.abs(1.0-XX**af[2])**af[3]
+#                  + (1.0-_np.exp(-XX**2.0/af[5]**2.0))))
+#    gvec[5, :] = (af[0]*af[4]*(-1.0*_np.exp(-XX**2.0/af[5]**2.0))
+#                  * (2.0*XX**2.0/af[5]**3))
+#
+#    info.dprofdx = (af[0]*((1.0-af[1]+af[4])*(-1.0*af[2]*XX**(af[2]-1.0))
+#                    * af[3]*(1.0-XX**af[2])**(af[3]-1.0)
+#                    - af[4]*(-2.0*XX/af[5]**2.0)*_np.exp(-XX**2.0/af[5]**2.0)))
+#
+##    
 #    info.gdx = _np.zeros_like(info.dprofdx)
 #    info.gdx[0, :] = info.dprofdx / af[0]
 #    info.gdx[1, :] = (af[0]*((1.0-af[1]+af[4])*(-1.0*af[2]*XX**(af[2]-1.0))
@@ -83,6 +92,156 @@ def model_qparab(XX, af=None):
     return prof, gvec, info
 # end def model_qparab
 
+
+# Set the plasma density, temperature, and Zeff profiles (TRAVIS INPUTS)      
+def qparab(XX, *aa, **kwargs):
+    """
+    ex// ne_parms = [0.30, 0.002, 2.0, 0.7, -0.24, 0.30]
+    This subfunction calculates the quasi-parabolic fit
+    Y/Y0 = aa[1]-aa[4]+(1-aa[1]+aa[4])*(1-xx^aa[2])^aa[3]+aa[4]*(1-exp(-xx^2/aa[5]^2)) 
+        xx - r/a
+    aa[0] - Y0 - function value on-axis
+    aa[1] - gg - Y1/Y0 - function value at edge over core
+    aa[2],aa[3]-  pp, qq - power scaling parameters
+    aa[4],aa[5]-  hh, ww - hole depth and width
+    """
+    options = {}
+    options.update(kwargs)
+    nohollow = options.get('nohollow', False)
+    if len(aa)>6:
+        nohollow = aa.pop(6)
+    XX = _np.abs(XX)
+    if (type(aa) is tuple) and (len(aa) == 1):
+        aa = aa[0]
+    # endif
+    aa = _np.asarray(aa, dtype=_np.float64)
+    if nohollow and (_np.size(aa)==4):
+        aa = _np.vstack((aa,_np.atleast_1d(0.0)))
+        aa = _np.vstack((aa,_np.atleast_1d(1.0)))
+    elif nohollow:
+        aa[4] = 0.0
+        aa[5] = 1.0
+    # endif
+    prof = aa[0]*( aa[1]-aa[4]
+                   + (1.0-aa[1]+aa[4])*_np.abs(1.0-XX**aa[2])**aa[3]
+                   + aa[4]*(1.0-_np.exp(-XX**2.0/aa[5]**2.0)) )
+    return prof
+# end def qparab
+
+def deriv_qparab(XX, aa=[0.30, 0.002, 2.0, 0.7, -0.24, 0.30], nohollow=False):
+    """    
+    ex// ne_parms = [0.30, 0.002 2.0 0.7 -0.24 0.30]
+    This subfunction calculates the derivative of a quasi-parabolic fit
+    Y/Y0 = aa[1]-aa[4]+(1-aa[1]+aa[4])*(1-xx^aa[2])^aa[3]+aa[4]*(1-exp(-xx^2/aa[5]^2)) 
+        xx - r/a
+    aa[0] - Y0 - function value on-axis
+    aa[1] - gg - Y1/Y0 - function value at edge over core
+    aa[2],aa[3]-  pp, qq - power scaling parameters
+    aa[4],aa[5]-  hh, ww - hole depth and width
+    """    
+    XX = _np.abs(XX)
+    aa = _np.asarray(aa,dtype=_np.float64)
+    if nohollow and (_np.size(aa)==4):
+        aa = _np.vstack((aa,_np.atleast_1d(0.0)))
+        aa = _np.vstack((aa,_np.atleast_1d(1.0)))
+    elif nohollow:
+        aa[4] = 0.0
+        aa[5] = 1.0
+    # endif  
+    dpdx = aa[0]*( (1.0-aa[1]+aa[4])*(-1.0*aa[2]*XX**(aa[2]-1.0))*aa[3]*(1.0-XX**aa[2])**(aa[3]-1.0)
+                   - aa[4]*(-2.0*XX/aa[5]**2.0)*_np.exp(-XX**2.0/aa[5]**2.0) )
+
+    return dpdx
+# end def derive_qparab
+    
+def partial_qparab(XX,aa=[0.30, 0.002, 2.0, 0.7, -0.24, 0.30], nohollow=False):
+    """    
+    ex// ne_parms = [0.30, 0.002 2.0 0.7 -0.24 0.30]
+    This subfunction calculates the jacobian of a quasi-parabolic fit
+
+    quasi-parabolic fit:
+    Y/Y0 = aa[1]-aa[4]+(1-aa[1]+aa[4])*(1-xx^aa[2])^aa[3]+aa[4]*(1-exp(-xx^2/aa[5]^2)) 
+        xx - r/a
+    aa[0] - Y0 - function value on-axis
+    aa[1] - gg - Y1/Y0 - function value at edge over core
+    aa[2],aa[3]-  pp, qq - power scaling parameters
+    aa[4],aa[5]-  hh, ww - hole depth and width
+    """    
+    XX = _np.abs(XX)
+    aa = _np.asarray(aa,dtype=_np.float64)
+    if nohollow and (_np.size(aa)==4):
+        aa = _np.vstack((aa,_np.atleast_1d(0.0)))
+        aa = _np.vstack((aa,_np.atleast_1d(1.0)))
+    elif nohollow:
+        aa[4] = 0.0
+        aa[5] = 1.0
+    # endif    
+    Y0 = aa[0]
+    g = aa[1]
+    p = aa[2]
+    q = aa[3]
+    h = aa[4]
+    w = aa[5]
+        
+    gvec = _np.zeros( (6,_np.size(XX)), dtype=_np.float64)
+    gvec[0,:] = g-h+(1.0-g+h)*_np.abs(1.0-XX**p)**q + h*(1.0-_np.exp(-XX**2.0/w**2.0))    
+    gvec[1,:] = Y0*( 1.0-(1.0-XX**p)**q )    # aa[0]
+    gvec[2,:] = -1.0*Y0*q*(g-h-1.0)*(XX**p)*_np.log(XX)*((1-XX**p)**q)/(XX**p-1.0)
+    gvec[3,:] = Y0*(-g+h+1.0)*((1-XX**p)**q)*_np.log(1.0-XX**p)
+    gvec[4,:] = Y0*((1.0-XX**p)**q) - Y0*_np.exp(-(XX/w)**2.0)
+    gvec[5,:] = -2.0*h*(XX**2.0)*Y0*_np.exp(-(XX/w)**2.0) / w**3.0
+
+    return gvec
+# end def dqparabda
+    
+
+def partial_deriv_qparab(XX, aa=[0.30, 0.002, 2.0, 0.7, -0.24, 0.30], nohollow=False):
+    """    
+    ex// ne_parms = [0.30, 0.002 2.0 0.7 -0.24 0.30]
+    This subfunction calculates the jacobian of the derivative of a 
+    quasi-parabolic fit (partial derivatives of the derivative of a quasi-parabolic fit)
+
+    quasi-parabolic fit:
+    Y/Y0 = aa[1]-aa[4]+(1-aa[1]+aa[4])*(1-xx^aa[2])^aa[3]+aa[4]*(1-exp(-xx^2/aa[5]^2)) 
+        xx - r/a
+        
+    aa[0] - Y0 - function value on-axis
+    aa[1] - gg - Y1/Y0 - function value at edge over core
+    aa[2],aa[3]-  pp, qq - power scaling parameters
+    aa[4],aa[5]-  hh, ww - hole depth and width
+    """    
+    XX = _np.abs(XX)
+    aa = _np.asarray(aa,dtype=_np.float64)
+    if nohollow and (_np.size(aa)==4):
+        aa = _np.vstack((aa,_np.atleast_1d(0.0)))
+        aa = _np.vstack((aa,_np.atleast_1d(1.0)))
+    elif nohollow:
+        aa[4] = 0.0
+        aa[5] = 1.0
+    # endif    
+    Y0 = aa[0]
+    g = aa[1]
+    p = aa[2]
+    q = aa[3]
+    h = aa[4]
+    w = aa[5]
+        
+    gvec = _np.zeros( (6,_np.size(XX)), dtype=_np.float64)
+    gvec[0,:] = 2.0*h*XX*_np.exp(-(XX/w)**2.0)/(w**2.0) - p*q*(-g+h+1.0)*(XX**(p-1.0))*((1.0-XX**p)**(q-1.0))
+    gvec[1,:] = p*q*Y0*(XX**(p-1.0))*((1-XX**p)**(q-1.0))
+    
+    gvec[2,:] = q*Y0*(-1.0*(g-h-1.0))*((1.0-XX**p)**(q-2.0))
+    gvec[2,:] *= p*_np.log(XX)*((q-1.0)*(XX**(2.0*p-1.0))
+                    - (XX**(p-1.0))*(1.0-XX**p))+(XX**p-1.0)*XX**(p-1.0)
+
+    gvec[3,:] = p*Y0*(g-h-1.0)*(XX**(p-1.0))*((1.0-XX**p)**(q-1.0))*(q*_np.log(1.0-XX**p)+1.0)
+    gvec[4,:] = (2.0*XX*Y0*_np.exp(-1.0*(XX/w)**2.0))/(w**2.0) - p*q*Y0*(XX**(p-1.0))*((1.0-XX**p)**(q-1.0))
+
+    gvec[5,:] = h*Y0*_np.exp(-1.0*(XX/w)**2.0)*((4.0*(XX**3.0))/(w**5.0)-(4.0*XX)/(w**3.0))
+
+    return gvec
+# end def dqparabda
+    
 # =========================================================================== #
 # =========================================================================== #
 
