@@ -300,20 +300,18 @@ def weightedPolyfit(xvar, yvar, xo, vary=None, deg=1, nargout=2):
     weights = 1.0/vary
         
     # intel compiler error with infinite weight (zero variance ... fix above)        
-#    if _np.isinf(weights).any():
+    if _np.isinf(weights).any():
 #        xvar = xvar[~_np.isinf(weights)]
 #        yvar = yvar[~_np.isinf(weights)]
-#        weights = weights[~_np.isinf(weights)]
+        weights = weights[~_np.isinf(weights)]
+#        weights[_np.isinf(weights)] = 1.0/_np.finfo(float).eps
 
-    try:        
-        af, Vcov = _np.polyfit(xvar, yvar, deg=deg, full=False, w=weights, cov=True)
-    except:
-        print('err check')
+    af, Vcov = _np.polyfit(xvar, yvar, deg=deg, full=False, w=weights, cov=True)
         
     # end try
 #    if (len(xvar) - deg - 2.0) == 0.0:
     if _np.isinf(Vcov).all():
-        print('insufficient data points (d.o.f.) for true covariance calculation in fitting routine')
+#        print('insufficient data points (d.o.f.) for true covariance calculation in fitting routine')
         # this concatenation effectively reduces the number of degrees of freedom ... it's a kluge
         af, Vcov = _np.polyfit(_np.hstack((xvar, xvar[-1:])), 
                                _np.hstack((yvar, yvar[-1:])), 
