@@ -379,7 +379,7 @@ def weightedPolyfit(xvar, yvar, xo, vary=None, deg=1, nargout=2):
     
         vardydf = fitter.properror(xo, gvec)
         dydf = fitter.mfit
-        # dydf = info.dchidx
+        # dydf = info.dprofdx
         
         return yf, varyf, dydf, vardydf
 # end def weightedPolyfit    
