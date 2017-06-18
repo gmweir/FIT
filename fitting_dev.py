@@ -306,6 +306,20 @@ def weightedPolyfit(xvar, yvar, xo, vary=None, deg=1, nargout=2):
         weights = weights[~_np.isinf(weights)]
 #        weights[_np.isinf(weights)] = 1.0/_np.finfo(float).eps
 
+    if len(xvar) == 2 and deg == 1:
+        af = _np.polyfit(xvar, yvar, deg=deg, full=False, w=weights, cov=False)
+        Vcov = _np.full((deg+1, deg+1), _np.nan)
+        yf = af[0] * xo + af[1]
+        varyf = _np.full_like(yf, _np.nan)
+        dydf = af[0] * xo
+        vardydf = _np.full_like(dydf, _np.nan)
+        if nargout == 0:
+            return af, Vcov
+        elif nargout == 2:
+            return yf, varyf
+        elif nargout == 4:
+            return yf, varyf, dydf, vardydf
+
     af, Vcov = _np.polyfit(xvar, yvar, deg=deg, full=False, w=weights, cov=True)
         
     # end try
