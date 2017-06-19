@@ -83,7 +83,10 @@ def qparab(XX, *aa, **kwargs):
     if len(aa)>6:
         nohollow = aa.pop(6)
     XX = _np.abs(XX)
-    if (type(aa) is tuple) and (len(aa) == 1):
+    if (type(aa) is tuple) and (len(aa) == 2):
+        nohollow = aa[1]
+        aa = aa[0]
+    elif (type(aa) is tuple) and (len(aa) == 1):
         aa = aa[0]
     # endif
     aa = _np.asarray(aa, dtype=_np.float64)
