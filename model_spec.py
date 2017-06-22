@@ -21,7 +21,7 @@ from ..Struct import Struct
 # =========================================================================== #
 
 
-def model_qparab(XX, af=None, nohollow=False):
+def model_qparab(XX=None, af=None, nohollow=False):
     """
     ex// ne_parms = [0.30, 0.002 2.0 0.7 -0.24 0.30]
     This function calculates the quasi-parabolic fit
@@ -40,11 +40,14 @@ def model_qparab(XX, af=None, nohollow=False):
     # endif
 
     info = Struct()  # Custom class that makes working with dictionaries easier
-    info.Lbounds = _np.array([    0.0,     0.0,-_np.inf,-_np.inf,-_np.inf,-_np.inf], dtype=_np.float64)
+    info.Lbounds = _np.array([    0.0,     0.0,-_np.inf,-_np.inf,-_np.inf, 0.02], dtype=_np.float64)
     info.Ubounds = _np.array([_np.inf, _np.inf, _np.inf, _np.inf, _np.inf, _np.inf], dtype=_np.float64)
 #    info.Lbounds = _np.array([    0.0,     0.0,-10,-10,-1,-1*_np.max(XX)], dtype=_np.float64)
 #    info.Ubounds = _np.array([_np.inf, _np.inf, 10, 10, 1, 1*_np.max(XX)], dtype=_np.float64)
     info.af = af
+    if XX is None:
+        return info
+    # endif
 
     XX = _np.abs(XX)
     af = af.reshape((6,))

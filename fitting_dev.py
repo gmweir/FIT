@@ -1787,7 +1787,7 @@ def savitzky_golay(y, window_size, order, deriv=0):
 
 # ======================================================================= #
 
-def fit_TSneprofile(QTBdat, rvec, loggradient=True, plotit=False):
+def fit_TSneprofile(QTBdat, rvec, loggradient=True, plotit=False, amin=0.51, returnaf=False):
    
     roa = QTBdat['roa']
     ne = QTBdat['ne']
@@ -1801,8 +1801,12 @@ def fit_TSneprofile(QTBdat, rvec, loggradient=True, plotit=False):
     def fitdqparabdx(af, XX):
         return dqparabdx(XX, af)
         
+    info = _ms.model_qparab()
+    LB = info.Lbounds
+    UB = info.Ubounds        
+        
     af0 = _np.asarray([0.30, 0.002, 2.0, 0.7, -0.24, 0.30], dtype=_np.float64)
-    NLfit = fitNL(roa, 1e-20*ne, 1e-40*varn, af0, fitqparab)
+    NLfit = fitNL(roa, 1e-20*ne, 1e-40*varn, af0, fitqparab, LB=LB, UB=UB)
     NLfit.run()
 
     nef, gvec, info = _ms.model_qparab(_np.abs(rvec), NLfit.af)    
@@ -1818,89 +1822,36 @@ def fit_TSneprofile(QTBdat, rvec, loggradient=True, plotit=False):
     nef = 1e20*nef
     varnef = 1e40*varnef    
 
-#    nef = 1e20*fitqparab(NLfit.af, _np.abs(rvec))
-#    varnef = (0.05*nef)**2.0   # uncertainties in Thomson are too small to be real
-
-#    NLfit.bootstrapper(_np.abs(rvec))
-#    varnef = 1e40*NLfit.vfit
-#    nef = 1e20*NLfit.mfit
-
-#    dlnnedrho = dqparabdx(_np.abs(rvec), aa=NLfit.af) 
-#    dlnnedrho /= nef
-
-    # ========================= #
-
-#    isort = _np.argsort(_np.abs(rvec))
-#    iunsort = _np.argsort(isort)
-#    rtemp, idx, unidx = _np.unique(_np.abs(rvec[isort]), return_index=True,
-#                                           return_inverse=True)
-#    nef = nef[isort][idx]
-#    varnef = varnef[isort][idx]
-#    
-#    varlogne = varnef / nef**2.0
-#    logne = _np.log(nef)
-#    if loggradient:
-#        dlnnedrho, vardlnnedrho = _fd.findiffnp(rtemp, logne, varlogne, order=1)
-#    else:
-#        dlnnedrho, vardlnnedrho = _fd.findiffnp(rtemp, nef, varnef, order=1)
-#    
-#    # endif          
-#    nef = nef[unidx][iunsort]
-#    varnef = varnef[unidx][iunsort]
-#    dlnnedrho = dlnnedrho[unidx][iunsort]
-#    vardlnnedrho = vardlnnedrho[unidx][iunsort]
-#    logne = logne[unidx][iunsort]
-#    varlogne = varlogne[unidx][iunsort]
-
-
-#    isort = _np.argsort(_np.abs(rvec))
-#    iunsort = _np.argsort(isort) # _np.asarray(range(len(rvec)), dtype=int) #    iunsort = iunsort[isort]
-#    rtemp = _np.abs(rvec[isort])
-#    nef = nef[isort]
-#    varnef = varnef[isort]
-
     varlogne = varnef / nef**2.0
     logne = _np.log(nef)
-#    if loggradient:
-#        dlnnedrho, vardlnnedrho = _fd.findiffnp(rtemp, logne, varlogne, order=1)
-#    else:
-#        dlnnedrho, vardlnnedrho = _fd.findiffnp(rtemp, nef, varnef, order=1)
-#    
-#    # endif          
-#    nef = nef[iunsort]
-#    varnef = varnef[iunsort]
-#    dlnnedrho = dlnnedrho[iunsort]
-#    vardlnnedrho = vardlnnedrho[iunsort]
-#    logne = logne[iunsort]
-#    varlogne = varlogne[iunsort]
     
     # ================== #
 
     if plotit:
         _plt.figure()
-        ax1 = _plt.subplot(3,1,1)
-        ax2 = _plt.subplot(3,1,2, sharex=ax1)
-        ax3 = _plt.subplot(3,1,3, sharex=ax1)
+        ax1 = _plt.subplot(2,1,1)
+#        ax2 = _plt.subplot(3,1,2, sharex=ax1)
+        ax3 = _plt.subplot(2,1,2, sharex=ax1)
         
         ax1.grid()
-        ax2.grid()
+#        ax2.grid()
         ax3.grid()
 
         ax1.set_title(r'Density Profile Info')
         ax1.set_ylabel(r'$n_\mathrm{e}\ \mathrm{in}\ 10^{20}\mathrm{m}^{-3}$')
-        ax2.set_ylabel(r'$\ln(n_\mathrm{e})$')   # ax2.set_ylabel(r'ln(n$_e$[10$^20$m$^-3$])')
-        ax3.set_ylabel(r'$\ln(n_\mathrm{e})^{-1}$')
+#        ax2.set_ylabel(r'$\ln(n_\mathrm{e})$')   # ax2.set_ylabel(r'ln(n$_e$[10$^20$m$^-3$])')
+        ax3.set_ylabel(r'$a/L_\mathrm{ne}$')
         ax3.set_xlabel(r'$r/a$')
 
         ax1.errorbar(roa, 1e-20*ne, yerr=1e-20*_np.sqrt(varn), fmt='bo', color='b' )
-        ax2.errorbar(roa, _np.log(ne), yerr=_np.sqrt(varn/ne**2.0), fmt='bo', color='b' )
+#        ax2.errorbar(roa, _np.log(ne), yerr=_np.sqrt(varn/ne**2.0), fmt='bo', color='b' )
 
         ax1.plot(rvec, 1e-20*nef, 'b-', lw=2)
         ax1.plot(rvec, 1e-20*(nef+_np.sqrt(varnef)), 'b--', lw=1)
         ax1.plot(rvec, 1e-20*(nef-_np.sqrt(varnef)), 'b--', lw=1)
-        ax2.plot(rvec, logne, 'b-', lw=2)
-        ax2.plot(rvec, logne+_np.sqrt(varlogne), 'b--', lw=1)
-        ax2.plot(rvec, logne-_np.sqrt(varlogne), 'b--', lw=1)
+#        ax2.plot(rvec, logne, 'b-', lw=2)
+#        ax2.plot(rvec, logne+_np.sqrt(varlogne), 'b--', lw=1)
+#        ax2.plot(rvec, logne-_np.sqrt(varlogne), 'b--', lw=1)
 
         # _, _, nint, nvar = _ut.trapz_var(rvec, dlnnedrho, vary=vardlnnedrho)
 
@@ -1910,19 +1861,23 @@ def fit_TSneprofile(QTBdat, rvec, loggradient=True, plotit=False):
             plotvardlnnedrho = vardlnnedrho.copy()
             plotdlnnedrho[idx] = _np.nan
             plotvardlnnedrho[idx] = _np.nan
-            ax3.plot(rvec, -plotdlnnedrho, 'b-',
-                     rvec, -plotdlnnedrho+_np.sqrt(plotvardlnnedrho), 'b--',
-                     rvec, -plotdlnnedrho-_np.sqrt(plotvardlnnedrho), 'b--')
+            plotdlnnedrho *= -1*amin
+            plotvardlnnedrho *= amin**2.0
+            ax3.plot(rvec, plotdlnnedrho, 'b-',
+                     rvec, plotdlnnedrho+_np.sqrt(plotvardlnnedrho), 'b--',
+                     rvec, plotdlnnedrho-_np.sqrt(plotvardlnnedrho), 'b--')
 
             # nint += (_np.log(ne[0]) - _ut.interp(rvec, nint, xo=roa[0]))
             # nint = _np.exp(nint)
         else:
             vardlnnedrho = (dlnnedrho/logne)**2.0 * (vardlnnedrho/dlnnedrho**2.0+varlogne/logne**2.0)
             dlnnedrho = dlnnedrho/logne
-
-            ax3.plot(rvec, -dlnnedrho, 'b-',
-                     rvec, -dlnnedrho+_np.sqrt(vardlnnedrho), 'b--',
-                     rvec, -dlnnedrho-_np.sqrt(vardlnnedrho), 'b--')
+            plotdlnnedrho = -1*amin * dlnnedrho.copy()
+            plotvardlnnedrho = (amin**2.0) * vardlnnedrho.copy()
+            
+            ax3.plot(rvec, plotdlnnedrho, 'b-',
+                     rvec, plotdlnnedrho+_np.sqrt(plotvardlnnedrho), 'b--',
+                     rvec, plotdlnnedrho-_np.sqrt(plotvardlnnedrho), 'b--')
 
             # nint += (ne[0] - _ut.interp(rvec, nint, xo=roa[0]))
         # end if
@@ -1933,11 +1888,116 @@ def fit_TSneprofile(QTBdat, rvec, loggradient=True, plotit=False):
     # end if plotit
 
     # ==================== #
-
+    if returnaf:
+        return logne, varlogne, dlnnedrho, vardlnnedrho, NLfit.af
     return logne, varlogne, dlnnedrho, vardlnnedrho
+        
+def fit_TSteprofile(QTBdat, rvec, loggradient=True, plotit=False, amin=0.51, returnaf=False):
+   
+    roa = QTBdat['roa']
+    Te = QTBdat['Te']
+    varT =  _np.sqrt(QTBdat['varTL']*QTBdat['varTH'])
+    # ne *= 1e-20
+    # varn *= (1e-20)**2.0
 
-# ------------------------------------------------------------------------- #
-# ------------------------------------------------------------------------- #
+    def fitqparab(af, XX):
+        return qparab_fit(XX, af)
+
+    def fitdqparabdx(af, XX):
+        return dqparabdx(XX, af)
+        
+    info = _ms.model_qparab()
+    LB = info.Lbounds
+    UB = info.Ubounds        
+    af0 = _np.asarray([4.00, 0.07, 5.0, 2.0, 0.04, 0.50], dtype=_np.float64)
+    NLfit = fitNL(roa, Te, varT, af0, fitqparab, LB=LB, UB=UB)
+    NLfit.run()
+
+    Tef, gvec, info = _ms.model_qparab(_np.abs(rvec), NLfit.af)    
+    varTef = NLfit.properror(_np.abs(rvec), gvec)
+    varTef = varTef.copy()
+    
+    NLfit.func = fitdqparabdx   
+    dlnTedrho = info.dprofdx / Tef
+    vardlnTedrho = NLfit.properror(_np.abs(rvec), info.dgdx)    
+    vardlnTedrho = (dlnTedrho)**2.0 * ( vardlnTedrho/(info.dprofdx**2.0) + varTef/(Tef**2.0)  )    
+
+    varlogTe = varTef / Tef**2.0
+    logTe = _np.log(Tef)
+    
+    # ================== #
+
+    if plotit:
+        _plt.figure()
+        ax1 = _plt.subplot(2,1,1)
+#        ax2 = _plt.subplot(3,1,2, sharex=ax1)
+        ax3 = _plt.subplot(2,1,2, sharex=ax1)
+        
+        ax1.grid()
+#        ax2.grid()
+        ax3.grid()
+
+        ax1.set_title(r'Temperature Profile Info')
+        ax1.set_ylabel(r'T$_e$ in KeV')
+#        ax2.set_ylabel(r'$\ln(T_\mathrm{e})$')   # ax2.set_ylabel(r'ln(T$_e$)')
+        ax3.set_ylabel(r'$a/L_\mathrm{Te}$')
+        ax3.set_xlabel(r'$r/a$')
+
+        ax1.errorbar(roa, Te, yerr=_np.sqrt(varT), fmt='ro', color='r' )
+#        ax2.errorbar(roa, _np.log(Te), yerr=_np.sqrt(varT/Te**2.0), fmt='bo', color='b' )
+
+        ax1.plot(rvec, Tef, 'r-', lw=2)
+        ax1.plot(rvec, (Tef+_np.sqrt(varTef)), 'r--', lw=1)
+        ax1.plot(rvec, (Tef-_np.sqrt(varTef)), 'r--', lw=1)
+#        ax2.plot(rvec, logTe, 'b-', lw=2)
+#        ax2.plot(rvec, logTe+_np.sqrt(varlogTe), 'r--', lw=1)
+#        ax2.plot(rvec, logTe-_np.sqrt(varlogTe), 'r--', lw=1)
+
+        # _, _, Tint, Tvar = _ut.trapz_var(rvec, dlnTedrho, vary=vardlnTedrho)
+
+        if loggradient:
+            idx = _np.where(_np.abs(rvec) < 0.05)
+            plotdlnTedrho = dlnTedrho.copy()
+            plotvardlnTedrho = vardlnTedrho.copy()
+            plotdlnTedrho[idx] = _np.nan
+            plotvardlnTedrho[idx] = _np.nan
+            plotdlnTedrho *= -1*amin
+            plotvardlnTedrho *= amin**2.0
+            ax3.plot(rvec, plotdlnTedrho, 'r-',
+                     rvec, plotdlnTedrho+_np.sqrt(plotvardlnTedrho), 'r--',
+                     rvec, plotdlnTedrho-_np.sqrt(plotvardlnTedrho), 'r--')
+
+            # Tint += (_np.log(Te[0]) - _ut.interp(rvec, Tint, xo=roa[0]))
+            # Tint = _np.exp(Tint)
+        else:
+            vardlnTedrho = (dlnTedrho/logTe)**2.0 * (vardlnTedrho/dlnTedrho**2.0+varlogTe/logTe**2.0)
+            dlnTedrho = dlnTedrho/logTe
+            plotdlnTedrho = -1*amin * dlnTedrho.copy()
+            plotvardlnTedrho = (amin**2.0) * vardlnTedrho.copy()
+            
+            ax3.plot(rvec, plotdlnTedrho, 'r-',
+                     rvec, plotdlnTedrho+_np.sqrt(plotvardlnTedrho), 'r--',
+                     rvec, plotdlnTedrho-_np.sqrt(plotvardlnTedrho), 'r--')
+
+            # Tint += (Te[0] - _ut.interp(rvec, Tint, xo=roa[0]))
+        # end if
+        # ax1.plot(rvec, Tint, 'b--', lw=1)
+        # ax2.plot(rvec, _np.log(Tint), 'b--', lw=1)
+        _plt.tight_layout()
+
+    # end if plotit
+
+    # ==================== #
+    # ==================== #
+    if returnaf:
+        return logTe, varlogTe, dlnTedrho, vardlnTedrho, NLfit.af
+    return logTe, varlogTe, dlnTedrho, vardlnTedrho
+
+
+
+
+# ======================================================================= #
+# ======================================================================= #
 
 
 # function [pFit,vF,info] = weightedpoly(xvar,yvar,polyorder,xfit,vary,plotit);
@@ -2061,7 +2121,7 @@ def fit_TSneprofile(QTBdat, rvec, loggradient=True, plotit=False):
 #    
 #    return pFit, vF, info 
 
-# ------------------------------------------------------------------------ #
+# ======================================================================= #
 
 def test_dat(multichannel=True):
 #    x = _np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
