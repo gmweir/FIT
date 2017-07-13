@@ -997,7 +997,42 @@ def findiff2d(x, y, u):
 # ======================================================================== #
 # ======================================================================== #
 
+def expdecay(tt, Y0, t0, tau):
+    return Y0*_np.exp(-(tt-t0)/tau)
+    
+def expdecay_fit(tt,sig_in,param):
+    #
+    # param contains intitial guesses for fitting gaussians, 
+    # (Amplitude, x value, sigma):
+    # param = [[50,40,5],[50,110,5],[100,160,5],[100,220,5],
+    #      [50,250,5],[100,260,5],[100,320,5], [100,400,5],   
+    #      [30,300,150]]  # this last one is our noise estimate
 
+    # Define a function that returns the magnitude of stuff under a gaussian 
+    # peak (with support for multiple peaks)
+    fit = lambda param, xx: _np.sum([expdecay(xx, param[ii*3], param[ii*3+1], 
+                                              param[ii*3+2]) 
+                                    for ii in _np.arange(len(param)/3)], axis=0)
+    # Define a function that returns the difference between the fitted gaussian 
+    # and the input signal               
+    err = lambda param, xx, yy: fit(param, xx)-yy
+
+    # If multiple peaks have been requested do some array manipulation 
+    param = _np.asarray(param).flatten()
+    # end if         
+    # tt  = xrange(len(sig_in))
+        
+    # Least squares fit the exponential peaks: "args" gives the arguments to the 
+    # err function defined above    
+    results, value = leastsq(err, param, args=(tt, sig_in))    
+    
+    for res in results.reshape(-1,3):
+        print('Peak detected at: amplitude %f, position %f, sigma %f '%(res[0], res[1], res[2]))
+    # end for
+        
+    return results.reshape(-1,3)
+    
+    
 def gaussian(xx, AA, x0, ss):
     return AA*_np.exp(-(xx-x0)**2/(2.0*ss**2))
 
