@@ -1775,7 +1775,7 @@ def savitzky_golay(y, window_size, order, deriv=0):
     The Savitzky-Golay is a type of low-pass filter, particularly
     suited for smoothing noisy data. The main idea behind this
     approach is to make for each point a least-square fit with a
-    polynomial of high order over a odd-sized window centered at
+    polynomial of high order over an odd-sized window centered at
     the point.
     Examples
     --------
@@ -1836,7 +1836,7 @@ def fit_TSneprofile(QTBdat, rvec, loggradient=True, plotit=False, amin=0.51, ret
     def fitdqparabdx(af, XX):
         return dqparabdx(XX, af)
         
-    info = _ms.model_qparab()
+    info = _ms.model_qparab(XX=None)
     LB = info.Lbounds
     UB = info.Ubounds        
         
@@ -1941,7 +1941,7 @@ def fit_TSteprofile(QTBdat, rvec, loggradient=True, plotit=False, amin=0.51, ret
     def fitdqparabdx(af, XX):
         return dqparabdx(XX, af)
         
-    info = _ms.model_qparab()
+    info = _ms.model_qparab(XX=None)
     LB = info.Lbounds
     UB = info.Ubounds        
     af0 = _np.asarray([4.00, 0.07, 5.0, 2.0, 0.04, 0.50], dtype=_np.float64)
