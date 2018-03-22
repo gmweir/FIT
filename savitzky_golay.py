@@ -8,7 +8,7 @@ def savitzky_golay(y, window_size, order, deriv=0):
     It has the advantage of preserving the original shape and
     features of the signal better than other types of filtering
     approaches, such as moving averages techhniques.
-    
+
     This code has been taken from http://www.scipy.org/Cookbook/SavitzkyGolay
     Parameters
     ----------
@@ -56,7 +56,7 @@ def savitzky_golay(y, window_size, order, deriv=0):
     try:
         window_size = np.abs(np.int(window_size))
         order = np.abs(np.int(order))
-    except ValueError, msg:
+    except ValueError as msg:
         raise ValueError("window_size and order have to be of type int")
     if window_size % 2 != 1 or window_size < 1:
         raise TypeError("window_size size must be a positive odd number")
@@ -82,7 +82,7 @@ if __name__ == "__main__":
     ndvi_smooth = savitzky_golay(ndvi, window_size=11, order=2)
     plt.plot ( ndvi_smooth, '-r', label="Smooth NDVI", lw=1.5)
     plt.legend(loc='best' )
-    plt.grid ( True ) 
+    plt.grid ( True )
     plt.show()
     plt.savefig('images/golay.png')
 
