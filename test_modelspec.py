@@ -7,7 +7,7 @@ Created on Mon Aug 22 12:38:02 2016
 
 #Test the models in stelltran/model_spec
 
-from PBA.model_spec import *
+from FIT.model_spec import *
 import numpy as _np
 import matplotlib.pyplot as _plt
 
@@ -19,10 +19,10 @@ af = None
 #    af = [2.0,0.1,0.1,0.5]
 
 [chi_eff, gvec, info] = \
-    model_chieff(XX=XX, af=af, model_number=model_number, npoly=npoly, 
+    model_chieff(XX=XX, af=af, model_number=model_number, npoly=npoly,
                  nargout = 3)
 #[chi_eff, gvec, info] = \
-#    model_profile(XX=XX, af=af, model_number=model_number, npoly=npoly, 
+#    model_profile(XX=XX, af=af, model_number=model_number, npoly=npoly,
 #                  nargout = 3)
 #
 # [chi_eff, gvec, info] = model_parabolic(XX, af)

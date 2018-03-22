@@ -17,7 +17,7 @@ from __future__ import absolute_import, with_statement, absolute_import, \
 import numpy as _np
 import matplotlib.pyplot as _plt
 #import pybaseutils as _pyut
-from ..Struct import Struct
+from pybaseutils.Struct import Struct
 
 # =========================================================================== #
 # =========================================================================== #

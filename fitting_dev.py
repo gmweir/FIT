@@ -16,17 +16,9 @@ from scipy.optimize import curve_fit, leastsq
 import matplotlib.pyplot as _plt
 import numpy as _np
 
-try:
-    #  For normal (non-circular import) use
-    from ..Struct import Struct
-    from .. import utils as _ut   # for normal use
-    from . import model_spec as _ms
-except:
-    #  For local testing
-    from pybaseutils.Struct import Struct
-    from pybaseutils import utils as _ut
-    from pybaseutils.FIT import model_spec as _ms
-# end try
+from pybaseutils.Struct import Struct
+from pybaseutils import utils as _ut
+from FIT import model_spec as _ms
 
 # ==== #
 
