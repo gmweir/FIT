@@ -16,9 +16,17 @@ from scipy.optimize import curve_fit, leastsq
 import matplotlib.pyplot as _plt
 import numpy as _np
 
-from pybaseutils.Struct import Struct
+#from pybaseutils.Struct import Struct
 from pybaseutils import utils as _ut
-from FIT import model_spec as _ms
+
+try:
+    from FIT import model_spec as _ms
+    from FIT.fitNL import fitNL
+except:
+    from . import model_spec as _ms
+    from .fitNL import fitNL
+# end try
+
 
 # ==== #
 
@@ -29,93 +37,21 @@ import scipy.version as _scipyversion
 # Make a version flag for switching between least squares solvers and contexts
 _scipyversion = _scipyversion.version
 _scipyversion = _np.float(_scipyversion[0:4])
-if _scipyversion >= 0.17:
-#    print("Using a new version of scipy")
-    from scipy.optimize import least_squares
-#else:
-#    print("Using an older version of scipy")
-# endif
+#if _scipyversion >= 0.17:
+##    print("Using a new version of scipy")
+#    from scipy.optimize import least_squares
+##else:
+##    print("Using an older version of scipy")
+## endif
 
 __metaclass__ = type
 
 # ======================================================================== #
 # ======================================================================== #
 
-
-def polyeval(a, x):
-    """
-    p(x) = polyeval(a, x)
-         = a[0] + a[1]x + a[2]x^2 +...+ a[n-1]x^{n-1} + a[n]x^n
-         = a[0] + x(a[1] + x(a[2] +...+ x(a[n-1] + a[n]x)...)
-    """
-    p = 0
-    for coef in a[::-1]:
-        p = p * x + coef
-    return p
-# end def polyeval
-
-
-def polyderiv(a):
-    """
-    p'(x) = polyderiv(a)
-          = b[0] + b[1]x + b[2]x^2 +...+ b[n-2]x^{n-2} + b[n-1]x^{n-1}
-    where
-        b[i] = (i+1)a[i+1]
-    """
-    b = [i * x for i,x in enumerate(a)][1:]
-    return b
-# end def polyderiv
-
-def polyreduce(a, root):
-    """
-    Given x = r is a root of n'th degree polynomial p(x) = (x-r)q(x),
-    divide p(x) by linear factor (x-r) using the same algorithm as
-    polynomial evaluation.  Then, return the (n-1)'th degree quotient
-    q(x) = polyreduce(a, r)
-         = c[0] + c[1]x + c[2]x^2 +...+ c[n-2]x^{n-2} + c[n-1]x^{n-1}
-    """
-    c, p = [], 0
-    a.reverse()
-    for coef in a:
-        p = p * root + coef
-        c.append(p)
-    a.reverse()
-    c.reverse()
-    return c[1:]
-# end def polyreduce
-
-
-# ======================================================================== #
-
-
-def piecewise_2line(x, x0, y0, k1, k2):
-    """
-    function y = piecewise_2line(x, x0, y0, k1, k2)
-
-    Model for a piecewise linear function with one break
-
-    Inputs:
-        x - model independent variable
-        x0 - position of the break in slope
-        y0 - offset at the break in slope
-        k1 - slope of first line (dydx[x<x0])
-        k2 - slope of second line (dydx[x>x0])
-
-    Outputs:
-        y(x) - model at the input positions specified by x
-    """
-    return _np.piecewise(x, [x < x0],
-                         [lambda x:k1*x + y0-k1*x0, lambda x:k2*x + y0-k2*x0])
-# end def piecewise_2line
-
-# def piecewise_linear(x, x0, y0, k1, k2):
-#
-#   yy = _np.piecewise(x, [x < x0],
-#                       [lambda x:k1*x + y0-k1*x0, lambda x:k2*x + y0-k2*x0])
-#   return yy
-# # end def piecewise_linear
-
-# ========================================================================== #
+# =============================== #
+# ---- no scipy dependence ------ #
+# =============================== #
 
 def linreg(X, Y, verbose=True, varY=None, varX=None, cov=False, plotit=False):
     """
@@ -222,6 +158,8 @@ def linreg(X, Y, verbose=True, varY=None, varX=None, cov=False, plotit=False):
         return a, b, Var_a, Var_b
     # end if
 # end def linreg
+
+# ======================================================================== #
 
 
 def weightedPolyfit(xvar, yvar, xo, vary=None, deg=1, nargout=2):
@@ -334,6 +272,83 @@ def weightedPolyfit(xvar, yvar, xo, vary=None, deg=1, nargout=2):
         return yf, varyf, dydf, vardydf
 # end def weightedPolyfit
 
+
+# ======================================================================== #
+
+
+def savitzky_golay(y, window_size, order, deriv=0):
+    r"""Smooth (and optionally differentiate) data with a Savitzky-Golay filter.
+    The Savitzky-Golay filter removes high frequency noise from data.
+    It has the advantage of preserving the original shape and
+    features of the signal better than other types of filtering
+    approaches, such as moving averages techhniques.
+
+    This code has been taken from http://www.scipy.org/Cookbook/SavitzkyGolay
+    Parameters
+    ----------
+    y : array_like, shape (N,)
+        the values of the time history of the signal.
+    window_size : int
+        the length of the window. Must be an odd integer number.
+    order : int
+        the order of the polynomial used in the filtering.
+        Must be less then `window_size` - 1.
+    deriv: int
+        the order of the derivative to compute (default = 0 means only smoothing)
+    Returns
+    -------
+    ys : ndarray, shape (N)
+        the smoothed signal (or it's n-th derivative).
+    Notes
+    -----
+    The Savitzky-Golay is a type of low-pass filter, particularly
+    suited for smoothing noisy data. The main idea behind this
+    approach is to make for each point a least-square fit with a
+    polynomial of high order over an odd-sized window centered at
+    the point.
+    Examples
+    --------
+    t = np.linspace(-4, 4, 500)
+    y = np.exp( -t**2 ) + np.random.normal(0, 0.05, t.shape)
+    ysg = savitzky_golay(y, window_size=31, order=4)
+    import matplotlib.pyplot as plt
+    plt.plot(t, y, label='Noisy signal')
+    plt.plot(t, np.exp(-t**2), 'k', lw=1.5, label='Original signal')
+    plt.plot(t, ysg, 'r', label='Filtered signal')
+    plt.legend()
+    plt.savefig('images/golay.png')
+    #plt.show()
+    References
+    ----------
+    .. [1] A. Savitzky, M. J. E. Golay, Smoothing and Differentiation of
+       Data by Simplified Least Squares Procedures. Analytical
+       Chemistry, 1964, 36 (8), pp 1627-1639.
+    .. [2] Numerical Recipes 3rd Edition: The Art of Scientific Computing
+       W.H. Press, S.A. Teukolsky, W.T. Vetterling, B.P. Flannery
+       Cambridge University Press ISBN-13: 9780521880688
+    """
+    try:
+        window_size = _np.abs(_np.int(window_size))
+        order = _np.abs(_np.int(order))
+    except ValueError:
+        raise ValueError("window_size and order have to be of type int")
+    if window_size % 2 != 1 or window_size < 1:
+        raise TypeError("window_size size must be a positive odd number")
+    if window_size < order + 2:
+        raise TypeError("window_size is too small for the polynomials order")
+    order_range = range(order+1)
+    half_window = (window_size -1) // 2
+    # precompute coefficients
+    b = _np.mat([[k**i for i in order_range] for k in range(-half_window, half_window+1)])
+    m = _np.linalg.pinv(b).A[deriv]
+    # pad the signal at the extremes with
+    # values taken from the signal itself
+    firstvals = y[0] - _np.abs( y[1:half_window+1][::-1] - y[0] )
+    lastvals = y[-1] + _np.abs(y[-half_window-1:-1][::-1] - y[-1])
+    y = _np.concatenate((firstvals, y, lastvals))
+    return _np.convolve( m, y, mode='valid')
+
+
 # ======================================================================== #
 
 
@@ -383,208 +398,6 @@ def _derivative_inputcondition(xvar):
     return xvar, xsh, transp
 # end def _derivative_inputcondition
 
-# ======================================================================== #
-
-def fit_profile(roa, ne, varne, rvec, loggradient=True):
-
-    # ================= #
-    # Preconditioning   #
-    # ================= #
-
-    xfit = _ut.cylsym_odd(roa)
-    if loggradient:
-        yfit = _ut.cylsym_even(_np.log(ne))
-        vfit = _ut.cylsym_even(varne/(ne**2.0))
-    else:
-        yfit = _ut.cylsym_even(ne)
-        vfit = _ut.cylsym_even(varne)
-    # endif
-    ne = _np.atleast_2d(ne)
-    roa = _np.atleast_2d(roa)
-    rvec = _np.atleast_2d(rvec)
-    xfit = _np.atleast_2d(xfit)
-    yfit = _np.atleast_2d(yfit)
-    vfit = _np.atleast_2d(vfit)
-    if _np.size(ne, axis=0) == 1: ne = ne.T # endif
-    if _np.size(roa, axis=0) == 1: roa = roa.T # endif
-    if _np.size(rvec, axis=0) == 1: rvec = rvec.T # endif
-    if _np.size(xfit, axis=0) == 1: xfit = xfit.T # endif
-    if _np.size(yfit, axis=0) == 1: yfit = yfit.T # endif
-    if _np.size(vfit, axis=0) == 1: vfit = vfit.T # endif
-
-    ysh = _np.shape(yfit)
-    if _np.shape(yfit) != _np.shape(xfit):
-        xfit = _np.tile(xfit, ysh[1])
-    if _np.size(rvec, axis=1) != _np.size(yfit, axis=1):
-        rvec = _np.tile(rvec, ysh[1])
-    if _np.size(roa, axis=1) != _np.size(ne, axis=1):
-        roa = _np.tile(roa, ysh[1])
-    # endif
-
-    # =============== #
-    dyfdr = _np.zeros( (len(rvec),ysh[1]),dtype=_np.float64)
-    vardyfdr = _np.zeros_like(dyfdr)
-    yf = _np.zeros_like(dyfdr)
-    varyf = _np.zeros_like(vardyfdr)
-    for ii in range(_np.size(dyfdr, axis=1)):
-#        if ii == 1:
-#            print('what')
-#        # endif
-
-        dydr, vardydr = deriv_bsgaussian(xfit[:,ii], yfit[:,ii], vfit[:,ii])
-
-        dyfdr[:,ii], vardyfdr[:,ii] = _ut.interp(xfit[:,ii], dydr, _np.sqrt(vardydr), rvec[:,ii])
-
-        _, _, yf[:,ii], varyf[:,ii] = _ut.trapz_var(rvec[:,ii], dyfdr[:,ii], None, vardyfdr[:,ii], dim=0)
-
-        yf[:,ii] += (ne[0,ii]-_ut.interp(rvec[:,ii], yf[:,ii], None, roa[0,ii]))
-    # endfor
-
-    if _np.size(yf, axis=1) == 1:
-        yf = yf.reshape(len(rvec),)
-        dyfdr = dyfdr.reshape(len(rvec),)
-        varyf = varyf.reshape(len(rvec),)
-        vardyfdr = vardyfdr.reshape(len(rvec),)
-    # end if
-
-    return yf, dyfdr, varyf, vardyfdr
-
-# ======================================================================== #
-
-
-def deriv_bsgaussian(xvar, u, varu, axis=0, nmonti=300, sigma=1, mode='nearest', derivorder=1):
-    """
-    function [dudx, vardudx] = deriv_bsgaussian(xvar, u, varu, axis=1,
-                           nmonti=300, derivorder=1, sigma=1, mode='nearest')
-
-    Calculates the derivative of the input array along the specified axis by
-    convolving the input array with the derivative of a Gaussian.
-
-    Inputs:
-        xvar - dependent variable
-        u    - independent variable
-        varu - variance in u
-        axis - Axis along which to take the derivative default: axis=1
-        nmonti - number of Monte Carlo iterations to use for propagation of
-                 uncertainties.  default: nmonti=300
-        sigma - Breadth of the Gaussian kernel default: sigma=1
-        mode - Extrapolation method at boundary when the Guassian kernel
-               passes the convex hull of the data.  default: mode='nearest'
-        derivorder - order of the derivative.  default: derivorder=1
-            derivorder = 0 - No derivative!  Just a convolution with a gaussian (smoothing)
-            derivorder = 1 - First derivative!  Convolution with derivative of a gaussian
-            derivorder = 2 or 3 ... second and third derivatives (higher order not supported)
-    Outputs
-        dudx - derivative of u wrt x of order 'derivorder',
-                    derivorder = 2, outputs d2udx2
-        vardudx - Estimate of variance in derivative
-
-
-    The result includes some smoothing, and also has boundary effects where
-    the Gaussian touches the boundaries.  The boundary effects are controlled
-    by the filter option 'mode'.  Below is a table showing how Gaussian
-    filter handles the boundary points.
-
-    From stackoverflow:
-    mode       |   Ext   |         Input          |   Ext
-    -----------+---------+------------------------+---------
-    'mirror'   | 4  3  2 | 1  2  3  4  5  6  7  8 | 7  6  5
-    'reflect'  | 3  2  1 | 1  2  3  4  5  6  7  8 | 8  7  6
-    'nearest'  | 1  1  1 | 1  2  3  4  5  6  7  8 | 8  8  8
-    'constant' | 0  0  0 | 1  2  3  4  5  6  7  8 | 0  0  0
-    'wrap'     | 6  7  8 | 1  2  3  4  5  6  7  8 | 1  2  3
-
-
-    derivorder - Order of the derivative to be taken (1st, 2nd, or 3rd)
-                 default: derivorder=1 - first derivative = du/dx
-                 ...Higher order derivatives are not yet implemented...
-    """
-
-    #============================================================== #
-    # Input data formatting.  All of this is undone before output
-    # xvar, _, _ = _derivative_inputcondition(xvar)
-
-    u, ush, transp = _derivative_inputcondition(u)
-    varu, _, _ = _derivative_inputcondition(varu)
-    if transp:
-        # xvar = xvar.T
-        u = u.T
-        varu = varu.T
-    # endif
-    nsh = _np.shape(u)
-
-#    if _np.shape(xvar) != _np.shape(u):
-#        xvar = _np.tile(xvar, (nsh[1],))
-#    # endif
-
-    if (nsh[0] == 1):
-        # xvar = xvar.reshape(nsh[1], nsh[0])
-        u = u.reshape(nsh[1], nsh[0])
-        varu = varu.reshape(nsh[1], nsh[0])
-        nsh = _np.flipud(_np.atleast_1d(nsh))
-    # endif
-    if (nsh[1] == 1):
-        u = u.reshape(nsh[0],)
-        varu = varu.reshape(nsh[0],)
-        nsh = _np.flipud(_np.atleast_1d(nsh))
-    # endif
-
-    # =================================================================== #
-    # Estimate the variance by wiggling the input data within it's
-    # uncertainties. This is referred to as 'bootstrapping' or 'Monte Carlo'
-    # error propagation. It works well for non-linear methods, and
-    # computational methods.
-
-    # Pre-allocate
-    dudx = _np.zeros((nmonti, nsh[0], nsh[1]), dtype=_np.float64)
-    for ii in range(nmonti):
-
-        # Wiggle the input data within its statistical uncertainty
-        # utemp = _np.random.normal(0.0, 1.0, _np.size(u, axis=axis))
-        # utemp = utemp.reshape(nsh[0], nsh[1])
-        utemp = _np.random.normal(0.0, 1.0, _np.shape(u))
-        utemp = u + _np.sqrt(varu)*utemp
-
-        # Convolve with the derivative of a Gaussian to get the derivative
-        # There is some smoothing in this procedure
-        utemp = _ndimage.gaussian_filter1d(utemp, sigma=sigma, order=derivorder,
-                                          axis=axis, mode=mode)
-        # utemp /= dx  # dx
-        dudx[ii, :, :] = utemp.copy()
-    # endfor
-
-    # Take mean and variance of the derivative
-    vardudx = _np.nanvar(dudx, axis=0)
-    dudx = _np.nanmean(dudx, axis=0)
-
-    if _np.size(dudx, axis=0) == 1:
-        dudx = dudx.T
-        vardudx = vardudx.T
-    # endif
-
-    if derivorder > 0:
-        # Do the derivative part now
-    #    dx = xvar[1]-xvar[0]
-        dx = _np.concatenate((_np.diff(xvar[:2], axis=axis),
-                              0.5*(_np.diff(xvar[:-1], axis=axis)+_np.diff(xvar[1:], axis=axis)),
-                              _np.diff(xvar[-2:], axis=axis)))
-
-        dx = _np.atleast_2d(dx).T
-        # if nsh[1]>1:
-        if _np.shape(dx) != _np.shape(dudx):
-            dx = _np.tile(dx, (1,nsh[1]))
-        # endif
-
-        vardudx /= dx**2.0
-        dudx /= dx
-    # end if
-
-    # Match the input data shape in the output data
-    vardudx = vardudx.reshape(ush)
-    dudx = dudx.reshape(ush)
-
-    return dudx, vardudx
-# end def deriv_bsgaussian
 
 # ======================================================================== #
 
@@ -933,11 +746,218 @@ def findiff2d(x, y, u):
 # ======================================================================== #
 # ======================================================================== #
 
-def expdecay(tt, Y0, t0, tau):
-    return Y0*_np.exp(-(tt-t0)/tau)
+# =============================== #
+# ---- ndimage dependent--------- #
+# =============================== #
 
-def gaussian(xx, AA, x0, ss):
-    return AA*_np.exp(-(xx-x0)**2/(2.0*ss**2))
+
+def fit_profile(roa, ne, varne, rvec, loggradient=True):
+
+    # ================= #
+    # Preconditioning   #
+    # ================= #
+
+    xfit = _ut.cylsym_odd(roa)
+    if loggradient:
+        yfit = _ut.cylsym_even(_np.log(ne))
+        vfit = _ut.cylsym_even(varne/(ne**2.0))
+    else:
+        yfit = _ut.cylsym_even(ne)
+        vfit = _ut.cylsym_even(varne)
+    # endif
+    ne = _np.atleast_2d(ne)
+    roa = _np.atleast_2d(roa)
+    rvec = _np.atleast_2d(rvec)
+    xfit = _np.atleast_2d(xfit)
+    yfit = _np.atleast_2d(yfit)
+    vfit = _np.atleast_2d(vfit)
+    if _np.size(ne, axis=0) == 1: ne = ne.T # endif
+    if _np.size(roa, axis=0) == 1: roa = roa.T # endif
+    if _np.size(rvec, axis=0) == 1: rvec = rvec.T # endif
+    if _np.size(xfit, axis=0) == 1: xfit = xfit.T # endif
+    if _np.size(yfit, axis=0) == 1: yfit = yfit.T # endif
+    if _np.size(vfit, axis=0) == 1: vfit = vfit.T # endif
+
+    ysh = _np.shape(yfit)
+    if _np.shape(yfit) != _np.shape(xfit):
+        xfit = _np.tile(xfit, ysh[1])
+    if _np.size(rvec, axis=1) != _np.size(yfit, axis=1):
+        rvec = _np.tile(rvec, ysh[1])
+    if _np.size(roa, axis=1) != _np.size(ne, axis=1):
+        roa = _np.tile(roa, ysh[1])
+    # endif
+
+    # =============== #
+    dyfdr = _np.zeros( (len(rvec),ysh[1]),dtype=_np.float64)
+    vardyfdr = _np.zeros_like(dyfdr)
+    yf = _np.zeros_like(dyfdr)
+    varyf = _np.zeros_like(vardyfdr)
+    for ii in range(_np.size(dyfdr, axis=1)):
+#        if ii == 1:
+#            print('what')
+#        # endif
+
+        dydr, vardydr = deriv_bsgaussian(xfit[:,ii], yfit[:,ii], vfit[:,ii])
+
+        dyfdr[:,ii], vardyfdr[:,ii] = _ut.interp(xfit[:,ii], dydr, _np.sqrt(vardydr), rvec[:,ii])
+
+        _, _, yf[:,ii], varyf[:,ii] = _ut.trapz_var(rvec[:,ii], dyfdr[:,ii], None, vardyfdr[:,ii], dim=0)
+
+        yf[:,ii] += (ne[0,ii]-_ut.interp(rvec[:,ii], yf[:,ii], None, roa[0,ii]))
+    # endfor
+
+    if _np.size(yf, axis=1) == 1:
+        yf = yf.reshape(len(rvec),)
+        dyfdr = dyfdr.reshape(len(rvec),)
+        varyf = varyf.reshape(len(rvec),)
+        vardyfdr = vardyfdr.reshape(len(rvec),)
+    # end if
+
+    return yf, dyfdr, varyf, vardyfdr
+
+# ======================================================================== #
+
+
+def deriv_bsgaussian(xvar, u, varu, axis=0, nmonti=300, sigma=1, mode='nearest', derivorder=1):
+    """
+    function [dudx, vardudx] = deriv_bsgaussian(xvar, u, varu, axis=1,
+                           nmonti=300, derivorder=1, sigma=1, mode='nearest')
+
+    Calculates the derivative of the input array along the specified axis by
+    convolving the input array with the derivative of a Gaussian.
+
+    Inputs:
+        xvar - dependent variable
+        u    - independent variable
+        varu - variance in u
+        axis - Axis along which to take the derivative default: axis=1
+        nmonti - number of Monte Carlo iterations to use for propagation of
+                 uncertainties.  default: nmonti=300
+        sigma - Breadth of the Gaussian kernel default: sigma=1
+        mode - Extrapolation method at boundary when the Guassian kernel
+               passes the convex hull of the data.  default: mode='nearest'
+        derivorder - order of the derivative.  default: derivorder=1
+            derivorder = 0 - No derivative!  Just a convolution with a gaussian (smoothing)
+            derivorder = 1 - First derivative!  Convolution with derivative of a gaussian
+            derivorder = 2 or 3 ... second and third derivatives (higher order not supported)
+    Outputs
+        dudx - derivative of u wrt x of order 'derivorder',
+                    derivorder = 2, outputs d2udx2
+        vardudx - Estimate of variance in derivative
+
+
+    The result includes some smoothing, and also has boundary effects where
+    the Gaussian touches the boundaries.  The boundary effects are controlled
+    by the filter option 'mode'.  Below is a table showing how Gaussian
+    filter handles the boundary points.
+
+    From stackoverflow:
+    mode       |   Ext   |         Input          |   Ext
+    -----------+---------+------------------------+---------
+    'mirror'   | 4  3  2 | 1  2  3  4  5  6  7  8 | 7  6  5
+    'reflect'  | 3  2  1 | 1  2  3  4  5  6  7  8 | 8  7  6
+    'nearest'  | 1  1  1 | 1  2  3  4  5  6  7  8 | 8  8  8
+    'constant' | 0  0  0 | 1  2  3  4  5  6  7  8 | 0  0  0
+    'wrap'     | 6  7  8 | 1  2  3  4  5  6  7  8 | 1  2  3
+
+
+    derivorder - Order of the derivative to be taken (1st, 2nd, or 3rd)
+                 default: derivorder=1 - first derivative = du/dx
+                 ...Higher order derivatives are not yet implemented...
+    """
+
+    #============================================================== #
+    # Input data formatting.  All of this is undone before output
+    # xvar, _, _ = _derivative_inputcondition(xvar)
+
+    u, ush, transp = _derivative_inputcondition(u)
+    varu, _, _ = _derivative_inputcondition(varu)
+    if transp:
+        # xvar = xvar.T
+        u = u.T
+        varu = varu.T
+    # endif
+    nsh = _np.shape(u)
+
+#    if _np.shape(xvar) != _np.shape(u):
+#        xvar = _np.tile(xvar, (nsh[1],))
+#    # endif
+
+    if (nsh[0] == 1):
+        # xvar = xvar.reshape(nsh[1], nsh[0])
+        u = u.reshape(nsh[1], nsh[0])
+        varu = varu.reshape(nsh[1], nsh[0])
+        nsh = _np.flipud(_np.atleast_1d(nsh))
+    # endif
+    if (nsh[1] == 1):
+        u = u.reshape(nsh[0],)
+        varu = varu.reshape(nsh[0],)
+        nsh = _np.flipud(_np.atleast_1d(nsh))
+    # endif
+
+    # =================================================================== #
+    # Estimate the variance by wiggling the input data within it's
+    # uncertainties. This is referred to as 'bootstrapping' or 'Monte Carlo'
+    # error propagation. It works well for non-linear methods, and
+    # computational methods.
+
+    # Pre-allocate
+    dudx = _np.zeros((nmonti, nsh[0], nsh[1]), dtype=_np.float64)
+    for ii in range(nmonti):
+
+        # Wiggle the input data within its statistical uncertainty
+        # utemp = _np.random.normal(0.0, 1.0, _np.size(u, axis=axis))
+        # utemp = utemp.reshape(nsh[0], nsh[1])
+        utemp = _np.random.normal(0.0, 1.0, _np.shape(u))
+        utemp = u + _np.sqrt(varu)*utemp
+
+        # Convolve with the derivative of a Gaussian to get the derivative
+        # There is some smoothing in this procedure
+        utemp = _ndimage.gaussian_filter1d(utemp, sigma=sigma, order=derivorder,
+                                          axis=axis, mode=mode)
+        # utemp /= dx  # dx
+        dudx[ii, :, :] = utemp.copy()
+    # endfor
+
+    # Take mean and variance of the derivative
+    vardudx = _np.nanvar(dudx, axis=0)
+    dudx = _np.nanmean(dudx, axis=0)
+
+    if _np.size(dudx, axis=0) == 1:
+        dudx = dudx.T
+        vardudx = vardudx.T
+    # endif
+
+    if derivorder > 0:
+        # Do the derivative part now
+    #    dx = xvar[1]-xvar[0]
+        dx = _np.concatenate((_np.diff(xvar[:2], axis=axis),
+                              0.5*(_np.diff(xvar[:-1], axis=axis)+_np.diff(xvar[1:], axis=axis)),
+                              _np.diff(xvar[-2:], axis=axis)))
+
+        dx = _np.atleast_2d(dx).T
+        # if nsh[1]>1:
+        if _np.shape(dx) != _np.shape(dudx):
+            dx = _np.tile(dx, (1,nsh[1]))
+        # endif
+
+        vardudx /= dx**2.0
+        dudx /= dx
+    # end if
+
+    # Match the input data shape in the output data
+    vardudx = vardudx.reshape(ush)
+    dudx = dudx.reshape(ush)
+
+    return dudx, vardudx
+# end def deriv_bsgaussian
+
+# ======================================================================== #
+# ======================================================================== #
+
+# =============================== #
+# ---- leastsq dependent--------- #
+# =============================== #
 
 
 def expdecay_fit(tt,sig_in,param):
@@ -950,7 +970,7 @@ def expdecay_fit(tt,sig_in,param):
 
     # Define a function that returns the magnitude of stuff under a gaussian
     # peak (with support for multiple peaks)
-    fit = lambda param, xx: _np.sum([expdecay(xx, param[ii*3], param[ii*3+1],
+    fit = lambda param, xx: _np.sum([_ms.expdecay(xx, param[ii*3], param[ii*3+1],
                                               param[ii*3+2])
                                     for ii in _np.arange(len(param)/3)], axis=0)
     # Define a function that returns the difference between the fitted gaussian
@@ -973,7 +993,6 @@ def expdecay_fit(tt,sig_in,param):
     return results.reshape(-1,3)
 
 
-
 def gaussian_peak_width(tt,sig_in,param):
     #
     # param contains intitial guesses for fitting gaussians,
@@ -984,7 +1003,7 @@ def gaussian_peak_width(tt,sig_in,param):
 
     # Define a function that returns the magnitude of stuff under a gaussian
     # peak (with support for multiple peaks)
-    fit = lambda param, xx: _np.sum([gaussian(xx, param[ii*3], param[ii*3+1],
+    fit = lambda param, xx: _np.sum([_ms.gaussian(xx, param[ii*3], param[ii*3+1],
                                               param[ii*3+2])
                                     for ii in _np.arange(len(param)/3)], axis=0)
     # Define a function that returns the difference between the fitted gaussian
@@ -1006,22 +1025,29 @@ def gaussian_peak_width(tt,sig_in,param):
 
     return results.reshape(-1,3)
 
+
+
 # ======================================================================== #
 
-def twopower(XX, aa):
-    return _ms.twopower(XX, aa)
+# =============================== #
+# ---- curvefit dependent-------- #
+# =============================== #
 
-def expedge(XX, aa):
-    return _ms.expedge(XX, aa)
 
-def qparab_fit(XX, *aa, **kwargs):
-    return _ms.qparab(XX, *aa, **kwargs)
-
-def dqparabdx(XX, aa=[0.30, 0.002, 2.0, 0.7, -0.24, 0.30], nohollow=False):
-    return _ms.deriv_qparab(XX, aa, nohollow)
-
-def dqparabda(XX, aa=[0.30, 0.002, 2.0, 0.7, -0.24, 0.30], nohollow=False):
-    return _ms.partial_qparab(XX, aa, nohollow)
+#def twopower(XX, aa):
+#    return _ms.twopower(XX, aa)
+#
+#def expedge(XX, aa):
+#    return _ms.expedge(XX, aa)
+#
+#def qparab_fit(XX, *aa, **kwargs):
+#    return _ms.qparab(XX, *aa, **kwargs)
+#
+#def dqparabdx(XX, aa=[0.30, 0.002, 2.0, 0.7, -0.24, 0.30], nohollow=False):
+#    return _ms.deriv_qparab(XX, aa, nohollow)
+#
+#def dqparabda(XX, aa=[0.30, 0.002, 2.0, 0.7, -0.24, 0.30], nohollow=False):
+#    return _ms.partial_qparab(XX, aa, nohollow)
 
 # ========================= #
 
@@ -1057,8 +1083,10 @@ def qparab_lsfit(xdata, ydata, vary=None, xx=None,
     # endif
 
     # Alias to the fitting method that allows passing a static argument to the method.
-    FitAlias = lambda *args: qparab_fit(args[0], args[1:], nohollow)
+    FitAlias = lambda *args: _ms.qparab_fit(args[0], args[1:], nohollow)
 
+#    bounds = (lowbounds,upbounds)
+#    method = 'trf'
     if _scipyversion < 0.17:
         [af,pcov]=curve_fit( FitAlias, xdata, ydata, p0 = af, sigma = weights)
 
@@ -1082,189 +1110,12 @@ def qparab_lsfit(xdata, ydata, vary=None, xx=None,
 #    return af, vaf
 # end def qparab_lsfit
 
-# ======================================================================== #
-
-
-def fit_leastsq(p0, xdat, ydat, func, **kwargs):
-    """
-    [pfit, pcov] = fit_leastsq(p0, xdat, ydat, func)
-
-    Least squares fit of input data to an input function using scipy's
-    "leastsq" function.
-
-    Inputs:
-        p0 - initial guess at fitting parameters
-        xdat,ydat - Input data to be fit
-        func - Handle to an external fitting function, y = func(p,x)
-
-    Outputs:
-        pfit - Least squares solution for fitting paramters
-        pcov - Estimate of the covariance in the fitting parameters
-                (scaled by residuals)
-    """
-
-    def errf(*args):
-        p,x,y=(args[:-2],args[-2],args[-1])
-        return func(x, _np.asarray(p)) - y
-    # end def errf
-    # errf = lambda p, x, y: func(p,x) - y
-
-    pfit, pcov, infodict, errmsg, success = \
-        leastsq(errf, p0, args=(xdat, ydat), full_output=1,
-                epsfcn=0.0001, **kwargs)
-
-    # end if
-
-    if (len(ydat) > len(p0)) and pcov is not None:
-        pcov = pcov * ((errf(pfit, xdat, ydat)**2).sum()
-                       / (len(ydat)-len(p0)))
-    else:
-        pcov = _np.inf
-    # endif
-
-    return pfit, pcov
-
-    """
-    The below uncertainty is not a real uncertainty.  It assumes that there
-    is no covariance in the fitting parameters.
-    perr = []
-    for ii in range(len(pfit)):
-        try:
-            #This assumes uncorrelated uncertainties (no covariance)
-            perr.append(_np.absolute(pcov[ii][ii])**0.5)
-        except:
-            perr.append(0.00)
-        # end try
-    # end for
-    return pfit, _np.array(perr)
-
-    perr - Estimated uncertainty in fitting parameters
-                (scaled by residuals)
-    """
-# end def fit_leastsq
 
 # ======================================================================== #
 
-
-def fit_curvefit(p0, xdat, ydat, func, yerr=None, **kwargs):
-    """
-    [pfit, pcov] = fit_curvefit(p0, xdat, ydat, func, yerr)
-
-    Least squares fit of input data to an input function using scipy's
-    "curvefit" method.
-
-    Inputs:
-        p0 - initial guess at fitting parameters
-        xdat,ydat - Input data to be fit
-        func - Handle to an external fitting function, y = func(p,x)
-        yerr - uncertainty in ydat (optional input)
-
-    Outputs:
-        pfit - Least squares solution for fitting paramters
-        pcov - Estimate of the covariance in the fitting parameters
-                (scaled by residuals)
-    """
-
-    method = kwargs.get('lsqmethod','lm')
-    if (_scipyversion >= 0.17) and (yerr is not None):
-        pfit, pcov = curve_fit(func, xdat, ydat, p0=p0, sigma=yerr,
-                               absolute_sigma = True, method=method)
-    else:
-        pfit, pcov = curve_fit(func, xdat, ydat, p0=p0, sigma=yerr, **kwargs)
-
-        if (len(ydat) > len(p0)) and (pcov is not None):
-            pcov = pcov *(((func(pfit, xdat, ydat)-ydat)**2).sum()
-                           / (len(ydat)-len(p0)))
-        else:
-            pcov = _np.inf
-        # endif
-    # endif
-
-    return pfit, pcov
-    """
-    The below uncertainty is not a real uncertainty.  It assumes that there
-    is no covariance in the fitting parameters.
-    perr = []
-    for ii in range(len(pfit)):
-        try:
-            #This assumes uncorrelated uncertainties (no covariance)
-            perr.append(_np.absolute(pcov[ii][ii])**0.5)
-        except:
-            perr.append(0.00)
-        # end try
-    # end for
-    return pfit, _np.array(perr)
-
-    perr - Estimated uncertainty in fitting parameters
-                (scaled by residuals)
-    """
-# end def fit_curvefit
-
-# ======================================================================== #
-
-
-def fit_mcleastsq(p0, xdat, ydat, func, yerr_systematic=0.0, nmonti=300):
-    """
-    function [pfit,perr] = fit_mcleastsq(p0, xdat, ydat, func, yerr_systematic, nmonti)
-
-    This is a Monte Carlo wrapper around scipy's leastsq function that is
-    meant to propagate systematic uncertainty from input data into the
-    fitting parameters nonlinearly.
-
-    Inputs:
-        p0 - initial guess at fitting parameters
-        xdat,ydat - Input data to be fit
-        func - Handle to an external fitting function, y = func(p,x)
-        yerr_systematic - systematic uncertainty in ydat (optional input)
-
-    Outputs:
-        pfit - Least squares solution for fitting paramters
-        perr - Estimate of the uncertainty in the fitting parameters
-                (scaled by residuals)
-
-    """
-    def errf(*args):
-        p,x,y=(args[:-2],args[-2],args[-1])
-        return func(x, _np.asarray(p)) - y
-    # end def errf
-    # errf = lambda p, x, y: func(x, p) - y
-
-    # Fit first time
-    pfit, perr = leastsq(errf, p0, args=(xdat, ydat), full_output=0)
-
-    # Get the stdev of the residuals
-    residuals = errf(pfit, xdat, ydat)
-    sigma_res = _np.std(residuals)
-
-    # Get an estimate of the uncertainty in the fitting parameters (including
-    # systematics)
-    sigma_err_total = _np.sqrt(sigma_res**2 + yerr_systematic**2)
-
-    # several hundred random data sets are generated and fitted
-    ps = []
-    for ii in range(nmonti):
-        yy = ydat + _np.random.normal(0., sigma_err_total, len(ydat))
-
-        mcfit, mccov = leastsq(errf, p0, args=(xdat, yy), full_output=0)
-
-        ps.append(mcfit)
-    #end for
-
-    # You can choose the confidence interval that you want for your
-    # parameter estimates:
-    # 1sigma gets approximately the same as methods above
-    # 1sigma corresponds to 68.3% confidence interval
-    # 2sigma corresponds to 95.44% confidence interval
-    ps = _np.array(ps)
-    mean_pfit = _np.mean(ps, 0)
-
-    Nsigma = 1.0
-    err_pfit = Nsigma * _np.std(ps, 0)
-
-    return mean_pfit, err_pfit
-# end fit_mcleastsq
-
-# ======================================================================== #
+# =================================== #
+# --- scipy interpolate dependent --- #
+# =================================== #
 
 
 def spline(xvar, yvar, xf, vary=None, deg=5, bbox=None):
@@ -1631,344 +1482,11 @@ def spline_bs(xvar, yvar, vary, xf=None, func="spline", nmonti=300, deg=3, bbox=
 #    vardydx = _np.asarray(vardydx)
 #    return yf, varf, dydx, vardydx
 
-# ======================================================================== #
-
-
-class fitNL(Struct):
-    """
-    To use this first generate a class that is a chil of this one
-    class Prob(fitNL)
-
-        def __init__(self, xdata, ydata, yvar, options, **kwargs)
-            # call super init
-            super(fitNL, self).__init__(xdat, ydat, vary, af0, self.func, options, kwargs)
-        # end def
-
-        def func(self, af):
-            return y-2*af[0]+af[1]
-
-    """
-
-    def __init__(self, xdat, ydat, vary, af0, func, fjac=None, **kwargs):
-
-        options = {}
-        options.update(**kwargs)
-
-        self.xdat = xdat
-        self.ydat = ydat
-        self.vary = vary
-        self.af0 = af0
-        self.func = func
-        self.fjac = fjac
-
-        # ========================== #
-
-        options["nmonti"] = options.get("nmonti", 300)
-        options["af0"] = options.get("af0", self.af0)
-        options["LB"] = options.get("LB", -_np.Inf*_np.ones_like(self.af0))
-        options["UB"] = options.get("UB",  _np.Inf*_np.ones_like(self.af0))
-
-        # 1) Least-squares, 2) leastsq, 3) Curve_fit
-        options["lsqfitmethod"] = options.get("lsqfitmethod", 'lm')
-        if _scipyversion >= 0.17:
-            options["lsqmethod"] = options.get("lsqmethod", int(1))
-        else:
-            options["lsqmethod"] = options.get("lsqmethod", int(2))
-        # end if
-
-        # ========================== #
-
-        # Pull out the run data from the options dictionary
-        #  possibilities include
-        #   - lsqfitmetod - from leastsquares - 'lm' (levenberg-marquardt,etc.)
-        #   - LB, UB - Lower and upper bounds on fitting parameters (af)
-        self.__dict__.update(options)
-
-    # end def __init__
-
-    # ========================== #
-
-    def run(self, **kwargs):
-        self.__dict__.update(kwargs)
-
-        if self.lsqmethod == 1:
-            self.__use_least_squares(**kwargs)
-        elif self.lsqmethod == 2:
-            self.__use_leastsq(**kwargs)
-        elif self.lsqmethod == 3:
-            self.__use_curvefit(**kwargs)
-        return self.af, self.covmat
-    # end def run
-
-    # ========================== #
-
-    def calc_chi2(self, af):
-        self.chi2 = (self.func(af, self.xdat) - self.ydat)
-        self.chi2 = self.chi2 / _np.sqrt(self.vary)
-        return self.chi2
-
-    # ========================== #
-
-    def __use_least_squares(self, **options):
-        """
-        Wrapper around the scipy least_squares function
-        """
-        lsqfitmethod = options.get("lsqfitmethod", 'lm')
-
-        if _np.isscalar(self.af0):
-            self.af0 = [self.af0]
-        self.numfit = len(self.af0)
-
-        res = least_squares(self.calc_chi2, self.af0, bounds=(self.LB, self.UB),
-                          method=lsqfitmethod, **options)
-                          # args=(self.xdat,self.ydat,self.vary), kwargs)
-        self.af = res.x
-        # chi2
-        #resid = res.fun
-        jac = res.jac
-
-        # Make a final call to the fitting function to update object values
-        self.calc_chi2(self.af)
-
-        # Estimate of covariance in solution
-        # jac = _np.full(jac) #Sparse matrix form
-        # resid*
-        self.covmat = (_np.eye(self.numfit)) / self.numfit / \
-            _np.dot(jac[:, 0:self.numfit].T, jac[:, 0:self.numfit])
-
-        return self.af, self.covmat
-    # end def __use_least_squares
-
-    # ========================== #
-
-    def __use_curvefit(self, **kwargs):
-        """
-        Wrapper around scipy's curve_fit function
-        """
-        lsqfitmethod = kwargs.get("lsqfitmethod", 'lm')
-        def calcchi2(xdat, *af):
-            af = _np.asarray(af)
-            return self.calc_chi2(af)
-        # end def calcchi2
-
-        if _scipyversion >= 0.17:
-            pfit, pcov = \
-                curve_fit(calcchi2, self.xdat, self.ydat, p0=self.af0,
-                          sigma=_np.sqrt(self.vary), epsfcn=0.0001,
-                          absolute_sigma=True, bounds=(self.LB, self.UB),
-                          method=lsqfitmethod, **kwargs)
-        else:
-            pfit, pcov = \
-                curve_fit(calcchi2, self.xdat, self.ydat, p0=self.af0,
-                          sigma=_np.sqrt(self.vary), **kwargs)
-        # end if
-
-        self.af = _np.asarray(pfit)
-        if _np.isfinite(pcov) == 0:
-            print('FAILED in curvefitting!')
-        # end if
-        self.covmat = _np.asarray(pcov)
-        return self.af, self.covmat
-    # end def __use_curvefit
-
-    # ========================== #
-
-    def __use_leastsq(self, **kwargs):
-        """
-        Wrapper for the leastsq function from scipy
-        """
-        lsqfitmethod = kwargs.get("lsqfitmethod", 'lm')
-        if _scipyversion >= 0.17:
-            pfit, pcov, infodict, errmsg, success = \
-                leastsq(self.calc_chi2, self.af0, full_output=1, ftol=1e-8,
-                        xtol=1e-8, maxfev=1e3, epsfcn=0.0001,
-                        method=lsqfitmethod)
-
-            # self.covmat = (resid*_np.eye[self.numfit]) / self.numfit \
-            #     / _np.dot(jac[:, 0:self.numfit].T, jac[:, 0:self.numfit])
-        else:
-            pfit, pcov, infodict, errmsg, success = \
-                leastsq(self.calc_chi2, x0=self.af0, full_output=1, **kwargs)
-        # end if
-
-        self.af = _np.asarray(pfit, dtype=_np.float64)
-        if (len(self.ydat) > len(self.af)) and pcov is not None:
-            pcov = pcov * ((self.calc_chi2(self.af)**2).sum()
-                           / (len(self.ydat)-len(self.af)))
-        else:
-            pcov = _np.inf
-        # endif
-
-        self.covmat = _np.asarray(pcov, dtype=_np.float64)
-        return self.af, self.covmat
-    # end def __use_leastsq
-
-    # ========================== #
-    # ========================== #
-
-    def bootstrapper(self, xvec, **kwargs):
-        self.__dict__.update(kwargs)
-
-        niterate = 1
-        if self.nmonti > 1:
-            niterate = self.nmonti
-            # niterate *= len(self.xdat)
-        # endif
-
-        nch = len(self.xdat)
-        numfit = len(self.af0)
-        xsav = self.xdat.copy()
-        ysav = self.ydat.copy()
-        vsav = self.vary.copy()
-        af = _np.zeros((niterate, numfit), dtype=_np.float64)
-        chi2 = _np.zeros((niterate,), dtype=_np.float64)
-
-        nx = len(xvec)
-        self.mfit = self.func(self.af, xvec)
-        mfit = _np.zeros((niterate, nx), dtype=_np.float64)
-        for mm in range(niterate):
-
-            self.ydat = ysav.copy()
-            self.vary = vsav.copy()
-
-            self.ydat += _np.sqrt(self.vary)*_np.random.normal(0.0,1.0,_np.shape(self.ydat))
-            self.vary = (self.ydat-ysav)**2
-
-#            cc = 1+_np.floor((mm-1)/self.nmonti)
-#            if self.nmonti > 1:
-#                self.ydat[cc] = ysav[cc].copy()
-#                self.ydat[cc] += _np.sqrt(vsav[cc]) * _np.random.normal(0.0,1.0,_np.shape(vsav[cc]))
-#                self.vary[cc] = (self.ydat[cc]-ysav[cc])**2
-#                    # _np.ones((1,nch), dtype=_np.float64)*
-#            # endif
-
-            af[mm, :], _ = self.run()
-            chi2[mm] = _np.sum(self.chi2)/(numfit-nch-1)
-
-            mfit[mm, :] = self.func(af[mm,:], xvec)
-        # endfor
-        self.xdat = xsav
-        self.ydat = ysav
-        self.vary = vsav
-
-        self.vfit = _np.var(mfit, axis=0)
-        self.mfit = _np.mean(mfit, axis=0)
-
-        # straight mean and covariance
-        self.covmat = _np.cov(af, rowvar=False)
-        self.af = _np.mean(af, axis=0)
-
-#        # weighted mean and covariance
-#        aw = 1.0/(1.0-chi2) # chi2 close to 1 is good, high numbers good in aweights
-#        covmat = _np.cov( af, rowvar=False, aweights=aw)
-
-        # Weighting by chi2
-        # chi2 = _np.sqrt(chi2)
-        # af = _np.sum( af/(chi2*_np.ones((1,numfit),dtype=_np.float64)), axis=0)
-        # af = af/_np.sum(1/chi2, axis=0)
-
-        # self.covmat = covmat
-        # self.af = af
-        return self.af, self.covmat
-
-    # ========================== #
-
-    def properror(self, xvec, gvec):  # (x-positions, gvec = dqparabda)
-        if gvec is None: gvec = self.fjac # endif
-        sh = _np.shape(xvec)
-
-        nx = len(xvec)
-        self.mfit = self.func(self.af, xvec)
-
-        self.vfit = _np.zeros(_np.shape(xvec), dtype=_np.float64)
-        for ii in range(nx):
-            # Required to propagate error from model
-            self.vfit[ii] = _np.dot(_np.atleast_2d(gvec[:,ii]), _np.dot(self.covmat, gvec[:,ii]))
-        # endfor
-        self.vfit = _np.reshape(self.vfit, sh)
-        return self.vfit
-
-    # ========================== #
-
-# end class fitNL
-
 # ======================================================================= #
 
-
-def savitzky_golay(y, window_size, order, deriv=0):
-    r"""Smooth (and optionally differentiate) data with a Savitzky-Golay filter.
-    The Savitzky-Golay filter removes high frequency noise from data.
-    It has the advantage of preserving the original shape and
-    features of the signal better than other types of filtering
-    approaches, such as moving averages techhniques.
-
-    This code has been taken from http://www.scipy.org/Cookbook/SavitzkyGolay
-    Parameters
-    ----------
-    y : array_like, shape (N,)
-        the values of the time history of the signal.
-    window_size : int
-        the length of the window. Must be an odd integer number.
-    order : int
-        the order of the polynomial used in the filtering.
-        Must be less then `window_size` - 1.
-    deriv: int
-        the order of the derivative to compute (default = 0 means only smoothing)
-    Returns
-    -------
-    ys : ndarray, shape (N)
-        the smoothed signal (or it's n-th derivative).
-    Notes
-    -----
-    The Savitzky-Golay is a type of low-pass filter, particularly
-    suited for smoothing noisy data. The main idea behind this
-    approach is to make for each point a least-square fit with a
-    polynomial of high order over an odd-sized window centered at
-    the point.
-    Examples
-    --------
-    t = np.linspace(-4, 4, 500)
-    y = np.exp( -t**2 ) + np.random.normal(0, 0.05, t.shape)
-    ysg = savitzky_golay(y, window_size=31, order=4)
-    import matplotlib.pyplot as plt
-    plt.plot(t, y, label='Noisy signal')
-    plt.plot(t, np.exp(-t**2), 'k', lw=1.5, label='Original signal')
-    plt.plot(t, ysg, 'r', label='Filtered signal')
-    plt.legend()
-    plt.savefig('images/golay.png')
-    #plt.show()
-    References
-    ----------
-    .. [1] A. Savitzky, M. J. E. Golay, Smoothing and Differentiation of
-       Data by Simplified Least Squares Procedures. Analytical
-       Chemistry, 1964, 36 (8), pp 1627-1639.
-    .. [2] Numerical Recipes 3rd Edition: The Art of Scientific Computing
-       W.H. Press, S.A. Teukolsky, W.T. Vetterling, B.P. Flannery
-       Cambridge University Press ISBN-13: 9780521880688
-    """
-    try:
-        window_size = _np.abs(_np.int(window_size))
-        order = _np.abs(_np.int(order))
-    except ValueError:
-        raise ValueError("window_size and order have to be of type int")
-    if window_size % 2 != 1 or window_size < 1:
-        raise TypeError("window_size size must be a positive odd number")
-    if window_size < order + 2:
-        raise TypeError("window_size is too small for the polynomials order")
-    order_range = range(order+1)
-    half_window = (window_size -1) // 2
-    # precompute coefficients
-    b = _np.mat([[k**i for i in order_range] for k in range(-half_window, half_window+1)])
-    m = _np.linalg.pinv(b).A[deriv]
-    # pad the signal at the extremes with
-    # values taken from the signal itself
-    firstvals = y[0] - _np.abs( y[1:half_window+1][::-1] - y[0] )
-    lastvals = y[-1] + _np.abs(y[-half_window-1:-1][::-1] - y[-1])
-    y = _np.concatenate((firstvals, y, lastvals))
-    return _np.convolve( m, y, mode='valid')
-
-
-# ======================================================================= #
+# =================================== #
+# ---------- fitNL dependent -------- #
+# =================================== #
 
 def fit_TSneprofile(QTBdat, rvec, loggradient=True, plotit=False, amin=0.51, returnaf=False):
 
@@ -1979,10 +1497,10 @@ def fit_TSneprofile(QTBdat, rvec, loggradient=True, plotit=False, amin=0.51, ret
     # varn *= (1e-20)**2.0
 
     def fitqparab(af, XX):
-        return qparab_fit(XX, af)
+        return _ms.qparab_fit(XX, af)
 
     def fitdqparabdx(af, XX):
-        return dqparabdx(XX, af)
+        return _ms.deriv_qparab(XX, af)
 
     info = _ms.model_qparab(XX=None)
     LB = info.Lbounds
@@ -2075,6 +1593,9 @@ def fit_TSneprofile(QTBdat, rvec, loggradient=True, plotit=False, amin=0.51, ret
         return logne, varlogne, dlnnedrho, vardlnnedrho, NLfit.af
     return logne, varlogne, dlnnedrho, vardlnnedrho
 
+# ======================================================================= #
+
+
 def fit_TSteprofile(QTBdat, rvec, loggradient=True, plotit=False, amin=0.51, returnaf=False):
 
     roa = QTBdat['roa']
@@ -2084,10 +1605,10 @@ def fit_TSteprofile(QTBdat, rvec, loggradient=True, plotit=False, amin=0.51, ret
     # varn *= (1e-20)**2.0
 
     def fitqparab(af, XX):
-        return qparab_fit(XX, af)
+        return _ms.qparab(XX, af)
 
     def fitdqparabdx(af, XX):
-        return dqparabdx(XX, af)
+        return _ms.deriv_qparab(XX, af)
 
     info = _ms.model_qparab(XX=None)
     LB = info.Lbounds
@@ -2175,8 +1696,6 @@ def fit_TSteprofile(QTBdat, rvec, loggradient=True, plotit=False, amin=0.51, ret
     if returnaf:
         return logTe, varlogTe, dlnTedrho, vardlnTedrho, NLfit.af
     return logTe, varlogTe, dlnTedrho, vardlnTedrho
-
-
 
 
 # ======================================================================= #
@@ -2305,6 +1824,11 @@ def fit_TSteprofile(QTBdat, rvec, loggradient=True, plotit=False, amin=0.51, ret
 #    return pFit, vF, info
 
 # ======================================================================= #
+# ======================================================================= #
+
+# =========================== #
+# ---------- testing -------- #
+# =========================== #
 
 def test_dat(multichannel=True):
 #    x = _np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],

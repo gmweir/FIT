@@ -18,9 +18,103 @@ import numpy as _np
 import matplotlib.pyplot as _plt
 #import pybaseutils as _pyut
 from pybaseutils.Struct import Struct
+from pybaseutils.utils import sech
 
-# =========================================================================== #
-# =========================================================================== #
+# ========================================================================== #
+# ========================================================================== #
+
+def line(XX, a):
+    y = a[0]*XX+a[1]
+    return y
+
+def line_gvec(XX, a):
+    gvec = _np.zeros( (2,_np.size(XX)), dtype=_np.float64)
+    gvec[0,:] = XX.copy() # aa[0]
+    gvec[1,:] = 1.0       # aa[1]
+    return gvec
+
+def polyeval(a, x):
+    """
+    p(x) = polyeval(a, x)
+         = a[0] + a[1]x + a[2]x^2 +...+ a[n-1]x^{n-1} + a[n]x^n
+         = a[0] + x(a[1] + x(a[2] +...+ x(a[n-1] + a[n]x)...)
+    """
+    p = 0
+    for coef in a[::-1]:
+        p = p * x + coef
+    return p
+# end def polyeval
+
+
+def polyderiv(a):
+    """
+    p'(x) = polyderiv(a)
+          = b[0] + b[1]x + b[2]x^2 +...+ b[n-2]x^{n-2} + b[n-1]x^{n-1}
+    where
+        b[i] = (i+1)a[i+1]
+    """
+    b = [i * x for i,x in enumerate(a)][1:]
+    return b
+# end def polyderiv
+
+def polyreduce(a, root):
+    """
+    Given x = r is a root of n'th degree polynomial p(x) = (x-r)q(x),
+    divide p(x) by linear factor (x-r) using the same algorithm as
+    polynomial evaluation.  Then, return the (n-1)'th degree quotient
+    q(x) = polyreduce(a, r)
+         = c[0] + c[1]x + c[2]x^2 +...+ c[n-2]x^{n-2} + c[n-1]x^{n-1}
+    """
+    c, p = [], 0
+    a.reverse()
+    for coef in a:
+        p = p * root + coef
+        c.append(p)
+    a.reverse()
+    c.reverse()
+    return c[1:]
+# end def polyreduce
+
+
+# ======================================================================== #
+
+def piecewise_2line(x, x0, y0, k1, k2):
+    """
+    function y = piecewise_2line(x, x0, y0, k1, k2)
+
+    Model for a piecewise linear function with one break
+
+    Inputs:
+        x - model independent variable
+        x0 - position of the break in slope
+        y0 - offset at the break in slope
+        k1 - slope of first line (dydx[x<x0])
+        k2 - slope of second line (dydx[x>x0])
+
+    Outputs:
+        y(x) - model at the input positions specified by x
+    """
+    return _np.piecewise(x, [x < x0],
+                         [lambda x:k1*x + y0-k1*x0, lambda x:k2*x + y0-k2*x0])
+# end def piecewise_2line
+
+# def piecewise_linear(x, x0, y0, k1, k2):
+#
+#   yy = _np.piecewise(x, [x < x0],
+#                       [lambda x:k1*x + y0-k1*x0, lambda x:k2*x + y0-k2*x0])
+#   return yy
+# # end def piecewise_linear
+
+# ========================================================================== #
+
+
+def expdecay(tt, Y0, t0, tau):
+    return Y0*_np.exp(-(tt-t0)/tau)
+
+def gaussian(xx, AA, x0, ss):
+    return AA*_np.exp(-(xx-x0)**2/(2.0*ss**2))
+
+# ========================================================================== #
 
 
 def twopower(XX, af):
@@ -51,7 +145,7 @@ def expedge(XX, af):
 
 # ========= Quasi-parabolic model ========== #
 
-def model_qparab(XX, af=None, nohollow=False):
+def model_qparab(XX, af=None, nohollow=False, prune=False):
     """
     ex// ne_parms = [0.30, 0.002 2.0 0.7 -0.24 0.30]
     This function calculates the quasi-parabolic fit
@@ -99,14 +193,28 @@ def model_qparab(XX, af=None, nohollow=False):
     info.gvec = gvec
 
     info.dprofdx = deriv_qparab(XX, af, nohollow)
-
     info.dgdx = partial_deriv_qparab(XX, af, nohollow)
-    info.af = af
 
+    if prune:
+        af = af[:4]
+        info.Lbounds = info.Lbounds[:4]
+        info.Ubounds = info.Ubounds[:4]
+
+        gvec = gvec[:4, :]
+        info.dgdx = info.dgdx[:4, :]
+    # endif
+    info.af = af
     return prof, gvec, info
 # end def model_qparab
 
 # ========= Subfunctions of the quasi-parabolic model ========== #
+
+def rescale_xlims(XX, forward=True):
+    ascl = max(_np.max(XX), 1.0)
+    if forward:
+        return XX/ascl
+    else:
+        return XX*ascl
 
 # Set the plasma density, temperature, and Zeff profiles (TRAVIS INPUTS)
 def qparab(XX, *aa, **kwargs):
@@ -196,13 +304,13 @@ def deriv2_qparab(XX, aa=[0.30, 0.002, 2.0, 0.7, -0.24, 0.30], nohollow=False):
     d2pdx2 -= (aa[2]-1.0)*aa[2]*aa[3]*(1.0+aa[4]-aa[1])*(XX**(aa[2]-2.0))*(1-XX**aa[2])**(aa[3]-1.0)
     d2pdx2 += (2.0*aa[4]*_np.exp(-XX**2.0/(aa[5]**2.0)))/(aa[5]**2.0)
     d2pdx2 -= (4*aa[4]*(XX**2.0)*_np.exp(-XX**2.0/(aa[5]**2.0)))/(aa[5]**4.0)
-    d2pdx2 *= af[0]
+    d2pdx2 *= aa[0]
     return d2pdx2
 # end def derive_qparab
 
 def partial_qparab(XX,aa=[0.30, 0.002, 2.0, 0.7, -0.24, 0.30], nohollow=False):
     """
-    ex// ne_parms = [0.30, 0.002 2.0 0.7 -0.24 0.30]
+    ex// ne_parms = [0.30, 0.002 2.0, 0.7 -0.24 0.30]
     This subfunction calculates the jacobian of a quasi-parabolic fit
 
     quasi-parabolic fit:
@@ -231,10 +339,10 @@ def partial_qparab(XX,aa=[0.30, 0.002, 2.0, 0.7, -0.24, 0.30], nohollow=False):
 
     gvec = _np.zeros( (6,_np.size(XX)), dtype=_np.float64)
     gvec[0,:] = g-h+(1.0-g+h)*_np.abs(1.0-XX**p)**q + h*(1.0-_np.exp(-XX**2.0/w**2.0))
-    gvec[1,:] = Y0*( 1.0-(1.0-XX**p)**q )    # aa[0]
-    gvec[2,:] = -1.0*Y0*q*(g-h-1.0)*(XX**p)*_np.log(XX)*((1-XX**p)**q)/(XX**p-1.0)
-    gvec[3,:] = Y0*(-g+h+1.0)*((1-XX**p)**q)*_np.log(1.0-XX**p)
-    gvec[4,:] = Y0*((1.0-XX**p)**q) - Y0*_np.exp(-(XX/w)**2.0)
+    gvec[1,:] = Y0*( 1.0-_np.abs(1.0-XX**p)**q )    # aa[0]
+    gvec[2,:] = -1.0*Y0*q*(g-h-1.0)*(XX**p)*_np.log(XX)*(_np.abs(1-XX**p)**q)/(XX**p-1.0)
+    gvec[3,:] = Y0*(-g+h+1.0)*(_np.abs(1-XX**p)**q)*_np.log(1.0-XX**p)
+    gvec[4,:] = Y0*(_np.abs(1.0-XX**p)**q) - Y0*_np.exp(-(XX/w)**2.0)
     gvec[5,:] = -2.0*h*(XX**2.0)*Y0*_np.exp(-(XX/w)**2.0) / w**3.0
 
     return gvec
@@ -327,13 +435,13 @@ def partial_deriv2_qparab(XX, aa=[0.30, 0.002, 2.0, 0.7, -0.24, 0.30], nohollow=
     gvec[2,:] *= q*Y0*(g-h-1.0)*(XX**(p-2.0))*((1.0-XX**p)**(q-3.0))
     gvec[3,:] = p*Y0*(-(g-h-1.0))*(XX**(p-2.0))*((1.0-XX**p)**(q-2.0))*(p*(2.0*q*XX**p-1.0)+q*(p*(q*XX**p-1.0)-XX**p+1.0)*_np.log(1.0-XX**p)-XX**p+1.0)
     gvec[4,:] = Y0*(p*q*(XX**(p-2.0))*((1.0-XX**p)**(q-2.0))*(p*(q*XX**p-1.0)-XX**p+1.0)+(2.0*_np.exp(-XX**2.0/w**2.0)*(w**2.0-2.0*XX**2.0))/w**4.0)
-    gvec[5,:] = -(4.0*h*Y0*exp(-XX**2.0/w**2.0)*(w**4.0-5*w**2.0*XX**2.0+2.0*XX**4.0))/w**7.0
+    gvec[5,:] = -(4.0*h*Y0*_np.exp(-XX**2.0/w**2.0)*(w**4.0-5*w**2.0*XX**2.0+2.0*XX**4.0))/w**7.0
 
     return gvec
 # end def partial_deriv2_qparab
 
-# =========================================================================== #
-# =========================================================================== #
+# ========================================================================== #
+# ========================================================================== #
 
 
 def model_ProdExp(XX, af=None, npoly=4):
@@ -405,8 +513,8 @@ def model_ProdExp(XX, af=None, npoly=4):
 
     return prof, gvec, info
 # end def model_ProdExp()
-# =========================================================================== #
-# =========================================================================== #
+# ========================================================================== #
+# ========================================================================== #
 
 
 def model_poly(XX, af=None, npoly=4):
@@ -473,8 +581,8 @@ def model_poly(XX, af=None, npoly=4):
     return prof, gvec, info
 # end def model_poly()
 
-# =========================================================================== #
-# =========================================================================== #
+# ========================================================================== #
+# ========================================================================== #
 
 
 def model_evenpoly(XX, af=None, npoly=4):
@@ -545,8 +653,8 @@ def model_evenpoly(XX, af=None, npoly=4):
     return prof, gvec, info
 # end def model_evenpoly()
 
-# =========================================================================== #
-# =========================================================================== #
+# ========================================================================== #
+# ========================================================================== #
 
 
 def model_PowerLaw(XX, af=None, npoly=4):
@@ -633,8 +741,8 @@ def model_PowerLaw(XX, af=None, npoly=4):
     return prof, gvec, info
 # end def model_PowerLaw()
 
-# =========================================================================== #
-# =========================================================================== #
+# ========================================================================== #
+# ========================================================================== #
 
 
 def model_Exponential(XX, af=None, npoly=None):
@@ -703,8 +811,8 @@ def model_Exponential(XX, af=None, npoly=None):
     return prof, gvec, info
 # end def model_Exponential()
 
-# =========================================================================== #
-# =========================================================================== #
+# ========================================================================== #
+# ========================================================================== #
 
 
 def model_parabolic(XX, af):
@@ -734,8 +842,8 @@ def model_parabolic(XX, af):
     info.dgdx = -2.0*XX
     return prof, gvec, info
 
-# =========================================================================== #
-# =========================================================================== #
+# ========================================================================== #
+# ========================================================================== #
 
 
 def model_flattop(XX, af):
@@ -783,8 +891,8 @@ def model_flattop(XX, af):
     info.dgdx = dgdx
     return prof, gvec, info
 
-# =========================================================================== #
-# =========================================================================== #
+# ========================================================================== #
+# ========================================================================== #
 
 
 def model_massberg(XX, af):
@@ -841,7 +949,7 @@ def model_massberg(XX, af):
 
     return prof, gvec, info
 
-# =========================================================================== #
+# ========================================================================== #
 
 
 def model_2power(XX, af):
@@ -901,8 +1009,8 @@ def model_2power(XX, af):
 
     return prof, gvec, info
 
-# =========================================================================== #
-# =========================================================================== #
+# ========================================================================== #
+# ========================================================================== #
 # These two haven't been checked yet!!! also need to add analytic jacobian
 # for the derivatives
 
@@ -993,8 +1101,8 @@ def model_Heaviside(XX, af=None, npoly=4, rinits=[0.30, 0.35]):
     return prof, gvec, info
 # end def model_Heaviside()
 
-# =========================================================================== #
-# =========================================================================== #
+# ========================================================================== #
+# ========================================================================== #
 
 
 def model_StepSeries(XX, af=None, npoly=4):
@@ -1070,8 +1178,8 @@ def model_StepSeries(XX, af=None, npoly=4):
 # end def model_StepSeries()
 
 
-# =========================================================================== #
-# =========================================================================== #
+# ========================================================================== #
+# ========================================================================== #
 
 
 def model_profile(af=None, XX=None, model_number=7, npoly=4, nargout=1, verbose=False):
@@ -1174,7 +1282,7 @@ def model_profile(af=None, XX=None, model_number=7, npoly=4, nargout=1, verbose=
         return prof
 # end def model_profile()
 
-# =========================================================================== #
+# ========================================================================== #
 
 
 def model_chieff(af=None, XX=None, model_number=1, npoly=4, nargout=1, verbose=False):
@@ -1274,8 +1382,10 @@ def model_chieff(af=None, XX=None, model_number=1, npoly=4, nargout=1, verbose=F
         return chi_eff
 # end def model_chieff()
 
-# =========================================================================== #
-# =========================================================================== #
+# ========================================================================== #
+# ========================================================================== #
+
+
 def normalize_test_prof(xvar, dPdx, dVdrho):
     dPdx = dPdx/_np.trapz(dPdx, x=xvar)     # Test profile shape : dPdroa
 
@@ -1288,31 +1398,88 @@ def normalize_test_prof(xvar, dPdx, dVdrho):
     return dPdV
 # end def normalize_test_prof
 
+def get_test_Prad(xvar, exppow=14.0, dVdrho=None):
+    if dVdrho is None:        dVdrho = _np.ones_like(xvar)    # endif
+    dPdx = _np.exp(xvar**exppow)-1.0       # Radiation profile shape [MW/rho]
+
+    # Radiation emissivity profile in MW/m3
+    dPdV = normalize_test_prof(xvar, dPdx, dVdrho)
+    return dPdV
+
 def get_test_Pdep(xvar, rloc=0.1, rhalfwidth=0.05, dVdrho=None):
     sh = _np.shape(xvar)
-    if dVdrho is None:
-        dVdrho = _np.ones_like(xvar)
-
-    # endif
-
+    if dVdrho is None:        dVdrho = _np.ones_like(xvar)    # endif
     # Normalized gaussian for the test power deposition shape : dPdroa
-    dPdx = (_np.exp(-0.5*((xvar-rloc)/rhalfwidth)**2)
-            / (rhalfwidth*_np.sqrt(2*_np.pi)))
+    Amp = 2*_np.pi *rhalfwidth * rhalfwidth
+    dPdx = gaussian(xvar, 1.0/Amp, rloc, rhalfwidth/_np.sqrt(2))
+    dPdx = _np.sqrt(dPdx)
+
+#    dPdx = (_np.exp(-0.5*((xvar-rloc)/rhalfwidth)**2)
+#            / (rhalfwidth*_np.sqrt(2*_np.pi)))
     # Test ECRH power density in MW/m3
     dPdV = normalize_test_prof(xvar, dPdx, dVdrho)
     dPdV = dPdV.reshape(sh)
     return dPdV
 # end def
 
-def sech(x):
-    """
-    sech(x)
-    Uses numpy's cosh(x).
-    """
-    return 1.0/_np.cosh(x)
+# ========================================================================== #
+# ========================================================================== #
 
-# =========================================================================== #
-# =========================================================================== #
+#def sech(x):
+#    """
+#    sech(x)
+#    Uses numpy's cosh(x).
+#    """
+#    return 1.0/_np.cosh(x)
+
+def _derivative_inputcondition(xvar):
+    """
+    function [xvar, xsh, transp] = _derivative_inputcondition(xvar)
+
+    Required for the derivative functions below.
+
+    Inputs:
+        xvar - input array of shape less than 3D
+
+    Outputs:
+        xvar - the new array of size (#channels,len(data))
+            if shape(xvar) == (len(data),), xvar has shape (1,len(data,1))
+        xsh  - original shape of the input array (len(data),)
+        transp - Boolean - was the data transposed?
+
+    Converts the input to a minimum 2D numpy array (for multi-channel
+    compatability), then checks whether the data is stored column-wise or
+    row-wise.  Column-wise is faster, but the current incarnation of the
+    finite difference and derivative codes are written so that data is stored
+    row-wise.  This should be changed in the future.
+
+    The final two arguments are used for matching the output data format to
+    the input data format.
+        ex from findiff1d //
+
+        def findiff1d(xvar, yvar, vary, ...)
+            xvar, _, _ = _derivative_inputcondition(xvar)
+            yvar, ysh, ytransp = _derivative_inputcondition(yvar)
+            ...
+            [code body]
+            ...
+            vardydx = vardydx.reshape(ysh)
+            dydx = dydx.reshape(ysh)
+
+            return dydx, vardydx
+    """
+    xsh = _np.shape(xvar)
+    xvar = _np.atleast_2d(xvar)
+    transp = False
+    if _np.size(xvar, axis=0) > _np.size(xvar, axis=1):
+        transp = True
+        xvar = xvar.T
+    # endif
+    return xvar, xsh, transp
+# end def _derivative_inputcondition
+
+# ========================================================================== #
+# ========================================================================== #
 
 
 if __name__ == '__main__':
@@ -1354,8 +1521,8 @@ if __name__ == '__main__':
 
 # endif
 
-# =========================================================================== #
-# =========================================================================== #
+# ========================================================================== #
+# ========================================================================== #
 
 
 
