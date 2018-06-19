@@ -554,11 +554,11 @@ class fitNL(fitNL_base):
 
     def run(self):
         if not hasattr(self, 'options'):  self.options = {}  # end if
-        self.options.setdefault('xtol', 1.0e-12)
-        self.options.setdefault('ftol', 1.0e-12)
-        self.options.setdefault('gtol', 1.0e-12)
+        self.options.setdefault('xtol', 1.0e-14)
+        self.options.setdefault('ftol', 1.0e-14)
+        self.options.setdefault('gtol', 1.0e-14)
         self.options.setdefault('damp', 0.)
-        self.options.setdefault('maxiter', 100)
+        self.options.setdefault('maxiter', 5000)
         self.options.setdefault('factor', 100)  # 100
         self.options.setdefault('nprint', 10)
         self.options.setdefault('iterfunct', 'default')
@@ -567,7 +567,7 @@ class fitNL(fitNL_base):
         self.options.setdefault('rescale', 0)
         self.options.setdefault('autoderivative', 1)
         self.options.setdefault('quiet', 0)
-        self.options.setdefault('diag', None)
+        self.options.setdefault('diag', 0)
         self.options.setdefault('epsfcn', 1e-3)
         self.options.setdefault('debug', 0)
 #        # default to finite differencing in mpfit for jacobian
