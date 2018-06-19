@@ -50,7 +50,7 @@ __metaclass__ = type
 
 
 # Fitting using the Levenberg-Marquardt algorithm.    #
-def modelfit(x, y, ey, XX, func, fkwargs, **kwargs):
+def modelfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     return fit_mpfit(x, y, ey, XX, func, fkwargs, **kwargs)
 
 def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
@@ -389,6 +389,24 @@ class fitNL_base(Struct):
             # use the user-defined function to calculate analytic partial derivatives
             options['autoderivative'] = options.get('autoderivative', 0)
         # end if
+
+        options.setdefault('xtol', 1.0e-14) # 1e-10
+        options.setdefault('ftol', 1.0e-14) # 1e-10
+        options.setdefault('gtol', 1.0e-14) # 1e-10
+        options.setdefault('damp', 0)
+        options.setdefault('maxiter', 5000) # 200
+        options.setdefault('factor', 100) # 100 without rescale, scales the chi2? or the parameters?
+        options.setdefault('nprint', 10)    # debug info
+        options.setdefault('iterfunct', 'default')
+        options.setdefault('iterkw', {})
+        options.setdefault('nocovar', 0)
+        options.setdefault('rescale', 0) # 0
+        options.setdefault('autoderivative', 1)  # if 0, then you must supply gvec
+        options.setdefault('quiet', 0)
+        options.setdefault('diag', 0) # with rescale: positive scale factor for variables
+        options.setdefault('epsfcn', 1e-3)  # 0.001
+        options.setdefault('debug', 0)
+        
         # ========================== #
 
         # Pull out the run data from the options dictionary
@@ -536,21 +554,21 @@ class fitNL(fitNL_base):
 
     def run(self):
         if not hasattr(self, 'options'):  self.options = {}  # end if
-        self.options.setdefault('xtol', 1.0e-10)
-        self.options.setdefault('ftol', 1.0e-10)
-        self.options.setdefault('gtol', 1.0e-10)
+        self.options.setdefault('xtol', 1.0e-12)
+        self.options.setdefault('ftol', 1.0e-12)
+        self.options.setdefault('gtol', 1.0e-12)
         self.options.setdefault('damp', 0.)
         self.options.setdefault('maxiter', 100)
         self.options.setdefault('factor', 100)  # 100
-        self.options.setdefault('nprint', 1)
+        self.options.setdefault('nprint', 10)
         self.options.setdefault('iterfunct', 'default')
         self.options.setdefault('iterkw', {})
         self.options.setdefault('nocovar', 0)
         self.options.setdefault('rescale', 0)
-#        self.options.setdefault('autoderivative', 1)
+        self.options.setdefault('autoderivative', 1)
         self.options.setdefault('quiet', 0)
         self.options.setdefault('diag', None)
-        self.options.setdefault('epsfcn', None)
+        self.options.setdefault('epsfcn', 1e-3)
         self.options.setdefault('debug', 0)
 #        # default to finite differencing in mpfit for jacobian
 #        self.options.setdefault('autoderivative', 1)

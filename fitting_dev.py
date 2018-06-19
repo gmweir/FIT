@@ -1493,11 +1493,10 @@ def fit_TSneprofile(QTBdat, rvec, loggradient=True, plotit=False, amin=0.51, ret
     roa = QTBdat['roa']
     ne = QTBdat['ne']
     varn =  _np.sqrt(QTBdat['varNL']*QTBdat['varNH'])
-    # ne *= 1e-20
-    # varn *= (1e-20)**2.0
 
     def fitqparab(af, XX):
-        return _ms.qparab_fit(XX, af)
+        return _ms.qparab(XX, af)
+#        return _ms.qparab_fit(XX, af)
 
     def fitdqparabdx(af, XX):
         return _ms.deriv_qparab(XX, af)
@@ -1601,8 +1600,6 @@ def fit_TSteprofile(QTBdat, rvec, loggradient=True, plotit=False, amin=0.51, ret
     roa = QTBdat['roa']
     Te = QTBdat['Te']
     varT =  _np.sqrt(QTBdat['varTL']*QTBdat['varTH'])
-    # ne *= 1e-20
-    # varn *= (1e-20)**2.0
 
     def fitqparab(af, XX):
         return _ms.qparab(XX, af)
@@ -2042,7 +2039,27 @@ def test_derivatives():
 
 
 if __name__=="__main__":
-    test_linreg()
+    try:
+        from FIT.model_spec import model_qparab
+    except:
+        from .model_spec import model_qparab        
+    # end try
+    info = model_qparab(XX=None)
+    af = info.af
+    af = _np.asarray([af[ii]+0.1*af[ii]*_np.random.normal(0.0, 1.0, 1) for ii in range(len(af))],
+                     dtype=_np.float64)    
+    LB = info.Lbounds
+    UB = info.Ubounds
+    
+    QTBdat = {}
+    QTBdat['roa'] = _np.linspace(0.05, 1.05, num=10)
+    QTBdat['ne'], _, _ = model_qparab(QTBdat['roa'], af) 
+    QTBdat['ne'] *= 1e20
+    QTBdat['varNL'] = (0.1*QTBdat['ne'])**2.0
+    QTBdat['varNH'] = (0.1*QTBdat['ne'])**2.0
+
+    out = fit_TSneprofile(QTBdat, _np.linspace(0, 1.05, num=51), plotit=True, amin=0.51, returnaf=False)
+#    test_linreg()
 #    test_derivatives()
 
 #    x = _np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10 ,11, 12, 13, 14, 15], dtype=float)
