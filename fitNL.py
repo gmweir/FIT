@@ -50,7 +50,9 @@ __metaclass__ = type
 
 
 # Fitting using the Levenberg-Marquardt algorithm.    #
-#def modelfit(x, y, ey, XX, func, **fkwargs):
+def modelfit(x, y, ey, XX, func, fkwargs, **kwargs):
+    return fit_mpfit(x, y, ey, XX, func, fkwargs, **kwargs)
+
 def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
 
     def mymodel(p, fjac=None, x=None, y=None, err=None):
@@ -59,7 +61,7 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
         # computed.  It will always be None if MPFIT is called with default
         # flag.
         model, gvec, info = func(x, p, **fkwargs)
-        # fjac = gvec
+        # fjac = gvec   # use analytic jacobian if uncommentedc
 
         # Non-negative status value means MPFIT should continue, negative means
         # stop the calculation.
@@ -75,6 +77,10 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     UB = info.Ubounds
     numfit = len(p0)
 
+    if numfit != LB.shape[0]: 
+        print('oops') 
+    # end if
+    
     # Settings for each parameter of the fit.
     #   'value' is the initial value that will be updated by mpfit
     #   'fixed' is a boolean: 0 vary this parameter, 1 do not vary this parameter
@@ -772,7 +778,7 @@ def test_fit(func=_ms.model_qparab, **fkwargs):
 # ========================================================================== #
 
 
-def qparabfit(x, y, ey, XX, nohollow=False, options={}):
+def qparabfit(x, y, ey, XX, nohollow=False, options={}, **kwargs):
     """
     This is a wrapper for using the MPFIT LM-solver with a quasi-parabolic model.
     This was written before the general fitting model above and is deprecated (obviously)
@@ -846,7 +852,7 @@ def qparabfit(x, y, ey, XX, nohollow=False, options={}):
     fa = {'x':x, 'y':y, 'err':ey}
 
     # Call mpfit
-    m = LMFIT(myqparab, p0, parinfo=parinfo, residual_keywords=fa)
+    m = LMFIT(myqparab, p0, parinfo=parinfo, residual_keywords=fa, **kwargs)
     #  m - object
     #   m.status   - there are more than 12 return codes (see mpfit documentation)
     #   m.errmsg   - a string error or warning message
@@ -868,6 +874,12 @@ def qparabfit(x, y, ey, XX, nohollow=False, options={}):
 
     # Final function evaluation
     prof, fjac, info = _ms.model_qparab(XX, m.params)
+
+    prof = _ut.interp_irregularities(prof)
+    fjac = _ut.interp_irregularities(fjac)
+    info.prof = _ut.interp_irregularities(info.prof)
+    info.dprofdx = _ut.interp_irregularities(info.dprofdx)
+    
     info.prof = prof
     info.fjac = fjac
 
@@ -905,6 +917,11 @@ def qparabfit(x, y, ey, XX, nohollow=False, options={}):
     info.varprof = _ut.properror(XX, info.covmat, fjac)
     info.vardprofdx = _ut.properror(XX, info.covmat, info.dgdx)
 
+    info.varprof = _ut.interp_irregularities(info.varprof)   
+    info.vardprofdx = _ut.interp_irregularities(info.vardprofdx)       
+
+    # ================================= # 
+    
     info.aoverL = -1.0*amin*info.dprofdx/info.prof
     info.var_aoverL = info.aoverL**2.0
     info.var_aoverL *= ( info.varprof/info.prof**2.0 + info.vardprofdx/info.dprofdx**2.0)
@@ -1057,16 +1074,22 @@ def test_dat(multichannel=True):
     return x, y, vary
 
 
-def test_fitNL():
+def test_fitNL(test_qparab=True):
     def test_line_data():
-        from model_spec import line as model, line_gvec as pderivmodel
+        try:
+            from model_spec import line as model, line_gvec as pderivmodel
+        except:
+            from .model_spec import line as model, line_gvec as pderivmodel            
         af = [0.2353335600009, 3.1234563234]
         LB = [-_np.inf, -_np.inf]
         UB = [ _np.inf,  _np.inf]
         return af, model, pderivmodel, LB, UB
 
     def test_qparab_data():
-        from model_spec import qparab as model, partial_qparab as pderivmodel
+        try:
+            from model_spec import qparab as model, partial_qparab as pderivmodel
+        except:
+            from .model_spec import qparab as model, partial_qparab as pderivmodel                
         af = _np.array([5.0, 0.002, 2.0, 0.7, -0.24, 0.30], dtype=_np.float64)
         LB = [       0,       0, -10.0, -10.0, -1, 0.002]
         UB = [ _np.inf, _np.inf,  10.0,  10.0,  1, 1.00]
@@ -1077,12 +1100,15 @@ def test_fitNL():
     def myjac(_a, _x):
         return pderivmodel(_x, _a)
 
-    af, model, pderivmodel, LB, UB = test_qparab_data()
-#    af, model, pderivmodel, LB, UB = test_line_data()
+    if test_qparab:
+        af, model, pderivmodel, LB, UB = test_qparab_data()
+        x = _np.linspace(-0.8, 1.05, 11)
+    else:
+        af, model, pderivmodel, LB, UB = test_line_data()
+        x = _np.linspace(-2, 15, 100)
+    # endif
     af0 = 0.1*_np.asarray(af, dtype=float)
 
-#    x = _np.linspace(-2, 15, 100)
-    x = _np.linspace(-0.8, 1.05, 11)
     y = mymodel(af, x)
     y += 0.1*_np.sin(0.53 * 2*_np.pi*x/(_np.max(x)-_np.min(x)))
     y += 0.3*_np.mean(y)*_np.random.normal(0.0, 1.0, len(y))
@@ -1091,11 +1117,12 @@ def test_fitNL():
     vary = 0.05*_np.mean(y)
     vary += ( 0.3*_np.mean(y)*_np.random.normal(0.0, 1.0, len(y)) )**2.0
 
-    import pybaseutils as _pyb
-    x = _pyb.utils.cylsym_odd(x)
-    y = _pyb.utils.cylsym_even(y)
-    vary = _pyb.utils.cylsym_even(vary)
-
+    if test_qparab:
+        import pybaseutils as _pyb
+        x = _pyb.utils.cylsym_odd(x)
+        y = _pyb.utils.cylsym_even(y)
+        vary = _pyb.utils.cylsym_even(vary)
+    # endif
     options = {}
 #    options = {'fjac':myjac, 'UB':UB, 'LB':LB}
 #    options = {'fjac':myjac}

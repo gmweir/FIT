@@ -165,7 +165,8 @@ def model_qparab(XX, af=None, nohollow=False, prune=False):
             af[4] = 0.0
             af[5] = 1.0
         # endif
-    elif len(af) == 4:
+    if len(af) == 4:
+#    elif len(af) == 4:
         nohollow = True
         af = _np.hstack((af,0.0))
         af = _np.hstack((af,1.0))
@@ -274,6 +275,7 @@ def deriv_qparab(XX, aa=[0.30, 0.002, 2.0, 0.7, -0.24, 0.30], nohollow=False):
         aa[4] = 0.0
         aa[5] = 1.0
     # endif
+
     dpdx = aa[0]*( (1.0-aa[1]+aa[4])*(-1.0*aa[2]*XX**(aa[2]-1.0))*aa[3]*(1.0-XX**aa[2])**(aa[3]-1.0)
                    - aa[4]*(-2.0*XX/aa[5]**2.0)*_np.exp(-XX**2.0/aa[5]**2.0) )
 
@@ -453,7 +455,8 @@ def model_ProdExp(XX, af=None, npoly=4):
         npoly is overruled by the shape of af.  It is only used if af is None
     """
     if af is None:
-        af = 0.1*_np.ones((npoly+1,), dtype=_np.float64)*_np.random.normal(0.0, 1.0, npoly+1.0)
+        af = 0.9*_np.ones((npoly+1,), dtype=_np.float64)
+#        af *= _np.random.normal(0.0, 1.0, npoly+1.0)
     # endif
     npoly = _np.size(af)-1
 
@@ -526,7 +529,8 @@ def model_poly(XX, af=None, npoly=4):
     """
 
     if af is None:
-        af = 0.1*_np.ones((npoly+1,), dtype=_np.float64)*_np.random.normal(0.0, 1.0, npoly+1.0)
+        af = 0.1*_np.ones((npoly+1,), dtype=_np.float64)
+#        af *= _np.random.normal(0.0, 1.0, npoly+1.0)
     # endif
     npoly = _np.size(af)-1
 
@@ -596,7 +600,7 @@ def model_evenpoly(XX, af=None, npoly=4):
 
     if af is None:
         af = 0.1*_np.ones((npoly//2+1,), dtype=_np.float64)
-        af *= _np.random.normal(0.0, 1.0, npoly//2+1.0)
+#        af *= _np.random.normal(0.0, 1.0, npoly//2+1.0)
     # endif
     num_fit = _np.size(af)  # Number of fitting parameters
     npoly = _np.int(2*(num_fit-1))  # Polynomial order from input af
@@ -668,23 +672,26 @@ def model_PowerLaw(XX, af=None, npoly=4):
     """
     if af is None:
         af = 0.1*_np.ones((npoly+2,), dtype=_np.float64)
-        af *= _np.random.normal(0.0, 1.0, npoly+3.0)    # endif
+#        af *= _np.random.normal(0.0, 1.0, npoly+2.0)    # endif
     num_fit = _np.size(af)  # Number of fitting parameters
     npoly = num_fit-3
     nx = _np.size(XX)
 
     info = Struct()
-    info.Lbounds = _np.hstack((-_np.inf * _np.ones((npoly,), dtype=_np.float64), -_np.inf, 0))
-    info.Ubounds = _np.hstack((_np.inf * _np.ones((npoly,), dtype=_np.float64), _np.inf, _np.inf))
+    info.Lbounds = _np.hstack((-_np.inf * _np.ones((npoly,), dtype=_np.float64), -_np.inf,       0))
+    info.Ubounds = _np.hstack(( _np.inf * _np.ones((npoly,), dtype=_np.float64),  _np.inf, _np.inf))
     info.af = af
 
+    if len(af) != info.Lbounds.shape[0]:
+        print('pause')
+    # end if
     # Curved power-law:
     # fc = x^(a1*x^(n+1)+a2*x^n+...a(n+1))
     # With exponential cut-off:
     # f  = a(n+2)*fc(x)*exp(a(n+1)*XX);
     pp = _np.poly1d(af[:npoly+1])
     polys = pp(XX)
-    exp_factor = _np.exp(af[num_fit]*XX)
+    exp_factor = _np.exp(af[num_fit-2]*XX)
     prof = af[num_fit-1]*(XX**polys)*exp_factor
     info.prof = prof
 
@@ -717,8 +724,9 @@ def model_PowerLaw(XX, af=None, npoly=4):
         kk = npoly+1 - (ii + 1)
         gvec[ii, :] = prof*_np.log(XX)*XX**kk
     # endfor
-    gvec[num_fit-1, :] = prof/af[num_fit-1]
-    gvec[num_fit  , :] = prof*XX
+    gvec[num_fit-1,:] = prof/af[num_fit-1]
+    gvec[num_fit-1, :] = prof*XX     # TODO: CHECK THIS
+#    gvec[num_fit, :] = prof*XX     # TODO: CHECK THIS
     info.gvec = gvec
 
     # The jacobian of the derivative
@@ -726,16 +734,19 @@ def model_PowerLaw(XX, af=None, npoly=4):
     for ii in range(npoly+1):  # ii=1:(npoly-1)
         kk = npoly+1 - (ii + 1)
         dgdx[ii, :] = info.dprofdx*_np.log(XX)*(XX**kk)
-        dgdx[ii, :] += prof*af[num_fit]*_np.log(XX)*(XX**kk)
-
+#        dgdx[ii, :] += prof*af[num_fit]*_np.log(XX)*(XX**kk)  
+        dgdx[ii, :] += prof*af[num_fit-1]*_np.log(XX)*(XX**kk)  # TODO: check this
+        
         if ii<npoly:
             dgdx[ii, :] += prof*(XX**(kk-1))*(1.0 + kk*_np.log(XX))     # 3 = dcoeffs / af[:npoly+1]
         else:
             dgdx[ii, :] += prof*(XX**(kk-1))
         # endif
     # endfor
-    dgdx[num_fit-1, :] = (info.dprofdx/(af[num_fit-1]) + af[num_fit])*prof/af[num_fit-1]
-    dgdx[num_fit  , :] = prof*( af[num_fit]*XX + 1.0 + XX*info.dprofdx )
+    dgdx[num_fit-2, :] = (info.dprofdx/(af[num_fit-2]) + af[num_fit-1])*prof/af[num_fit-1]  
+    dgdx[num_fit-1, :] = prof*( af[num_fit-1]*XX + 1.0 + XX*info.dprofdx )
+#    dgdx[num_fit-1, :] = (info.dprofdx/(af[num_fit-1]) + af[num_fit])*prof/af[num_fit-1]  
+#    dgdx[num_fit  , :] = prof*( af[num_fit]*XX + 1.0 + XX*info.dprofdx )
     info.dgdx = dgdx
 
     return prof, gvec, info
@@ -756,7 +767,8 @@ def model_Exponential(XX, af=None, npoly=None):
 #    num_fit = npoly+3
     num_fit = 4
     if af is None:
-        af = 0.1*_np.ones((num_fit,), dtype=_np.float64)*_np.random.normal(0.0, 1.0, num_fit)
+        af = 0.1*_np.ones((num_fit,), dtype=_np.float64)
+#        af *= _np.random.normal(0.0, 1.0, num_fit)
     # endif
     num_fit = _np.size(af)  # Number of fitting parameters
     nx = _np.size(XX)
@@ -825,7 +837,7 @@ def model_parabolic(XX, af):
 
     if af is None:
         af = _np.array([1.0], dtype=_np.float64)
-        af *= 0.1*_np.random.normal(0.0, 1.0, 1)
+#        af *= 0.1*_np.random.normal(0.0, 1.0, 1)
     # endif
 
     info = Struct()
@@ -859,7 +871,7 @@ def model_flattop(XX, af):
     """
     if af is None:
         af = _np.array([1.0, 0.4, 5.0], dtype=_np.float64)
-        af *= 0.1*_np.random.normal(0.0, 1.0, len(af))
+#        af *= 0.1*_np.random.normal(0.0, 1.0, len(af))
     # endif
 
     nx = len(XX)
@@ -912,7 +924,7 @@ def model_massberg(XX, af):
     """
     if af is None:
         af = _np.array([1.0, 0.4, 5.0, 2.0], dtype=_np.float64)
-        af *= 0.1*_np.random.normal(0.0, 1.0, len(af))
+#        af *= 0.1*_np.random.normal(0.0, 1.0, len(af))
     # endif
 
     nx = len(XX)
@@ -963,7 +975,7 @@ def model_2power(XX, af):
     """
     if af is None:
         af = _np.array([1.0, 0.0, 2.0, 1.0], dtype=_np.float64)
-        af *= 0.1*_np.random.normal(0.0, 1.0, len(af))
+#        af *= 0.1*_np.random.normal(0.0, 1.0, len(af))
     # endif
 
     nx = len(XX)
@@ -1039,7 +1051,7 @@ def model_Heaviside(XX, af=None, npoly=4, rinits=[0.30, 0.35]):
     if af is None:
         af = _np.hstack(
             (1.0*_np.ones((npoly,), dtype=_np.float64), 2.0, 0.3, 0.4))
-        af *= 0.1*_np.random.normal(0.0, 1.0, len(af))
+#        af *= 0.1*_np.random.normal(0.0, 1.0, len(af))
     # endif
     npoly = _np.size(af)-4
     num_fit = _np.size(af)  # Number of fitting parameters
@@ -1122,7 +1134,7 @@ def model_StepSeries(XX, af=None, npoly=4):
 
     if af is None:
         af = _np.hstack((5.0, 1.0*_np.random.randn(npoly,)))
-        af *= 0.1*_np.random.normal(0.0, 1.0, len(af))
+#        af *= 0.1*_np.random.normal(0.0, 1.0, len(af))
     # endif
     npoly = _np.size(af)-1
     num_fit = _np.size(af)  # Number of fitting parameters
@@ -1205,10 +1217,17 @@ def model_profile(af=None, XX=None, model_number=7, npoly=4, nargout=1, verbose=
        11 - Flat top profile         - f(x) ~ a / (1 + (x/b)^c)
        12 - Massberg profile         - f(x) ~ a * (1-h*(x/b)) / (1+(x/b)^c) = flattop*(1-h*(x/b))
     """
-
+    if af is not None:
+        if (af==0).any():
+            af[_np.where(af==0)[0]] = 1e-14
+        # end if
+    # end if
     if XX is None:
-        XX = _np.linspace(0, 1, 200)
+        XX = _np.linspace(1e-4, 1, 200)
     # endif
+    if len([XX])>1 and (XX==0).any():
+        XX[_np.where(XX==0)[0]] = 1e-14
+    # end if
 
     # ====================================================================== #
 
@@ -1303,10 +1322,18 @@ def model_chieff(af=None, XX=None, model_number=1, npoly=4, nargout=1, verbose=F
        8 - Even order polynomial     - chi ~ sum( af(ii)*XX^2*(polyorder-ii))
        9 - 2-power profile           - chi ~ (Core-Edge)*(1-x^pow1)^pow2 + Edge
     """
+    if af is not None:
+        if (af==0).any():
+            af[_np.where(af==0)[0]] = 1e-14
+        # end if
+    # end if
 
     if XX is None:
-        XX = _np.linspace(0, 1, 200)
+        XX = _np.linspace(1e-4, 1, 200)
     # endif
+    if len([XX])>1 and (XX==0).any():
+        XX[_np.where(XX==0)[0]] = 1e-14
+    # end if
 
     # ====================================================================== #
 
@@ -1345,17 +1372,27 @@ def model_chieff(af=None, XX=None, model_number=1, npoly=4, nargout=1, verbose=F
 
         def tfunc(XX, af):
             _, _, info = model_qparab(XX, af)
+#            if af is None:
+#                af = _np.asarray([10]+info.af.tolist(), dtype=_np.float64)
+#            # end if
 
-            info.prof = deriv_qparab(XX, af)
-            info.gvec = partial_deriv_qparab(XX, af)
-            info.dprofdx = deriv2_qparab(XX, af)
-            info.dgdx = partial_deriv2_qparab(XX, af)
+            info.prof = deriv_qparab(XX, info.af)
+            info.gvec = partial_deriv_qparab(XX, info.af)
+            info.dprofdx = deriv2_qparab(XX, info.af)
+            info.dgdx = partial_deriv2_qparab(XX, info.af)
 
-            # info.prof = -1.0*info.prof
+            info.prof = -1.0*info.prof
             ## info.prof += 10.0
-            # info.dprofdx = -1.0*info.dprofdx
-            # info.gvec = -1.0*info.gvec
-            # info.dgdx = -1.0*info.dgdx
+            info.dprofdx = -1.0*info.dprofdx
+            info.gvec = -1.0*info.gvec
+            info.dgdx = -1.0*info.dgdx
+            
+#            info.af = _np.copy(af)
+#            info.prof += af[0]
+#            info.gvec = _np.insert(info.gvec, [0], _np.ones(_np.shape(info.gvec[0,:]), dtype=_np.float64), axis=0)
+#            info.dgdx = _np.insert(info.dgdx, [0], _np.zeros(_np.shape(info.dgdx[0,:]), dtype=_np.float64), axis=0)
+#            info.Lbounds = _np.asarray([-_np.inf]+info.Lbounds.tolist(), dtype=_np.float64)
+#            info.Ubounds = _np.asarray([ _np.inf]+info.Ubounds.tolist(), dtype=_np.float64)            
             return info.prof, info.gvec, info
         [chi_eff, gvec, info] = tfunc(XX, af)
         info.func = tfunc
@@ -1486,17 +1523,17 @@ if __name__ == '__main__':
 
     XX = _np.linspace(0, 1, 200)
     npoly = 10
-    model_number = 1
+    model_number = 7
 #    af = [0.1,0.1,0.1]
     af = None
 #    af = [2.0,0.1,0.1,0.5]
 
-#    [chi_eff, gvec, info] = \
-#        model_chieff(af=af, XX=XX, model_number=model_number, npoly=npoly, nargout=3, verbose=True)
-
     [chi_eff, gvec, info] = \
-        model_profile(af=af, XX=XX, model_number=model_number, npoly=npoly, nargout=3, verbose=True)
-    info.dchidx = info.dprofdx
+        model_chieff(af=af, XX=XX, model_number=model_number, npoly=npoly, nargout=3, verbose=True)
+
+#    [chi_eff, gvec, info] = \
+#        model_profile(af=af, XX=XX, model_number=model_number, npoly=npoly, nargout=3, verbose=True)
+#    info.dchidx = info.dprofdx
 
     varaf = (0.1*info.af)**2
     varchi = _np.zeros_like(chi_eff)
