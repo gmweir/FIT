@@ -2046,10 +2046,8 @@ if __name__=="__main__":
     # end try
     info = model_qparab(XX=None)
     af = info.af
-    af = _np.asarray([af[ii]+0.1*af[ii]*_np.random.normal(0.0, 1.0, 1) for ii in range(len(af))],
+    af = _np.asarray([af[ii]+0.05*af[ii]*_np.random.normal(0.0, 1.0, 1) for ii in range(len(af))],
                      dtype=_np.float64)    
-    LB = info.Lbounds
-    UB = info.Ubounds
     
     QTBdat = {}
     QTBdat['roa'] = _np.linspace(0.05, 1.05, num=10)
@@ -2058,7 +2056,16 @@ if __name__=="__main__":
     QTBdat['varNL'] = (0.1*QTBdat['ne'])**2.0
     QTBdat['varNH'] = (0.1*QTBdat['ne'])**2.0
 
-    out = fit_TSneprofile(QTBdat, _np.linspace(0, 1.05, num=51), plotit=True, amin=0.51, returnaf=False)
+    aT = _np.asarray([4.00, 0.07, 5.0, 2.0, 0.04, 0.50], dtype=_np.float64)
+    aT = _np.asarray([aT[ii]+0.05*aT[ii]*_np.random.normal(0.0, 1.0, 1) for ii in range(len(aT))],
+                     dtype=_np.float64)    
+    QTBdat['Te'], _, _ = model_qparab(QTBdat['roa'], aT) 
+    QTBdat['varTL'] = (0.1*QTBdat['Te'])**2.0
+    QTBdat['varTH'] = (0.1*QTBdat['Te'])**2.0
+    
+    nout = fit_TSneprofile(QTBdat, _np.linspace(0, 1.05, num=51), plotit=True, amin=0.51, returnaf=False)
+    
+    Tout = fit_TSteprofile(QTBdat, _np.linspace(0, 1.05, num=51), plotit=True, amin=0.51, returnaf=False)
 #    test_linreg()
 #    test_derivatives()
 
