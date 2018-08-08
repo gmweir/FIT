@@ -96,6 +96,7 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     fa = {'x':x, 'y':y, 'err':ey}
 
     # Call mpfit
+    kwargs['nprint'] = kwargs.get('nprint',10)
     m = LMFIT(mymodel, p0, parinfo=parinfo, residual_keywords=fa, **kwargs)
     #  m - object
     #   m.status   - there are more than 12 return codes (see mpfit documentation)
