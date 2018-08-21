@@ -35,7 +35,11 @@ from scipy.optimize import curve_fit, leastsq
 
 # Make a version flag for switching between least squares solvers and contexts
 _scipyversion = _scipyversion.version
-_scipyversion = _np.float(_scipyversion[0:4])
+try:
+    _scipyversion = _np.float(_scipyversion[0:4])
+except:
+    _scipyversion = _np.float(_scipyversion[0:3])
+# end try
 if _scipyversion >= 0.17:
     print("Using a new version of scipy")
 #    from scipy.optimize import least_squares
@@ -77,10 +81,10 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     UB = info.Ubounds
     numfit = len(p0)
 
-    if numfit != LB.shape[0]: 
-        print('oops') 
+    if numfit != LB.shape[0]:
+        print('oops')
     # end if
-    
+
     # Settings for each parameter of the fit.
     #   'value' is the initial value that will be updated by mpfit
     #   'fixed' is a boolean: 0 vary this parameter, 1 do not vary this parameter
@@ -407,7 +411,7 @@ class fitNL_base(Struct):
         options.setdefault('diag', 0) # with rescale: positive scale factor for variables
         options.setdefault('epsfcn', 1e-3)  # 0.001
         options.setdefault('debug', 0)
-        
+
         # ========================== #
 
         # Pull out the run data from the options dictionary
@@ -898,7 +902,7 @@ def qparabfit(x, y, ey, XX, nohollow=False, options={}, **kwargs):
     fjac = _ut.interp_irregularities(fjac)
     info.prof = _ut.interp_irregularities(info.prof)
     info.dprofdx = _ut.interp_irregularities(info.dprofdx)
-    
+
     info.prof = prof
     info.fjac = fjac
 
@@ -936,11 +940,11 @@ def qparabfit(x, y, ey, XX, nohollow=False, options={}, **kwargs):
     info.varprof = _ut.properror(XX, info.covmat, fjac)
     info.vardprofdx = _ut.properror(XX, info.covmat, info.dgdx)
 
-    info.varprof = _ut.interp_irregularities(info.varprof)   
-    info.vardprofdx = _ut.interp_irregularities(info.vardprofdx)       
+    info.varprof = _ut.interp_irregularities(info.varprof)
+    info.vardprofdx = _ut.interp_irregularities(info.vardprofdx)
 
-    # ================================= # 
-    
+    # ================================= #
+
     info.aoverL = -1.0*amin*info.dprofdx/info.prof
     info.var_aoverL = info.aoverL**2.0
     info.var_aoverL *= ( info.varprof/info.prof**2.0 + info.vardprofdx/info.dprofdx**2.0)
@@ -1098,7 +1102,7 @@ def test_fitNL(test_qparab=True):
         try:
             from model_spec import line as model, line_gvec as pderivmodel
         except:
-            from .model_spec import line as model, line_gvec as pderivmodel            
+            from .model_spec import line as model, line_gvec as pderivmodel
         af = [0.2353335600009, 3.1234563234]
         LB = [-_np.inf, -_np.inf]
         UB = [ _np.inf,  _np.inf]
@@ -1108,7 +1112,7 @@ def test_fitNL(test_qparab=True):
         try:
             from model_spec import qparab as model, partial_qparab as pderivmodel
         except:
-            from .model_spec import qparab as model, partial_qparab as pderivmodel                
+            from .model_spec import qparab as model, partial_qparab as pderivmodel
         af = _np.array([5.0, 0.002, 2.0, 0.7, -0.24, 0.30], dtype=_np.float64)
         LB = [       0,       0, -10.0, -10.0, -1, 0.002]
         UB = [ _np.inf, _np.inf,  10.0,  10.0,  1, 1.00]
