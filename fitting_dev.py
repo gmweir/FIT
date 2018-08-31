@@ -1498,6 +1498,11 @@ def fit_TSneprofile(QTBdat, rvec, loggradient=True, plotit=False, amin=0.51, ret
     ne = QTBdat['ne']
     varn =  _np.sqrt(QTBdat['varNL']*QTBdat['varNH'])
 
+    iuse = (~_np.isinf(roa))*(~_np.isnan(roa))*(ne>1e10)
+    varn = varn[iuse]
+    ne = ne[iuse]
+    roa = roa[iuse]
+
     def fitqparab(af, XX):
         return _ms.qparab(XX, af)
 #        return _ms.qparab_fit(XX, af)
@@ -1604,6 +1609,11 @@ def fit_TSteprofile(QTBdat, rvec, loggradient=True, plotit=False, amin=0.51, ret
     roa = QTBdat['roa']
     Te = QTBdat['Te']
     varT =  _np.sqrt(QTBdat['varTL']*QTBdat['varTH'])
+
+    iuse = (~_np.isinf(roa))*(~_np.isnan(roa))*(Te>1e-3)
+    varT = varT[iuse]
+    Te = Te[iuse]
+    roa = roa[iuse]
 
     def fitqparab(af, XX):
         return _ms.qparab(XX, af)
