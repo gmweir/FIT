@@ -1492,11 +1492,12 @@ def spline_bs(xvar, yvar, vary, xf=None, func="spline", nmonti=300, deg=3, bbox=
 # ---------- fitNL dependent -------- #
 # =================================== #
 
-def fit_TSneprofile(QTBdat, rvec, loggradient=True, plotit=False, amin=0.51, returnaf=False):
+def fit_TSneprofile(QTBdat, rvec, loggradient=True, plotit=False, amin=0.51, returnaf=False, arescale=1.0):
 
-    roa = QTBdat['roa']
-    ne = QTBdat['ne']
-    varn =  _np.sqrt(QTBdat['varNL']*QTBdat['varNH'])
+    rvec = _np.copy(rvec)
+    roa = _np.copy(QTBdat['roa'])
+    ne = _np.copy(QTBdat['ne'])
+    varn =  _np.copy(_np.sqrt(QTBdat['varNL']*QTBdat['varNH']))
 
     iuse = (~_np.isinf(roa))*(~_np.isnan(roa))*(ne>1e10)
     varn = varn[iuse]
@@ -1534,6 +1535,12 @@ def fit_TSneprofile(QTBdat, rvec, loggradient=True, plotit=False, amin=0.51, ret
     varlogne = varnef / nef**2.0
     logne = _np.log(nef)
 
+    # ================== #
+    roa *= arescale
+    rvec *= arescale
+
+    dlnnedrho *= arescale
+    vardlnnedrho *= arescale**2.0
     # ================== #
 
     if plotit:
@@ -1604,11 +1611,12 @@ def fit_TSneprofile(QTBdat, rvec, loggradient=True, plotit=False, amin=0.51, ret
 # ======================================================================= #
 
 
-def fit_TSteprofile(QTBdat, rvec, loggradient=True, plotit=False, amin=0.51, returnaf=False):
+def fit_TSteprofile(QTBdat, rvec, loggradient=True, plotit=False, amin=0.51, returnaf=False, arescale=1.0):
 
-    roa = QTBdat['roa']
-    Te = QTBdat['Te']
-    varT =  _np.sqrt(QTBdat['varTL']*QTBdat['varTH'])
+    rvec = _np.copy(rvec)
+    roa = _np.copy(QTBdat['roa'])
+    Te = _np.copy(QTBdat['Te'])
+    varT =  _np.copy(_np.sqrt(QTBdat['varTL']*QTBdat['varTH']))
 
     iuse = (~_np.isinf(roa))*(~_np.isnan(roa))*(Te>1e-3)
     varT = varT[iuse]
@@ -1640,6 +1648,12 @@ def fit_TSteprofile(QTBdat, rvec, loggradient=True, plotit=False, amin=0.51, ret
     varlogTe = varTef / Tef**2.0
     logTe = _np.log(Tef)
 
+    # ================== #
+    roa *= arescale
+    rvec *= arescale
+
+    dlnTedrho *= arescale
+    vardlnTedrho *= arescale**2.0
     # ================== #
 
     if plotit:
