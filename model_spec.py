@@ -174,10 +174,10 @@ def model_qparab(XX, af=None, nohollow=False, prune=False):
 
     info = Struct()  # Custom class that makes working with dictionaries easier
     info.af = _np.copy(af)
-    info.Lbounds = _np.array([    0.0,     0.0,-_np.inf,-_np.inf,-_np.inf, 0.02], dtype=_np.float64)
+    info.Lbounds = _np.array([    0.0, 0.0,-_np.inf,-_np.inf,-_np.inf,-_np.inf], dtype=_np.float64)
     info.Ubounds = _np.array([_np.inf, _np.inf, _np.inf, _np.inf, _np.inf, _np.inf], dtype=_np.float64)
-#    info.Lbounds = _np.array([    0.0,     0.0,-10,-10,-1,-1*_np.max(XX)], dtype=_np.float64)
-#    info.Ubounds = _np.array([_np.inf, _np.inf, 10, 10, 1, 1*_np.max(XX)], dtype=_np.float64)
+#    info.Lbounds = _np.array([  0.0, 0.0,-100,-100,-1,-1], dtype=_np.float64)
+#    info.Ubounds = _np.array([ 20.0, 1.0, 100, 100, 1, 1], dtype=_np.float64)
     if XX is None:
         return info
     # endif
@@ -206,6 +206,7 @@ def model_qparab(XX, af=None, nohollow=False, prune=False):
         info.dgdx = info.dgdx[:4, :]
     # endif
     info.af = af
+
     return prof, gvec, info
 # end def model_qparab
 
@@ -735,18 +736,18 @@ def model_PowerLaw(XX, af=None, npoly=4):
     for ii in range(npoly+1):  # ii=1:(npoly-1)
         kk = npoly+1 - (ii + 1)
         dgdx[ii, :] = info.dprofdx*_np.log(XX)*(XX**kk)
-#        dgdx[ii, :] += prof*af[num_fit]*_np.log(XX)*(XX**kk)  
+#        dgdx[ii, :] += prof*af[num_fit]*_np.log(XX)*(XX**kk)
         dgdx[ii, :] += prof*af[num_fit-1]*_np.log(XX)*(XX**kk)  # TODO: check this
-        
+
         if ii<npoly:
             dgdx[ii, :] += prof*(XX**(kk-1))*(1.0 + kk*_np.log(XX))     # 3 = dcoeffs / af[:npoly+1]
         else:
             dgdx[ii, :] += prof*(XX**(kk-1))
         # endif
     # endfor
-    dgdx[num_fit-2, :] = (info.dprofdx/(af[num_fit-2]) + af[num_fit-1])*prof/af[num_fit-1]  
+    dgdx[num_fit-2, :] = (info.dprofdx/(af[num_fit-2]) + af[num_fit-1])*prof/af[num_fit-1]
     dgdx[num_fit-1, :] = prof*( af[num_fit-1]*XX + 1.0 + XX*info.dprofdx )
-#    dgdx[num_fit-1, :] = (info.dprofdx/(af[num_fit-1]) + af[num_fit])*prof/af[num_fit-1]  
+#    dgdx[num_fit-1, :] = (info.dprofdx/(af[num_fit-1]) + af[num_fit])*prof/af[num_fit-1]
 #    dgdx[num_fit  , :] = prof*( af[num_fit]*XX + 1.0 + XX*info.dprofdx )
     info.dgdx = dgdx
 
@@ -1387,13 +1388,13 @@ def model_chieff(af=None, XX=None, model_number=1, npoly=4, nargout=1, verbose=F
             info.dprofdx = -1.0*info.dprofdx
             info.gvec = -1.0*info.gvec
             info.dgdx = -1.0*info.dgdx
-            
+
 #            info.af = _np.copy(af)
 #            info.prof += af[0]
 #            info.gvec = _np.insert(info.gvec, [0], _np.ones(_np.shape(info.gvec[0,:]), dtype=_np.float64), axis=0)
 #            info.dgdx = _np.insert(info.dgdx, [0], _np.zeros(_np.shape(info.dgdx[0,:]), dtype=_np.float64), axis=0)
 #            info.Lbounds = _np.asarray([-_np.inf]+info.Lbounds.tolist(), dtype=_np.float64)
-#            info.Ubounds = _np.asarray([ _np.inf]+info.Ubounds.tolist(), dtype=_np.float64)            
+#            info.Ubounds = _np.asarray([ _np.inf]+info.Ubounds.tolist(), dtype=_np.float64)
             return info.prof, info.gvec, info
         [chi_eff, gvec, info] = tfunc(XX, af)
         info.func = tfunc
