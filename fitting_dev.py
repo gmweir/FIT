@@ -1581,7 +1581,15 @@ def fit_profile(rdat, pdat, vdat, rvec, arescale=1.0, bootstrappit=True):
 # ---------- fitNL dependent -------- #
 # =================================== #
 
-def fit_TSneprofile(QTBdat, rvec, loggradient=True, plotit=False, amin=0.51, returnaf=False, arescale=1.0, bootstrappit=False, plotlims=None):
+def fit_TSneprofile(QTBdat, rvec, **kwargs):
+    loggradient = kwargs.get('loggradient', True)
+    plotit = kwargs.get('plotit', False)
+    amin = kwargs.get('amin', 0.51)
+    returnaf = kwargs.get('returnaf',False)
+    arescale = kwargs.get('arescale', 1.0)
+    bootstrappit = kwargs.get('bootstrappit',False)
+    plotlims = kwargs.get('plotlims', None)
+    fitin = kwargs.get('fitin', None)
 
     nkey = 'roa' if 'roan' not in QTBdat else 'roan'
     rvec = _np.copy(rvec)
@@ -1606,7 +1614,15 @@ def fit_TSneprofile(QTBdat, rvec, loggradient=True, plotit=False, amin=0.51, ret
     # end if
     varn = varn[iuse]
 
-    nef, varnef, dlnnedrho, vardlnnedrho, af = fit_profile(roa, 1e-20*ne, 1e-40*varn, rvec, arescale=arescale, bootstrappit=bootstrappit)
+    if fitin is None:
+        nef, varnef, dlnnedrho, vardlnnedrho, af = fit_profile(roa, 1e-20*ne, 1e-40*varn, rvec, arescale=arescale, bootstrappit=bootstrappit)
+    else:
+        nef = 1e-20*fitin['prof']
+        varnef = 1e-40*fitin['varprof']
+        dlnnedrho = fitin['dlnpdrho']
+        vardlnnedrho = fitin['vardlnpdrho']
+        af = fitin['af']
+    # end if
 
     # Convert back to absolute units (particles per m-3 not 1e20 m-3)
     af[0] *= 1e20
@@ -1713,7 +1729,15 @@ def fit_TSneprofile(QTBdat, rvec, loggradient=True, plotit=False, amin=0.51, ret
 # ======================================================================= #
 
 
-def fit_TSteprofile(QTBdat, rvec, loggradient=True, plotit=False, amin=0.51, returnaf=False, arescale=1.0, bootstrappit=False, plotlims=None):
+def fit_TSteprofile(QTBdat, rvec, **kwargs):
+    loggradient = kwargs.get('loggradient', True)
+    plotit = kwargs.get('plotit', False)
+    amin = kwargs.get('amin', 0.51)
+    returnaf = kwargs.get('returnaf',False)
+    arescale = kwargs.get('arescale', 1.0)
+    bootstrappit = kwargs.get('bootstrappit',False)
+    plotlims = kwargs.get('plotlims', None)
+    fitin = kwargs.get('fitin', None)
 
     rvec = _np.copy(rvec)
     roa = _np.copy(QTBdat['roa'])
@@ -1736,7 +1760,16 @@ def fit_TSteprofile(QTBdat, rvec, loggradient=True, plotit=False, amin=0.51, ret
         varRH = varRH[iuse]
     # end if
     varT = varT[iuse]
-    Tef, varTef, dlnTedrho, vardlnTedrho, af = fit_profile(roa, Te, varT, rvec, arescale=arescale, bootstrappit=bootstrappit)
+
+    if fitin is None:
+        Tef, varTef, dlnTedrho, vardlnTedrho, af = fit_profile(roa, Te, varT, rvec, arescale=arescale, bootstrappit=bootstrappit)
+    else:
+        Tef = fitin['prof']
+        varTef = fitin['varprof']
+        dlnTedrho = fitin['dlnpdrho']
+        vardlnTedrho = fitin['vardlnpdrho']
+        af = fitin['af']
+    # end if
 
     varlogTe = varTef / Tef**2.0
     logTe = _np.log(Tef)
