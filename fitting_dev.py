@@ -1587,12 +1587,24 @@ def fit_TSneprofile(QTBdat, rvec, loggradient=True, plotit=False, amin=0.51, ret
     rvec = _np.copy(rvec)
     roa = _np.copy(QTBdat[nkey])
     ne = _np.copy(QTBdat['ne'])
-    varn =  _np.copy(_np.sqrt(QTBdat['varNL']*QTBdat['varNH']))
+    varNL = _np.copy(QTBdat['varNL'])
+    varNH = _np.copy(QTBdat['varNH'])
+    if 'varRL' in QTBdat:
+        varRL = _np.copy(QTBdat['varRL'])
+        varRH = _np.copy(QTBdat['varRH'])
+    # end if
+    varn =  _np.copy(_np.sqrt(varNL*varNH))
 
     iuse = (~_np.isinf(roa))*(~_np.isnan(roa))*(ne>1e10)
-    varn = varn[iuse]
     ne = ne[iuse]
     roa = roa[iuse]
+    varNL = varNL[iuse]
+    varNH = varNH[iuse]
+    if 'varRL' in QTBdat:
+        varRL = varRL[iuse]
+        varRH = varRH[iuse]
+    # end if
+    varn = varn[iuse]
 
     nef, varnef, dlnnedrho, vardlnnedrho, af = fit_profile(roa, 1e-20*ne, 1e-40*varn, rvec, arescale=arescale, bootstrappit=bootstrappit)
 
@@ -1632,8 +1644,13 @@ def fit_TSneprofile(QTBdat, rvec, loggradient=True, plotit=False, amin=0.51, ret
         ax3.set_ylabel(r'$a/L_\mathrm{ne}$')
         ax3.set_xlabel(r'$r/a$')
 
-        ax1.errorbar(roa, 1e-20*ne, yerr=1e-20*_np.sqrt(varn), fmt='bo', color='b' )
-#        ax2.errorbar(roa, _np.log(ne), yerr=_np.sqrt(varn/ne**2.0), fmt='bo', color='b' )
+        if 'varRL' in QTBdat:
+            ax1.errorbar(roa, 1e-20*ne, xerr=[_np.sqrt(varRL), _np.sqrt(varRH)],
+                     yerr=[1e-20*_np.sqrt(varNL), 1e-20*_np.sqrt(varNH)], fmt='bo') #, ecolor='r', elinewidth=2)
+        else:
+            ax1.errorbar(roa, 1e-20*ne, yerr=[1e-20*_np.sqrt(varNL), 1e-20*_np.sqrt(varNH)], fmt='bo') #, ecolor='r', elinewidth=2)
+#        ax1.errorbar(roa, 1e-20*ne, yerr=1e-20*_np.sqrt(varn), fmt='bo', color='b' )
+##        ax2.errorbar(roa, _np.log(ne), yerr=_np.sqrt(varn/ne**2.0), fmt='bo', color='b' )
 
         ax1.plot(rvec, 1e-20*nef, 'b-', lw=2)
         ylims = ax1.get_ylim()
@@ -1701,13 +1718,24 @@ def fit_TSteprofile(QTBdat, rvec, loggradient=True, plotit=False, amin=0.51, ret
     rvec = _np.copy(rvec)
     roa = _np.copy(QTBdat['roa'])
     Te = _np.copy(QTBdat['Te'])
-    varT =  _np.copy(_np.sqrt(QTBdat['varTL']*QTBdat['varTH']))
+    varTL = _np.copy(QTBdat['varTL'])
+    varTH = _np.copy(QTBdat['varTH'])
+    if 'varRL' in QTBdat:
+        varRL = _np.copy(QTBdat['varRL'])
+        varRH = _np.copy(QTBdat['varRH'])
+    # end if
+    varT =  _np.copy(_np.sqrt(varTL*varTH))
 
     iuse = (~_np.isinf(roa))*(~_np.isnan(roa))*(Te>1e-3)
-    varT = varT[iuse]
     Te = Te[iuse]
     roa = roa[iuse]
-
+    varTL = varTL[iuse]
+    varTH = varTH[iuse]
+    if 'varRL' in QTBdat:
+        varRL = varRL[iuse]
+        varRH = varRH[iuse]
+    # end if
+    varT = varT[iuse]
     Tef, varTef, dlnTedrho, vardlnTedrho, af = fit_profile(roa, Te, varT, rvec, arescale=arescale, bootstrappit=bootstrappit)
 
     varlogTe = varTef / Tef**2.0
@@ -1737,8 +1765,14 @@ def fit_TSteprofile(QTBdat, rvec, loggradient=True, plotit=False, amin=0.51, ret
         ax3.set_ylabel(r'$a/L_\mathrm{Te}$')
         ax3.set_xlabel(r'$r/a$')
 
-        ax1.errorbar(roa, Te, yerr=_np.sqrt(varT), fmt='ro', color='r' )
-#        ax2.errorbar(roa, _np.log(Te), yerr=_np.sqrt(varT/Te**2.0), fmt='bo', color='b' )
+        if 'varRL' in QTBdat:
+            ax1.errorbar(roa, Te, xerr=[_np.sqrt(varRL), _np.sqrt(varRH)],
+                     yerr=[_np.sqrt(varTL), _np.sqrt(varTH)], fmt='ro') #, ecolor='r', elinewidth=2)
+        else:
+            ax1.errorbar(roa, Te, yerr=[_np.sqrt(varTL), _np.sqrt(varTH)], fmt='ro') #, ecolor='r', elinewidth=2)
+
+#        ax1.errorbar(roa, Te, yerr=_np.sqrt(varT), fmt='ro', color='r' )
+##        ax2.errorbar(roa, _np.log(Te), yerr=_np.sqrt(varT/Te**2.0), fmt='bo', color='b' )
 
         ax1.plot(rvec, Tef, 'r-', lw=2)
 #        ylims = ax1.get_ylim()
