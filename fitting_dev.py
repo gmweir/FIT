@@ -1625,7 +1625,6 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
     # end if
 
     # Convert back to absolute units (particles per m-3 not 1e20 m-3)
-    af[0] *= 1e20
     nef = 1e20*nef
     varnef = 1e40*varnef
 
@@ -1770,7 +1769,6 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
         vardlnTedrho = fitin['vardlnpdrho']
         af = fitin['af']
     # end if
-
     varlogTe = varTef / Tef**2.0
     logTe = _np.log(Tef)
 
