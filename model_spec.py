@@ -174,10 +174,10 @@ def model_qparab(XX, af=None, nohollow=False, prune=False):
 
     info = Struct()  # Custom class that makes working with dictionaries easier
     info.af = _np.copy(af)
-    info.Lbounds = _np.array([    0.0, 0.0,-_np.inf,-_np.inf,-_np.inf,-_np.inf], dtype=_np.float64)
-    info.Ubounds = _np.array([_np.inf, _np.inf, _np.inf, _np.inf, _np.inf, _np.inf], dtype=_np.float64)
-#    info.Lbounds = _np.array([  0.0, 0.0,-100,-100,-1,-1], dtype=_np.float64)
-#    info.Ubounds = _np.array([ 20.0, 1.0, 100, 100, 1, 1], dtype=_np.float64)
+#    info.Lbounds = _np.array([    0.0, 0.0,-_np.inf,-_np.inf,-_np.inf,-_np.inf], dtype=_np.float64)
+#    info.Ubounds = _np.array([_np.inf, _np.inf, _np.inf, _np.inf, _np.inf, _np.inf], dtype=_np.float64)
+    info.Lbounds = _np.array([  0.0, 0.0,-20,-20,-1,-1], dtype=_np.float64)
+    info.Ubounds = _np.array([ 20.0, 1.0, 20, 20, 1, 1], dtype=_np.float64)
     if XX is None:
         return info
     # endif

@@ -75,7 +75,11 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     # default initial conditions come directly from the model functions
     _, _, info = func(XX, af=None, **fkwargs)
     info.success = False
-    p0 = info.af
+    if 'af0' in kwargs:
+        p0 = kwargs.pop('af0')
+    else:
+        p0 = info.af
+    # end if
 
     LB = info.Lbounds
     UB = info.Ubounds
@@ -358,9 +362,9 @@ class fitNL_base(Struct):
     To use this first generate a class that is a child of this one
     class Prob(fitNL)
 
-        def __init__(self, xdata, ydata, yvar, options, **kwargs)
+        def __init__(self, xdata, ydata, yvar, **kwargs)
             # call super init
-            super(fitNL, self).__init__(xdat, ydat, vary, af0, self.func, options, kwargs)
+            super(fitNL, self).__init__(xdat, ydat, vary, af0, self.func, kwargs)
         # end def
 
         def func(self, af):
@@ -370,8 +374,6 @@ class fitNL_base(Struct):
 
     def __init__(self, xdat, ydat, vary, af0, func, fjac=None, **kwargs):
         if vary is None or (vary == 0).all():  vary = 1e-3*_np.nanmean(ydat)  # endif
-        options = {}
-        options.update(**kwargs)
 
         self.xdat = xdat
         self.ydat = ydat
@@ -382,42 +384,47 @@ class fitNL_base(Struct):
 
         # ========================== #
 
-        options["nmonti"] = options.get("nmonti", 300)
-        options["af0"] = options.get("af0", self.af0)
-        options["LB"] = options.get("LB", -_np.Inf*_np.ones_like(self.af0))
-        options["UB"] = options.get("UB",  _np.Inf*_np.ones_like(self.af0))
-
-        if fjac is None:
+        solver_options = {}
+        solver_options['xtol'] = kwargs.pop('xtol', 1.0e-14) # 1e-10
+        solver_options['ftol'] = kwargs.pop('ftol', 1.0e-14) # 1e-10
+        solver_options['gtol'] = kwargs.pop('gtol', 1.0e-14) # 1e-10
+        solver_options['damp'] = kwargs.pop('damp', 0)
+        solver_options['maxiter'] = kwargs.pop('maxiter', 2000) # 200
+        solver_options['factor'] = kwargs.pop('factor', 100) # 100 without rescale, scales the chi2? or the parameters?
+        solver_options['nprint'] = kwargs.pop('nprint', 100)    # debug info
+        solver_options['iterfunct'] = kwargs.pop('iterfunct', 'default')
+        solver_options['iterkw'] = kwargs.pop('iterkw', {})
+        solver_options['nocovar'] = kwargs.pop('nocovar', 0)
+        solver_options['rescale'] = kwargs.pop('rescale', 0) # 0
+#        solver_options['autoderivative'] = kwargs.pop('autoderivative', 1)  # if 0, then you must supply gvec
+        solver_options['quiet'] = kwargs.pop('quiet', 0)
+        solver_options['diag'] = kwargs.pop('diag', 0) # with rescale: positive scale factor for variables
+        solver_options['epsfcn'] = kwargs.pop('epsfcn', 1e-3)  # 0.001
+        solver_options['debug'] = kwargs.pop('debug', 0)
+#        if fjac is None:
+        if 1:  # the other way doesn't work yet
             # default to finite differencing in mpfit for jacobian
-            options['autoderivative'] = options.get('autoderivative', 1)
+            solver_options['autoderivative'] = kwargs.pop('autoderivative', 1)
         else:
             # use the user-defined function to calculate analytic partial derivatives
-            options['autoderivative'] = options.get('autoderivative', 0)
+            solver_options['autoderivative'] = kwargs.pop('autoderivative', 0)
         # end if
 
-        options.setdefault('xtol', 1.0e-14) # 1e-10
-        options.setdefault('ftol', 1.0e-14) # 1e-10
-        options.setdefault('gtol', 1.0e-14) # 1e-10
-        options.setdefault('damp', 0)
-        options.setdefault('maxiter', 2000) # 200
-        options.setdefault('factor', 100) # 100 without rescale, scales the chi2? or the parameters?
-        options.setdefault('nprint', 100)    # debug info
-        options.setdefault('iterfunct', 'default')
-        options.setdefault('iterkw', {})
-        options.setdefault('nocovar', 0)
-        options.setdefault('rescale', 0) # 0
-        options.setdefault('autoderivative', 1)  # if 0, then you must supply gvec
-        options.setdefault('quiet', 0)
-        options.setdefault('diag', 0) # with rescale: positive scale factor for variables
-        options.setdefault('epsfcn', 1e-3)  # 0.001
-        options.setdefault('debug', 0)
+        # ========================== #
+
+        self.nmonti = kwargs.pop("nmonti", 300)
+        self.af0 = kwargs.pop("af0", self.af0)
+        self.LB = kwargs.pop("LB", -_np.Inf*_np.ones_like(self.af0))
+        self.UB = kwargs.pop("UB",  _np.Inf*_np.ones_like(self.af0))
 
         # ========================== #
 
         # Pull out the run data from the options dictionary
         #  possibilities include
         #   - LB, UB - Lower and upper bounds on fitting parameters (af)
-        self.__dict__.update(options)
+        self.solver_options = solver_options
+        self.__dict__.update(**kwargs)
+        return kwargs
     # end def __init__
 
     # ========================== #
@@ -437,8 +444,8 @@ class fitNL_base(Struct):
         return self.chi2
 
     def bootstrapper(self, xvec=None, **kwargs):
-#        self.options['nprint'] = 100    # debug info
-        self.options['quiet'] = 1 # debug info
+#        self.solver_options['nprint'] = 100    # debug info
+        self.solver_options['quiet'] = 1 # debug info
 
         if not hasattr(self, 'weightit'):  self.weightit = False  # end if
         weightit = kwargs.setdefault('weightit', self.weightit)
@@ -595,14 +602,15 @@ class fitNL_base(Struct):
 
 class fitNL(fitNL_base):
 
-    def __init__(self, xdat, ydat, vary=None, af0=[], func=None, options={}, **kwargs):
+#    def __init__(self, xdat, ydat, vary=None, af0=[], func=None, options={}, **kwargs):
+    def __init__(self, xdat, ydat, vary=None, af0=[], func=None, **kwargs):
         """
         Initialize the class for future calculations.  You have to call the
         obj.run_calc() method to actually get a result
         """
         # Update the run options with any extra input values or overwrites
-        options.update(kwargs)
-
+#        solver_options.update(kwargs)
+#        self.__dict__.update(**kwargs)
 #        if not __mpfitonpath__:
 #            if self.lsqmethod == 1:
 #               self.lmfit = self.__use_least_squares
@@ -614,34 +622,35 @@ class fitNL(fitNL_base):
 #        else:
 #            self.lmfit = LMFIT
 #        # end if
-        super(fitNL, self).__init__(xdat=xdat, ydat=ydat, vary=vary, af0=af0,
-                                    func=func, **options)
+#        super(fitNL, self).__init__(xdat=xdat, ydat=ydat, vary=vary, af0=af0, func=func, options=solver_options)
+        kwargs = super(fitNL, self).__init__(xdat=xdat, ydat=ydat, vary=vary, af0=af0, func=func, **kwargs)
+        self.__dict__.update(**kwargs)
         self.lmfit = self.__use_mpfit  # alias the fitter
     # end __init__
 
     def run(self):
-        if not hasattr(self, 'options'):  self.options = {}  # end if
-        self.options.setdefault('xtol', 1.0e-14)
-        self.options.setdefault('ftol', 1.0e-14)
-        self.options.setdefault('gtol', 1.0e-14)
-        self.options.setdefault('damp', 0.)
-        self.options.setdefault('maxiter', 2000)
-        self.options.setdefault('factor', 100)  # 100
-        self.options.setdefault('nprint', 100)
-        self.options.setdefault('iterfunct', 'default')
-        self.options.setdefault('iterkw', {})
-        self.options.setdefault('nocovar', 0)
-        self.options.setdefault('rescale', 0)
-        self.options.setdefault('autoderivative', 1)
-        self.options.setdefault('quiet', 0)
-        self.options.setdefault('diag', 0)
-        self.options.setdefault('epsfcn', 1e-3) #5e-4) #1e-3
-        self.options.setdefault('debug', 0)
+        if not hasattr(self, 'solver_options'):  self.solver_options = {}  # end if
+        self.solver_options.setdefault('xtol', 1.0e-14)
+        self.solver_options.setdefault('ftol', 1.0e-14)
+        self.solver_options.setdefault('gtol', 1.0e-14)
+        self.solver_options.setdefault('damp', 0.)
+        self.solver_options.setdefault('maxiter', 2000)
+        self.solver_options.setdefault('factor', 100)  # 100
+        self.solver_options.setdefault('nprint', 100)
+        self.solver_options.setdefault('iterfunct', 'default')
+        self.solver_options.setdefault('iterkw', {})
+        self.solver_options.setdefault('nocovar', 0)
+        self.solver_options.setdefault('rescale', 0)
+        self.solver_options.setdefault('autoderivative', 1)
+        self.solver_options.setdefault('quiet', 0)
+        self.solver_options.setdefault('diag', 0)
+        self.solver_options.setdefault('epsfcn', 1e-3) #5e-4) #1e-3
+        self.solver_options.setdefault('debug', 0)
 #        # default to finite differencing in mpfit for jacobian
-#        self.options.setdefault('autoderivative', 1)
+#        self.solver_options.setdefault('autoderivative', 1)
 
-        super(fitNL, self).run(**self.options)
-#        self.__use_mpfit(**self.options)
+        super(fitNL, self).run(**self.solver_options)
+#        self.__use_mpfit(**self.solver_options)
         return self.af, self.covmat
 
         # ========================================== #
@@ -869,27 +878,31 @@ def test_fit(func=_ms.model_qparab, **fkwargs):
 # ========================================================================== #
 
 
-def qparabfit(x, y, ey, XX, nohollow=False, options={}, **kwargs):
+def qparabfit(x, y, ey, XX, nohollow=False, **kwargs):
     """
     This is a wrapper for using the MPFIT LM-solver with a quasi-parabolic model.
     This was written before the general fitting model above and is deprecated (obviously)
     in favor of the more general function.  This is still here purely because I
     see no reason to remove it yet.
     """
-    plotit = options.get('plotit', True)
-    xlbl = options.get('xlabel', r'$r/a$')
-    ylbl1 = options.get('ylabel1', r'T$_e$ [KeV]')
-    ylbl2 = options.get('ylabel2', r'-$\nabla$ T$_e$/T$_e$')
-    titl = options.get('title', r'Quasi-parabolic profile fit')
-    clr = options.get('color', 'r')
-    alph = options.get('alpha', 0.3)
-    hfig = options.get('hfig', None)
-    amin = options.get('amin', 1.00)
-    xlims = options.get('xlim', None)
-    ylims1 = options.get('ylim1', None)
-    ylims2 = options.get('ylim2', None)
-    fs = options.get('fontsize', _plt.rcParams['font.size'])
-    fn = options.get('fontname', _plt.rcParams['font.family'])
+    LB = kwargs.pop('LB', None)
+    UB = kwargs.pop('UB', None)
+    af0 = kwargs.pop('af0', None)
+    onesided = kwargs.pop('onesided', True)
+    plotit = kwargs.pop('plotit', True)
+    xlbl = kwargs.pop('xlabel', r'$r/a$')
+    ylbl1 = kwargs.pop('ylabel1', r'T$_e$ [KeV]')
+    ylbl2 = kwargs.pop('ylabel2', r'-$\nabla$ T$_e$/T$_e$')
+    titl = kwargs.pop('title', r'Quasi-parabolic profile fit')
+    clr = kwargs.pop('color', 'r')
+    alph = kwargs.pop('alpha', 0.3)
+    hfig = kwargs.pop('hfig', None)
+    amin = kwargs.pop('amin', 1.00)
+    xlims = kwargs.pop('xlim', None)
+    ylims1 = kwargs.pop('ylim1', None)
+    ylims2 = kwargs.pop('ylim2', None)
+    fs = kwargs.pop('fontsize', _plt.rcParams['font.size'])
+    fn = kwargs.pop('fontname', _plt.rcParams['font.family'])
 
     fontdict = {'fontsize':fs, 'fontname':fn}
     if amin != 1.0 and ylbl2 == r'-$\nabla$ T$_e$/T$_e$':
@@ -913,10 +926,16 @@ def qparabfit(x, y, ey, XX, nohollow=False, options={}, **kwargs):
 
     _, _, info = _ms.model_qparab(XX)
     info.success = False
-    p0 = info.af
+    if af0 is not None:
+        p0 = af0
+    else:
+        p0 = info.af
+    # end if
     # fjac = info.gvec
-    LB = info.Lbounds
-    UB = info.Ubounds
+    if LB is None:
+        LB = info.Lbounds
+    if UB is None:
+        UB = info.Ubounds
     numfit = len(p0)
 
     # Settings for each parameter of the fit.
@@ -941,6 +960,7 @@ def qparabfit(x, y, ey, XX, nohollow=False, options={}, **kwargs):
 
     # Pass data into the solver through keywords
     fa = {'x':x, 'y':y, 'err':ey}
+    kwargs.setdefault('maxiter',200)
     kwargs.setdefault('epsfcn', 1e-3)
     kwargs.setdefault('factor',100)
     # Call mpfit
@@ -1032,7 +1052,11 @@ def qparabfit(x, y, ey, XX, nohollow=False, options={}, **kwargs):
         ax2.set_ylabel(ylbl2, fontdict)
         ax2.set_xlabel(xlbl, fontdict)
 
-        ax1.errorbar(x, y, yerr=ey, fmt=clr+'o', color=clr )
+        if onesided:
+            ax1.errorbar(x[x>0], y[x>0], yerr=ey[x>0], fmt=clr+'o', color=clr )
+        else:
+            ax1.errorbar(x[x>0], y[x>0], yerr=ey[x>0], fmt=clr+'o', color=clr )
+        # end if
         ax1.plot(XX, info.prof, '-', color=clr, lw=2)
 #        ax1.plot(XX, (info.prof+_np.sqrt(info.varprof)), '--', color=clr, lw=1)
 #        ax1.plot(XX, (info.prof-_np.sqrt(info.varprof)), '--', color=clr, lw=1)
@@ -1220,7 +1244,7 @@ def test_fitNL(test_qparab=True):
 #    options = {'UB':UB, 'LB':LB}
 #    ft = fitNL(xdat=x, ydat=y, vary=vary, af0=af0, func=mymodel, fjac=myjac)
 #    ft = fitNL(xdat=x, ydat=y, vary=vary, af0=af0, func=mymodel)
-    ft = fitNL(xdat=x, ydat=y, vary=vary, af0=af0, func=mymodel, options=options)
+    ft = fitNL(xdat=x, ydat=y, vary=vary, af0=af0, func=mymodel, **options)
     ft.run()
     ft.xx = _np.linspace(x.min(), x.max(), num=100)
     ft.properror(xvec=None, gvec=myjac(ft.af, ft.xx))   # use with analytic jacobian

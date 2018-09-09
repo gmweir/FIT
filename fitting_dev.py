@@ -1489,8 +1489,12 @@ def spline_bs(xvar, yvar, vary, xf=None, func="spline", nmonti=300, deg=3, bbox=
 
 # ======================================================================= #
 
-def fit_profile(rdat, pdat, vdat, rvec, arescale=1.0, bootstrappit=True):
-
+def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
+    arescale = kwargs.get('arescale',1.0)
+    bootstrappit = kwargs.get('bootstrappit',True)
+    af0 = kwargs.get('af0', None)
+    LB = kwargs.get('LB', None)
+    UB = kwargs.get('UB', None)
     def fitqparab(af, XX):
         return _ms.qparab(XX, af)
 #        return _ms.qparab_fit(XX, af)
@@ -1503,18 +1507,23 @@ def fit_profile(rdat, pdat, vdat, rvec, arescale=1.0, bootstrappit=True):
         return _ms.deriv_qparab(XX, af)
 
     info = _ms.model_qparab(XX=None)
-    af0 = info.af
-    LB = info.Lbounds
-    UB = info.Ubounds
+    if af0 is None:
+        af0 = info.af
+    if LB is None:
+        LB = info.Lbounds
+    if UB is None:
+        UB = info.Ubounds
+    # end if
 
 #    af0 = _np.asarray([0.30, 0.002, 2.0, 0.7, -0.24, 0.30], dtype=_np.float64)
 #    LB = _np.array([  0.0, 0.0,-100,-100,-1,-1], dtype=_np.float64)
 #    UB = _np.array([ 20.0, 1.0, 100, 100, 1, 1], dtype=_np.float64)
 
     options = dict()
-    options.setdefault('epsfcn', 5e-3) # 5e-4
+    options.setdefault('epsfcn', 1e-3) # 5e-4
     options.setdefault('factor',100)
-    NLfit = fitNL(rdat, pdat, vdat, af0, fitqparab, options=options, LB=LB, UB=UB)
+    options.setdefault('maxiter',200)
+    NLfit = fitNL(rdat, pdat, vdat, af0, fitqparab, LB=LB, UB=UB, **options)
     NLfit.run()
 
     if bootstrappit:
@@ -1591,6 +1600,7 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
     bootstrappit = kwargs.get('bootstrappit',False)
     plotlims = kwargs.get('plotlims', None)
     fitin = kwargs.get('fitin', None)
+    af0 = kwargs.get('af0', None)
 
     nkey = 'roa' if 'roan' not in QTBdat else 'roan'
     rvec = _np.copy(rvec)
@@ -1616,7 +1626,8 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
     varn = varn[iuse]
 
     if fitin is None:
-        nef, varnef, dlnnedrho, vardlnnedrho, af = fit_profile(roa, 1e-20*ne, 1e-40*varn, rvec, arescale=arescale, bootstrappit=bootstrappit)
+        nef, varnef, dlnnedrho, vardlnnedrho, af = fit_profile(
+            roa, 1e-20*ne, 1e-40*varn, rvec, arescale=arescale, bootstrappit=bootstrappit, af0=af0)
     else:
         nef = 1e-20*fitin['prof']
         varnef = 1e-40*fitin['varprof']
@@ -1738,6 +1749,7 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
     bootstrappit = kwargs.get('bootstrappit',False)
     plotlims = kwargs.get('plotlims', None)
     fitin = kwargs.get('fitin', None)
+    af0 = kwargs.get('af0', None)
 
     rvec = _np.copy(rvec)
     roa = _np.copy(QTBdat['roa'])
@@ -1762,7 +1774,7 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
     varT = varT[iuse]
 
     if fitin is None:
-        Tef, varTef, dlnTedrho, vardlnTedrho, af = fit_profile(roa, Te, varT, rvec, arescale=arescale, bootstrappit=bootstrappit)
+        Tef, varTef, dlnTedrho, vardlnTedrho, af = fit_profile(roa, Te, varT, rvec, arescale=arescale, bootstrappit=bootstrappit, af0=af0)
     else:
         Tef = fitin['prof']
         varTef = fitin['varprof']
