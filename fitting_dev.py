@@ -1263,6 +1263,7 @@ def spline_bs(xvar, yvar, vary, xf=None, func="spline", nmonti=300, deg=3, bbox=
     yf = _np.zeros( (nmonti, nxf, nsh[1]), dtype=_np.float64)
     for ii in range(nmonti):
         utemp = yvar + _np.sqrt(vary)*_np.random.normal(0.0, 1.0, _np.shape(yvar))
+        vtemp = (utemp-yvar)**2.0
         if func == 'pchip':
             yf[ii, :], dydx[ii, :] = pchip(xvar, utemp, xf)
         else:
@@ -1270,8 +1271,8 @@ def spline_bs(xvar, yvar, vary, xf=None, func="spline", nmonti=300, deg=3, bbox=
             tmp2 = _np.zeros_like(tmp1)
             for jj in range(nsh[1]):
 #                vtemp = (utemp-yvar)
-#                tmp1[:,jj], tmp2[:,jj] = spline(xvar, utemp[:,jj], xf, vary=vary[:,jj], deg=deg, bbox=bbox)
-                tmp1[:,jj], tmp2[:,jj] = spline(xvar, utemp[:,jj], xf, vary=None, deg=deg, bbox=bbox)
+                tmp1[:,jj], tmp2[:,jj] = spline(xvar, utemp[:,jj], xf, vary=vtemp[:,jj], deg=deg, bbox=bbox)
+#                tmp1[:,jj], tmp2[:,jj] = spline(xvar, utemp[:,jj], xf, vary=None, deg=deg, bbox=bbox)
             # end for
 #            print(_np.shape(tmp1))
 #            print(nsh)
