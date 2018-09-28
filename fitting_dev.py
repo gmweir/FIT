@@ -1601,6 +1601,7 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
     plotlims = kwargs.get('plotlims', None)
     fitin = kwargs.get('fitin', None)
     af0 = kwargs.get('af0', None)
+    rescale_by_linavg = kwargs.get('rescale_linavg',False)
 
     nkey = 'roa' if 'roan' not in QTBdat else 'roan'
     rvec = _np.copy(rvec)
@@ -1628,6 +1629,18 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
     if fitin is None:
         nef, varnef, dlnnedrho, vardlnnedrho, af = fit_profile(
             roa, 1e-20*ne, 1e-40*varn, rvec, arescale=arescale, bootstrappit=bootstrappit, af0=af0)
+
+        if rescale_by_linavg:
+            nfdl, vnfdl, _, _ = _ut.trapz_var(rvec, nef, vary=varnef)
+            nfdl /= _np.abs(_np.max(rvec)-_np.min(rvec))
+            vnfdl /= _np.abs(_np.max(rvec)-_np.min(rvec))**2.0
+
+            nef *= 1e-20*rescale_by_linavg/nfdl
+            varnef *= (1e-20*rescale_by_linavg/nfdl)**2.0
+
+            af[0] *= 1e-20*rescale_by_linavg/af[0]
+        # end if
+
     else:
         nef = 1e-20*fitin['prof']
         varnef = 1e-40*fitin['varprof']
@@ -1830,7 +1843,8 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
 
         # _, _, Tint, Tvar = _ut.trapz_var(rvec, dlnTedrho, vary=vardlnTedrho)
         ax1.set_xlim((plotlims[0],plotlims[1]))
-        ax1.set_ylim((0,12))
+        maxyy = min((_np.max(1.05*(Te+_np.sqrt(varTH))),12))
+        ax1.set_ylim((0,maxyy))
 
         if loggradient:
             idx = _np.where(_np.abs(rvec) < 0.05)
@@ -1850,7 +1864,10 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
             # Tint += (_np.log(Te[0]) - _ut.interp(rvec, Tint, xo=roa[0]))
             # Tint = _np.exp(Tint)
             ax3.set_xlim((plotlims[0],plotlims[1]))
-            ax3.set_ylim((0,15))
+#            ax3.set_ylim((0,15))
+#            maxyy = min((_np.max(1.05*(plotdlnTedrho+_np.sqrt(plotvardlnTedrho))),15))
+            maxyy = _np.max(1.05*(plotdlnTedrho+_np.sqrt(plotvardlnTedrho)))
+            ax3.set_ylim((0,maxyy))
         else:
             vardlnTedrho = (dlnTedrho/logTe)**2.0 * (vardlnTedrho/dlnTedrho**2.0+varlogTe/logTe**2.0)
             dlnTedrho = dlnTedrho/logTe
@@ -1865,7 +1882,10 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
                                    interpolate=True, color='r', alpha=0.3)
             # Tint += (Te[0] - _ut.interp(rvec, Tint, xo=roa[0]))
             ax3.set_xlim((plotlims[0],plotlims[1]))
-            ax3.set_ylim((0,30))
+#            ax3.set_ylim((0,30))
+#            maxyy = min((_np.max(1.05*(plotdlnTedrho+_np.sqrt(plotvardlnTedrho))),30))
+            maxyy = _np.max(1.05*(plotdlnTedrho+_np.sqrt(plotvardlnTedrho)))
+            ax3.set_ylim((0,maxyy))
         # end if
         # ax1.plot(rvec, Tint, 'b--', lw=1)
         # ax2.plot(rvec, _np.log(Tint), 'b--', lw=1)
