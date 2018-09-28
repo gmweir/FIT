@@ -147,7 +147,7 @@ def expedge(XX, af):
 
 def model_qparab(XX, af=None, nohollow=False, prune=False):
     """
-    ex// ne_parms = [0.30, 0.002 2.0 0.7 -0.24 0.30]
+    ex// ne_parms = [0.30, 0.002, 2.0, 0.7, -0.24, 0.30]
     This function calculates the quasi-parabolic fit
     Y/Y0 = af[1]-af[4]+(1-af[1]+af[4])*(1-xx^af[2])^af[3]
                 + af[4]*(1-exp(-xx^2/af[5]^2))
