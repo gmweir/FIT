@@ -1601,7 +1601,7 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
     plotlims = kwargs.get('plotlims', None)
     fitin = kwargs.get('fitin', None)
     af0 = kwargs.get('af0', None)
-    rescale_by_linavg = kwargs.get('rescale_linavg',False)
+    rescale_by_linavg = kwargs.get('rescale_by_linavg',False)
 
     nkey = 'roa' if 'roan' not in QTBdat else 'roan'
     rvec = _np.copy(rvec)
@@ -1631,14 +1631,16 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
             roa, 1e-20*ne, 1e-40*varn, rvec, arescale=arescale, bootstrappit=bootstrappit, af0=af0)
 
         if rescale_by_linavg:
+            rescale_by_linavg *= 1e-20
+
             nfdl, vnfdl, _, _ = _ut.trapz_var(rvec, nef, vary=varnef)
             nfdl /= _np.abs(_np.max(rvec)-_np.min(rvec))
             vnfdl /= _np.abs(_np.max(rvec)-_np.min(rvec))**2.0
 
-            nef *= 1e-20*rescale_by_linavg/nfdl
-            varnef *= (1e-20*rescale_by_linavg/nfdl)**2.0
+            nef *= rescale_by_linavg/nfdl
+            varnef *= (rescale_by_linavg/nfdl)**2.0
 
-            af[0] *= 1e-20*rescale_by_linavg/af[0]
+            af[0] *= rescale_by_linavg/af[0]
         # end if
 
     else:

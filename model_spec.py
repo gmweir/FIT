@@ -23,6 +23,13 @@ from pybaseutils.utils import sech
 # ========================================================================== #
 # ========================================================================== #
 
+def randomize_initial_conditions(LB, UB):
+    af = _np.zeros_like(LB)
+    for ii in range(len(LB)):
+        af[ii] = _np.random.uniform(low=LB[ii], high=UB[ii], size=None)
+    # end for
+    return af
+
 def line(XX, a):
     y = a[0]*XX+a[1]
     return y
@@ -158,9 +165,15 @@ def model_qparab(XX, af=None, nohollow=False, prune=False):
     af[4],af[5]-  hh, ww - hole depth and width
 
     """
+    info = Struct()  # Custom class that makes working with dictionaries easier
+#    info.Lbounds = _np.array([    0.0, 0.0,-_np.inf,-_np.inf,-_np.inf,-_np.inf], dtype=_np.float64)
+#    info.Ubounds = _np.array([_np.inf, _np.inf, _np.inf, _np.inf, _np.inf, _np.inf], dtype=_np.float64)
+    info.Lbounds = _np.array([  0.0, 0.0,-20,-20,-1,-1], dtype=_np.float64)
+    info.Ubounds = _np.array([ 20.0, 1.0, 20, 20, 1, 1], dtype=_np.float64)
 
     if af is None:
-        af = _np.array([5.0, 0.002, 2.0, 0.7, -0.24, 0.30], dtype=_np.float64)
+#        af = _np.array([5.0, 0.002, 2.0, 0.7, -0.24, 0.30], dtype=_np.float64)
+        af = randomize_initial_conditions(info.Lbounds, info.Ubounds)
         if nohollow:
             af[4] = 0.0
             af[5] = 1.0
@@ -172,12 +185,7 @@ def model_qparab(XX, af=None, nohollow=False, prune=False):
         af = _np.hstack((af,1.0))
     # endif
 
-    info = Struct()  # Custom class that makes working with dictionaries easier
     info.af = _np.copy(af)
-#    info.Lbounds = _np.array([    0.0, 0.0,-_np.inf,-_np.inf,-_np.inf,-_np.inf], dtype=_np.float64)
-#    info.Ubounds = _np.array([_np.inf, _np.inf, _np.inf, _np.inf, _np.inf, _np.inf], dtype=_np.float64)
-    info.Lbounds = _np.array([  0.0, 0.0,-20,-20,-1,-1], dtype=_np.float64)
-    info.Ubounds = _np.array([ 20.0, 1.0, 20, 20, 1, 1], dtype=_np.float64)
     if XX is None:
         return info
     # endif
@@ -456,15 +464,18 @@ def model_ProdExp(XX, af=None, npoly=4):
     XX    - independent variable
         npoly is overruled by the shape of af.  It is only used if af is None
     """
+    info = Struct()
+    info.Lbounds = -_np.inf*_np.ones((npoly+1,), dtype=_np.float64)
+    info.Ubounds = _np.inf*_np.ones((npoly+1,), dtype=_np.float64)
+
     if af is None:
-        af = 0.9*_np.ones((npoly+1,), dtype=_np.float64)
+#        af = 0.9*_np.ones((npoly+1,), dtype=_np.float64)
 #        af *= _np.random.normal(0.0, 1.0, npoly+1.0)
+        af = randomize_initial_conditions(info.Lbounds, info.Ubounds)
     # endif
     npoly = _np.size(af)-1
-
-    info = Struct()
-    info.Lbounds = -_np.inf*_np.ones_like(af)
-    info.Ubounds = _np.inf*_np.ones_like(af)
+    info.Lbounds = -_np.inf*_np.ones((npoly+1,), dtype=_np.float64)
+    info.Ubounds = _np.inf*_np.ones((npoly+1,), dtype=_np.float64)
     info.af = af
 
     nx = _np.size(XX)
@@ -529,14 +540,16 @@ def model_poly(XX, af=None, npoly=4):
     af    - estimate of fitting parameters
     XX    - independent variable
     """
+    info = Struct()
+    info.Lbounds = -_np.inf*_np.ones((npoly+1,), dtype=_np.float64)
+    info.Ubounds = _np.inf*_np.ones((npoly+1,), dtype=_np.float64)
 
     if af is None:
-        af = 0.1*_np.ones((npoly+1,), dtype=_np.float64)
+        af = randomize_initial_conditions(info.Lbounds, info.Ubounds)
+#        af = 0.1*_np.ones((npoly+1,), dtype=_np.float64)
 #        af *= _np.random.normal(0.0, 1.0, npoly+1.0)
     # endif
     npoly = _np.size(af)-1
-
-    info = Struct()
     info.Lbounds = -_np.inf*_np.ones((npoly+1,), dtype=_np.float64)
     info.Ubounds = _np.inf*_np.ones((npoly+1,), dtype=_np.float64)
     info.af = af
@@ -600,16 +613,20 @@ def model_evenpoly(XX, af=None, npoly=4):
     """
     nx = _np.size(XX)
 
-    if af is None:
-        af = 0.1*_np.ones((npoly//2+1,), dtype=_np.float64)
-#        af *= _np.random.normal(0.0, 1.0, npoly//2+1.0)
-    # endif
-    num_fit = _np.size(af)  # Number of fitting parameters
-    npoly = _np.int(2*(num_fit-1))  # Polynomial order from input af
-
     info = Struct()
     info.Lbounds = -_np.inf*_np.ones((npoly//2+1,), dtype=_np.float64)
     info.Ubounds = _np.inf*_np.ones((npoly//2+1,), dtype=_np.float64)
+
+    if af is None:
+#        af = 0.1*_np.ones((npoly//2+1,), dtype=_np.float64)
+#        af *= _np.random.normal(0.0, 1.0, npoly//2+1.0)
+        af = randomize_initial_conditions(info.Lbounds, info.Ubounds)
+    # endif
+    num_fit = _np.size(af)  # Number of fitting parameters
+    npoly = _np.int(2*(num_fit-1))  # Polynomial order from input af
+    info.Lbounds = -_np.inf*_np.ones((npoly//2+1,), dtype=_np.float64)
+    info.Ubounds = _np.inf*_np.ones((npoly//2+1,), dtype=_np.float64)
+
     info.af = af
 
     # Even Polynomial of order num_fit, Insert zeros for the odd powers
@@ -672,16 +689,23 @@ def model_PowerLaw(XX, af=None, npoly=4):
     af    - estimate of fitting parameters
     XX    - independent variable
     """
-    if af is None:
-        af = 0.1*_np.ones((npoly+2,), dtype=_np.float64)
-#        af *= _np.random.normal(0.0, 1.0, npoly+2.0)    # endif
-    num_fit = _np.size(af)  # Number of fitting parameters
-    npoly = num_fit-3
-    nx = _np.size(XX)
-
     info = Struct()
     info.Lbounds = _np.hstack((-_np.inf * _np.ones((npoly,), dtype=_np.float64), -_np.inf,       0))
     info.Ubounds = _np.hstack(( _np.inf * _np.ones((npoly,), dtype=_np.float64),  _np.inf, _np.inf))
+
+    if af is None:
+#        af = 0.1*_np.ones((npoly+2,), dtype=_np.float64)
+#        af *= _np.random.normal(0.0, 1.0, npoly+2.0)    # endif
+        af = randomize_initial_conditions(info.Lbounds, info.Ubounds)
+    # end if
+    num_fit = _np.size(af)  # Number of fitting parameters
+    npoly = num_fit-3
+    info.Lbounds = _np.hstack((-_np.inf * _np.ones((npoly,), dtype=_np.float64), -_np.inf,       0))
+    info.Ubounds = _np.hstack(( _np.inf * _np.ones((npoly,), dtype=_np.float64),  _np.inf, _np.inf))
+
+    nx = _np.size(XX)
+
+
     info.af = af
 
     if len(af) != info.Lbounds.shape[0]:
@@ -765,20 +789,26 @@ def model_Exponential(XX, af=None, npoly=None):
     af    - estimate of fitting parameters
     XX    - independent variables
     """
-
 #    num_fit = npoly+3
     num_fit = 4
-    if af is None:
-        af = 0.1*_np.ones((num_fit,), dtype=_np.float64)
-#        af *= _np.random.normal(0.0, 1.0, num_fit)
-    # endif
-    num_fit = _np.size(af)  # Number of fitting parameters
-    nx = _np.size(XX)
 
     info = Struct()
     info.Lbounds = -_np.inf*_np.ones((num_fit,), dtype=_np.float64)
     info.Ubounds = _np.inf*_np.ones((num_fit,), dtype=_np.float64)
     info.Lbounds[0] = 0
+
+    if af is None:
+#        af = 0.1*_np.ones((num_fit,), dtype=_np.float64)
+#        af *= _np.random.normal(0.0, 1.0, num_fit)
+        af = randomize_initial_conditions(info.Lbounds, info.Ubounds)
+    # endif
+    num_fit = _np.size(af)  # Number of fitting parameters
+    info.Lbounds = -_np.inf*_np.ones((num_fit,), dtype=_np.float64)
+    info.Ubounds = _np.inf*_np.ones((num_fit,), dtype=_np.float64)
+    info.Lbounds[0] = 0
+
+    nx = _np.size(XX)
+
     info.af = af
 
     # f     = a1*(exp(a2*xx^a3) + XX^a4) = f1+f2;
