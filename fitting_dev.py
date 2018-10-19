@@ -21,10 +21,10 @@ from pybaseutils import utils as _ut
 
 try:
     from FIT import model_spec as _ms
-    from FIT.fitNL import fitNL
+    from FIT.fitNL import fitNL, modelfit
 except:
     from . import model_spec as _ms
-    from .fitNL import fitNL
+    from .fitNL import fitNL, modelfit
 # end try
 
 
@@ -169,13 +169,13 @@ def linreg(X, Y, verbose=True, varY=None, varX=None, cov=False, plotit=False):
 def weightedPolyfit(xvar, yvar, xo, vary=None, deg=1, nargout=2):
     if vary is None:
         weights = _np.ones_like(yvar)
+        vary = _np.abs(0.025*_np.nanmean(yvar[~_np.isinf(yvar)])*_np.ones_like(yvar))
+    else:
+        if (vary==0).any():
+            vary[vary==0] = _np.finfo(float).eps
+        # endif
+        weights = 1.0/vary
     # end if
-
-    if (vary==0).any():
-        vary[vary==0] = _np.finfo(float).eps
-    # endif
-
-    weights = 1.0/vary
 
     # intel compiler error with infinite weight (zero variance ... fix above)
     if _np.isinf(weights).any():
@@ -216,64 +216,17 @@ def weightedPolyfit(xvar, yvar, xo, vary=None, deg=1, nargout=2):
         return af, Vcov
     # endif
 
-    def _func(af, xvec):
-        yf, _, _ = _ms.model_poly(xvec, af, npoly=deg)
-        return yf
+    def _func(xvec, af, **fkwargs):
+        return _ms.model_poly(xvec, af, npoly=deg)
 
-    _, gvec, info = _ms.model_poly(xo, af, npoly=deg)
-    # The g-vector contains the partial derivatives used for error propagation
-    # f = a1*x^2+a2*x+a3
-    # dfda1 = x^2;
-    # dfda2 = x;
-    # dfda3 = 1;
-    # gvec(1,1:nx) = XX**2;
-    # gvec(2,1:nx) = XX   ;
-    # gvec(3,1:nx) = 1;
+    fitter = modelfit(xvar, yvar, ey=_np.sqrt(vary), XX=xo, func=_func)
 
-    fitter = fitNL(xvar, yvar, vary, af0=af, func=_func, fjac=None)
-    fitter.af = af
-    fitter.covmat = Vcov
-    varyf = fitter.properror(xo, gvec)
-    yf = fitter.mfit
-
-    if nargout == 2:
-        return yf, varyf
-
+    if nargout == 1:
+        return fitter.prof
+    elif nargout == 2:
+        return fitter.prof, fitter.varprof
     elif nargout == 4:
-
-        def _derivfunc(af, xvec):
-            if deg-1 == 0:
-                dydx = af[0]*_np.ones_like(xvec)
-            else:
-                dydx, _, _ = _ms.model_poly(xvec, af, npoly=deg-1)
-            return dydx
-
-        # The g-vector for the derivative, ex for quadratic:
-        # dfdx = 2*a1*x+a2
-        # dfda1 = 2*x;
-        # dfda2 = 1;
-        # gvec(1,1:nx) = 2*XX
-        # gvec(2,1:nx) = 1.0
-
-        gvec = _np.zeros((deg, len(xo)), dtype=_np.float64)
-        for ii in range(deg):  # ii=1:num_fit
-            # kk = num_fit - (ii + 1)
-            kk = deg - (ii + 1)
-            gvec[ii, :] = (kk+1)*xo**kk
-        # endfor
-
-        af = _np.polyder(af, m=1)
-        fitter = fitNL(xvar, yvar, vary, af0=af, func=_derivfunc, fjac=None)
-        fitter.af = af  # first derivative
-
-        Vcov = _np.atleast_3d(Vcov)
-        fitter.covmat = _np.squeeze(Vcov[:-1, :-1, :])
-
-        vardydf = fitter.properror(xo, gvec)
-        dydf = fitter.mfit
-        # dydf = info.dprofdx
-
-        return yf, varyf, dydf, vardydf
+        return fitter.prof, fitter.varprof, fitter.dprofdx, fitter.vardprofdx
 # end def weightedPolyfit
 
 
@@ -1489,15 +1442,22 @@ def spline_bs(xvar, yvar, vary, xf=None, func="spline", nmonti=300, deg=3, bbox=
 
 # ======================================================================= #
 
+# =================================== #
+# ---------- fitNL dependent -------- #
+# =================================== #
+
+
 def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
     arescale = kwargs.get('arescale',1.0)
     bootstrappit = kwargs.get('bootstrappit',True)
     af0 = kwargs.get('af0', None)
     LB = kwargs.get('LB', None)
     UB = kwargs.get('UB', None)
+
+    # ==== #
+
     def fitqparab(af, XX):
         return _ms.qparab(XX, af)
-#        return _ms.qparab_fit(XX, af)
 
     def returngvec(af, XX):
         _, gvec, info = _ms.model_qparab(_np.abs(XX), af)
@@ -1505,6 +1465,8 @@ def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
 
     def fitdqparabdx(af, XX):
         return _ms.deriv_qparab(XX, af)
+
+    # ==== #
 
     info = _ms.model_qparab(XX=None)
     if af0 is None:
@@ -1587,13 +1549,11 @@ def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
 
     return prof, varp, dlnpdrho, vardlnpdrho, af
 
-# =================================== #
-# ---------- fitNL dependent -------- #
-# =================================== #
 
 def fit_TSneprofile(QTBdat, rvec, **kwargs):
     loggradient = kwargs.get('loggradient', True)
     plotit = kwargs.get('plotit', False)
+    gradrho = kwargs.get('gradrho',1.0)
     amin = kwargs.get('amin', 0.51)
     returnaf = kwargs.get('returnaf',False)
     arescale = kwargs.get('arescale', 1.0)
@@ -1627,13 +1587,16 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
     varn = varn[iuse]
 
     if fitin is None:
+        isort = _np.argsort(roa)
+
         nef, varnef, dlnnedrho, vardlnnedrho, af = fit_profile(
-            roa, 1e-20*ne, 1e-40*varn, rvec, arescale=arescale, bootstrappit=bootstrappit, af0=af0)
+            roa[isort], 1e-20*ne[isort], 1e-40*varn[isort], rvec, arescale=arescale,
+            bootstrappit=bootstrappit, af0=af0)
 
         if rescale_by_linavg:
             rescale_by_linavg *= 1e-20
-
-            nfdl, vnfdl, _, _ = _ut.trapz_var(rvec, nef, vary=varnef)
+            iuse = ~(_np.isinf(nef) + _np.isnan(nef))
+            nfdl, vnfdl, _, _ = _ut.trapz_var(rvec[iuse], nef[iuse], vary=varnef[iuse])
             nfdl /= _np.abs(_np.max(rvec)-_np.min(rvec))
             vnfdl /= _np.abs(_np.max(rvec)-_np.min(rvec))**2.0
 
@@ -1653,7 +1616,7 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
 
     # Convert back to absolute units (particles per m-3 not 1e20 m-3)
     nef = 1e20*nef
-    varnef = 1e40*varnef
+    varnef = 1e40*varnef  # TODO!: watch out for nans here
 
     varlogne = varnef / nef**2.0
     logne = _np.log(nef)
@@ -1713,8 +1676,8 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
             plotvardlnnedrho = vardlnnedrho.copy()
             plotdlnnedrho[idx] = _np.nan
             plotvardlnnedrho[idx] = _np.nan
-            plotdlnnedrho *= -1*amin
-            plotvardlnnedrho *= amin**2.0
+            plotdlnnedrho *= -1*amin*gradrho
+            plotvardlnnedrho *= (amin*gradrho)**2.0
             ax3.plot(rvec, plotdlnnedrho, 'b-', lw=2)
 #            ax3.plot(rvec, plotdlnnedrho+_np.sqrt(plotvardlnnedrho), 'b--')
 #            ax3.plot(rvec, plotdlnnedrho-_np.sqrt(plotvardlnnedrho), 'b--')
@@ -1728,8 +1691,8 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
         else:
             vardlnnedrho = (dlnnedrho/logne)**2.0 * (vardlnnedrho/dlnnedrho**2.0+varlogne/logne**2.0)
             dlnnedrho = dlnnedrho/logne
-            plotdlnnedrho = -1*amin * dlnnedrho.copy()
-            plotvardlnnedrho = (amin**2.0) * vardlnnedrho.copy()
+            plotdlnnedrho = -1*(amin*gradrho) * dlnnedrho.copy()
+            plotvardlnnedrho = ((amin*gradrho)**2.0) * vardlnnedrho.copy()
 
             ax3.plot(rvec, plotdlnnedrho, 'b-', lw=2)
 #            ax3.plot(rvec, plotdlnnedrho+_np.sqrt(plotvardlnnedrho), 'b--')
@@ -1777,7 +1740,7 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
     # end if
     varT =  _np.copy(_np.sqrt(varTL*varTH))
 
-    iuse = (~_np.isinf(roa))*(~_np.isnan(roa))*(Te>1e-3)
+    iuse = (~_np.isinf(roa))*(~_np.isnan(roa))*(Te>1e-3) #*(Te<9.0)
     Te = Te[iuse]
     roa = roa[iuse]
     varTL = varTL[iuse]
@@ -1789,7 +1752,10 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
     varT = varT[iuse]
 
     if fitin is None:
-        Tef, varTef, dlnTedrho, vardlnTedrho, af = fit_profile(roa, Te, varT, rvec, arescale=arescale, bootstrappit=bootstrappit, af0=af0)
+        isort = _np.argsort(roa)
+        Tef, varTef, dlnTedrho, vardlnTedrho, af = fit_profile(
+            roa[isort], Te[isort], varT[isort], rvec,
+            arescale=arescale, bootstrappit=bootstrappit, af0=af0)
     else:
         Tef = fitin['prof']
         varTef = fitin['varprof']
@@ -1841,7 +1807,7 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
 #        ax2.plot(rvec, logTe+_np.sqrt(varlogTe), 'r--', lw=1)
 #        ax2.plot(rvec, logTe-_np.sqrt(varlogTe), 'r--', lw=1)
         ax1.fill_between(rvec, Tef-_np.sqrt(varTef), Tef+_np.sqrt(varTef),
-                                    interpolate=True, color='r', alpha=0.3)
+                                    interpolate=True, color='r', alpha=0.3) # TODO!: watch for inf/nan's
 
         # _, _, Tint, Tvar = _ut.trapz_var(rvec, dlnTedrho, vary=vardlnTedrho)
         ax1.set_xlim((plotlims[0],plotlims[1]))

@@ -885,9 +885,14 @@ def qparabfit(x, y, ey, XX, nohollow=False, **kwargs):
     in favor of the more general function.  This is still here purely because I
     see no reason to remove it yet.
     """
+    # subfunction kwargs
+
+    # fitter kwargs
     LB = kwargs.pop('LB', None)
     UB = kwargs.pop('UB', None)
     af0 = kwargs.pop('af0', None)
+
+    # plotting kwargs
     onesided = kwargs.pop('onesided', True)
     plotit = kwargs.pop('plotit', True)
     xlbl = kwargs.pop('xlabel', r'$r/a$')
@@ -897,7 +902,7 @@ def qparabfit(x, y, ey, XX, nohollow=False, **kwargs):
     clr = kwargs.pop('color', 'r')
     alph = kwargs.pop('alpha', 0.3)
     hfig = kwargs.pop('hfig', None)
-    amin = kwargs.pop('amin', 1.00)
+    agradrho = kwargs.pop('agradrho', 1.00)
     xlims = kwargs.pop('xlim', None)
     ylims1 = kwargs.pop('ylim1', None)
     ylims2 = kwargs.pop('ylim2', None)
@@ -905,7 +910,7 @@ def qparabfit(x, y, ey, XX, nohollow=False, **kwargs):
     fn = kwargs.pop('fontname', _plt.rcParams['font.family'])
 
     fontdict = {'fontsize':fs, 'fontname':fn}
-    if amin != 1.0 and ylbl2 == r'-$\nabla$ T$_e$/T$_e$':
+    if agradrho != 1.0 and ylbl2 == r'-$\nabla$ T$_e$/T$_e$':
         ylbl2 = r'a/L$_{Te}$'
     # endif
 
@@ -1034,7 +1039,7 @@ def qparabfit(x, y, ey, XX, nohollow=False, **kwargs):
 
     # ================================= #
 
-    info.aoverL = -1.0*amin*info.dprofdx/info.prof
+    info.aoverL = -1.0*agradrho*info.dprofdx/info.prof
     info.var_aoverL = info.aoverL**2.0
     info.var_aoverL *= ( info.varprof/info.prof**2.0 + info.vardprofdx/info.dprofdx**2.0)
 
