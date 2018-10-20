@@ -41,12 +41,6 @@ try:
 except:
     _scipyversion = _np.float(_scipyversion[0:3])
 # end try
-#if _scipyversion >= 0.17:
-##    print("Using a new version of scipy")
-#    from scipy.optimize import least_squares
-##else:
-##    print("Using an older version of scipy")
-## endif
 
 __metaclass__ = type
 
@@ -750,10 +744,6 @@ def interp_profile(roa, ne, varne, rvec, loggradient=True):
     yf = _np.zeros_like(dyfdr)
     varyf = _np.zeros_like(vardyfdr)
     for ii in range(_np.size(dyfdr, axis=1)):
-#        if ii == 1:
-#            print('what')
-#        # endif
-
         dydr, vardydr = deriv_bsgaussian(xfit[:,ii], yfit[:,ii], vfit[:,ii])
 
         dyfdr[:,ii], vardyfdr[:,ii] = _ut.interp(xfit[:,ii], dydr, _np.sqrt(vardydr), rvec[:,ii])
@@ -816,7 +806,6 @@ def deriv_bsgaussian(xvar, u, varu, axis=0, nmonti=300, sigma=1, mode='nearest',
     'nearest'  | 1  1  1 | 1  2  3  4  5  6  7  8 | 8  8  8
     'constant' | 0  0  0 | 1  2  3  4  5  6  7  8 | 0  0  0
     'wrap'     | 6  7  8 | 1  2  3  4  5  6  7  8 | 1  2  3
-
 
     derivorder - Order of the derivative to be taken (1st, 2nd, or 3rd)
                  default: derivorder=1 - first derivative = du/dx
@@ -951,15 +940,16 @@ def expdecay_fit(tt,sig_in,param):
 
 
 def gaussian_peak_width(tt,sig_in,param):
-    #
-    # param contains intitial guesses for fitting gaussians,
-    # (Amplitude, x value, sigma):
-    # param = [[50,40,5],[50,110,5],[100,160,5],[100,220,5],
-    #      [50,250,5],[100,260,5],[100,320,5], [100,400,5],
-    #      [30,300,150]]  # this last one is our noise estimate
+    """
+     param contains intitial guesses for fitting gaussians,
+     (Amplitude, x value, sigma):
+     param = [[50,40,5],[50,110,5],[100,160,5],[100,220,5],
+          [50,250,5],[100,260,5],[100,320,5], [100,400,5],
+          [30,300,150]]  # this last one is our noise estimate
 
-    # Define a function that returns the magnitude of stuff under a gaussian
-    # peak (with support for multiple peaks)
+     Define a function that returns the magnitude of stuff under a gaussian
+     peak (with support for multiple peaks)
+    """
     fit = lambda param, xx: _np.sum([_ms.gaussian(xx, param[ii*3], param[ii*3+1],
                                               param[ii*3+2])
                                     for ii in _np.arange(len(param)/3)], axis=0)
@@ -982,29 +972,11 @@ def gaussian_peak_width(tt,sig_in,param):
 
     return results.reshape(-1,3)
 
-
-
 # ======================================================================== #
 
 # =============================== #
 # ---- curvefit dependent-------- #
 # =============================== #
-
-
-#def twopower(XX, aa):
-#    return _ms.twopower(XX, aa)
-#
-#def expedge(XX, aa):
-#    return _ms.expedge(XX, aa)
-#
-#def qparab_fit(XX, *aa, **kwargs):
-#    return _ms.qparab(XX, *aa, **kwargs)
-#
-#def dqparabdx(XX, aa=[0.30, 0.002, 2.0, 0.7, -0.24, 0.30], nohollow=False):
-#    return _ms.deriv_qparab(XX, aa, nohollow)
-#
-#def dqparabda(XX, aa=[0.30, 0.002, 2.0, 0.7, -0.24, 0.30], nohollow=False):
-#    return _ms.partial_qparab(XX, aa, nohollow)
 
 # ========================= #
 
@@ -1033,10 +1005,6 @@ def qparab_lsfit(xdata, ydata, vary=None, xx=None,
         af.pop(4)
         lowbounds.pop(4)
         upbounds.pop(4)
-
-#        af = _np.delete(af,4)
-#        lowbounds = _np.delete(lowbounds,4)
-#        upbounds = _np.delete(upbounds,4)
     # endif
 
     # Alias to the fitting method that allows passing a static argument to the method.
@@ -1117,12 +1085,8 @@ def spline(xvar, yvar, xf, vary=None, deg=5, bbox=None):
     # _ut.interp_irregularities()
     # ============= #
 
-    pobj = _int.UnivariateSpline(xvar, yvar, w=1.0/_np.sqrt(vary), bbox=bbox,
-                                 k=deg) #, check_finite=True)
+    pobj = _int.UnivariateSpline(xvar, yvar, w=1.0/_np.sqrt(vary), bbox=bbox, k=deg) #, check_finite=True)
     yf = pobj.__call__(xf)
-#
-#    pobj = pobj.derivative(n=1)
-#    dydx = pobj.__call__(xf)
     dydx = pobj.derivative(n=1).__call__(xf)
     return yf, dydx
 
@@ -1149,7 +1113,6 @@ def pchip(xvar, yvar, xf):
     pobj = _int.pchip(xvar, yvar, axis=0)
 
     yf = pobj.__call__(xf)
-#    dydx = pobj.derivative(nu=1).__call__(xf)
     dydx = pobj.__call__(xf, nu=1)
     return yf, dydx
 
@@ -1223,14 +1186,8 @@ def spline_bs(xvar, yvar, vary, xf=None, func="spline", nmonti=300, deg=3, bbox=
             tmp1 = _np.zeros((nxf, nsh[1]), dtype=utemp.dtype)
             tmp2 = _np.zeros_like(tmp1)
             for jj in range(nsh[1]):
-#                vtemp = (utemp-yvar)
                 tmp1[:,jj], tmp2[:,jj] = spline(xvar, utemp[:,jj], xf, vary=vtemp[:,jj], deg=deg, bbox=bbox)
-#                tmp1[:,jj], tmp2[:,jj] = spline(xvar, utemp[:,jj], xf, vary=None, deg=deg, bbox=bbox)
             # end for
-#            print(_np.shape(tmp1))
-#            print(nsh)
-#            print(_np.shape(yf))
-#            print(_np.shape(yvar))
             yf[ii, :] = tmp1.reshape((nxf, nsh[1]), order='C')
             dydx[ii, :] = tmp2.reshape((nxf, nsh[1]), order='C')
         # endif
@@ -1242,203 +1199,6 @@ def spline_bs(xvar, yvar, vary, xf=None, func="spline", nmonti=300, deg=3, bbox=
     yf = _np.mean(yf, axis=0)
 
     return yf, varf, dydx, vardydx
-
-
-#def spline(xvar, yvar, xf, vary=None, nmonti=300, deg=5, bbox=None):
-#    """
-#    One-dimensional smoothing spline fit to a given set of data points (scipy).
-#    Fits a spline y = spl(xf) of degree deg to the provided xvar, yvar data.
-#    :param xvar: 1-D array of independent input data. Must be increasing.
-#    :param yvar: 1-D array of dependent input data, of the same length as x.
-#    :param xf: values at which you request the values of the interpolation
-#                function
-#    :param vary: Variance in y, used as weights (1/sqrt(vary)) for spline
-#                    fitting. Must be positive. If None (default), weights are
-#                    all equal and no uncertainties are returned.
-#    :param nmonti: Number of Monte Carlo iterations for nonlinear error
-#                    propagation. Default is 300.
-#    :param deg: Degree of the smoothing spline. Must be <= 5. Default is k=3,
-#                a cubic spline.
-#    :param bbox: 2-sequence specifying the boundary of the approximation
-#                    interval. If None (default), bbox=[xvar[0], xvar[-1]].
-#
-#    :type xvar: (N,) array_like
-#    :type yvar: (N,) array_like
-#    :type xf: (N,) array_like
-#    :type vary: (N,) array_like, optional
-#    :type nmonti: int, optional
-#    :type deg: int, optional
-#    :type bbox: (2,) array_like, optional
-#
-#    :return: the interpolation values at xf and the first derivative at xf or,
-#                if yary is given, the interpolation values at xf + the variance
-#                and the first derivative at xf + the variance
-#    :rtype: [ndarray, ndarray] resp. [ndarray, ndarray, ndarray, ndarray]
-#
-#    .. note::
-#    The number of data points must be larger than the spline degree deg.
-#    """
-#
-#    if bbox is None:
-#        bbox = [xvar[0], xvar[-1]]
-#    # end if
-#
-#    if vary is None:
-#        pobj = _int.UnivariateSpline(xvar, yvar, bbox=bbox, k=deg,
-#                                     check_finite=True)
-#        yf_val = pobj.__call__(xf)
-#        dyf_val = pobj.derivative(n=1).__call__(xf)
-#        return yf_val, dyf_val
-#    # end if
-#
-#    # ============= #
-#    # Monte Carlo
-#    yf = []
-#    dyf = []
-#    for _ in range(nmonti):
-#        yvar_mc = yvar + _np.random.normal(0., _np.sqrt(vary), len(yvar))
-#
-#        pobj = _int.UnivariateSpline(xvar, yvar_mc, bbox=bbox, k=deg,
-#                                     check_finite=True)
-#        yf_val = pobj.__call__(xf)
-#        dyf_val = pobj.derivative(n=1).__call__(xf)
-#
-#        yf.append(yf_val)
-#        dyf.append(dyf_val)
-#    # end for
-#
-#    return _np.mean(yf, axis=0), _np.var(yf, axis=0), _np.mean(dyf, axis=0), _np.var(dyf, axis=0)
-#
-#
-#def pchip(xvar, yvar, xf, vary=None, nmonti=300):
-#    """
-#    PCHIP 1-d monotonic cubic interpolation (from scipy)
-#    :param xvar: x values for interpolation
-#    :param yvar: y values for interpolation
-#    :param xf: values at which you request the values of the interpolation
-#                function
-#    :param vary: Variance in y, used as weights (1/sqrt(vary)) for spline
-#                    fitting. Must be positive. If None (default), weights are
-#                    all equal and no uncertainties are returned.
-#    :param nmonti: Number of Monte Carlo iterations for nonlinear error
-#                    propagation. Default is 300.
-#    :type xvar: ndarray
-#    :type yvar: ndarray
-#    :type xf: ndarray
-#    :type vary: (N,) array_like, optional
-#    :type nmonti: int, optional
-#    :return: the interpolation values at xf and the first derivative at xf or,
-#                if yary is given, the interpolation values at xf + the variance
-#                and the first derivative at xf + the variance
-#    :rtype: [ndarray, ndarray] resp. [ndarray, ndarray, ndarray, ndarray]
-#
-#    .. note::
-#    The interpolator preserves monotonicity in the interpolation data and does
-#    not overshoot if the data is not smooth.
-#    The first derivatives are guaranteed to be continuous, but the second
-#    derivatives may jump at xf.
-#    """
-#
-#    if vary is None:
-#        pobj = _int.pchip(xvar, yvar, axis=0)
-#        yf_val = pobj.__call__(xf)
-#        dyf_val = pobj.derivative(n=1).__call__(xf)
-#        return yf_val, dyf_val
-#    # end if
-#
-#    # ============= #
-#    # Monte Carlo
-#    yf = []
-#    dyf = []
-#    for _ in range(nmonti):
-#        yvar_mc = yvar + _np.random.normal(0., _np.sqrt(vary), len(yvar))
-#
-#        pobj = _int.pchip(xvar, yvar_mc, axis=0)
-#        yf_val = pobj.__call__(xf)
-#        dyf_val = pobj.derivative(nu=1).__call__(xf)
-#
-#        yf.append(yf_val)
-#        dyf.append(dyf_val)
-#    # end for
-#
-#    return _np.mean(yf, axis=0), _np.var(yf, axis=0), _np.mean(dyf, axis=0), _np.var(dyf, axis=0)
-#
-#
-#def spline_bs(xvar, yvar, vary, xf=None, func="spline", nmonti=300, deg=3,
-#              bbox=None):
-#    """
-#    :param xvar: x values for interpolation (2D)
-#    :param yvar: y values for interpolation (2D)
-#    :param xf: values at which you request the values of the interpolation
-#                function. Default is None, which just uses the xvar values.
-#    :param vary: Variance in y, used as weights (1/sqrt(vary)) for spline
-#                    fitting. Must be positive. If None (default), weights are
-#                    all equal and no uncertainties are returned. (2D)
-#    :param nmonti: Number of Monte Carlo iterations for nonlinear error
-#                    propagation. Default is 300.
-#    :param deg: Degree of the smoothing spline. Must be <= 5. Default is k=3,
-#                a cubic spline. Only valid for func="spline".
-#    :param bbox: 2-sequence specifying the boundary of the approximation
-#                    interval. If None (default), bbox=[xvar[0], xvar[-1]].
-#                     Only valid for func="spline".
-#    :type xvar: (N,) ndarray
-#    :type yvar: (N,) ndarray
-#    :type xf: (N,) ndarray, optional
-#    :type vary: (N,) array_like, optional
-#    :type nmonti: int, optional
-#    :type deg: int, optional
-#    :type bbox: (2,) array_like, optional
-#    :return: the interpolation values at xf and the first derivative at xf or,
-#                if yary is given, the interpolation values at xf + the variance
-#                and the first derivative at xf + the variance
-#    :rtype: [ndarray, ndarray] resp. [ndarray, ndarray, ndarray, ndarray]
-#    """
-#
-#    if xf is None:
-#        xf = xvar.copy()
-#    # endif
-#
-#    yvar = _np.atleast_2d(yvar)
-#    vary = _np.atleast_2d(vary)
-#
-#    nsh = _np.shape(yvar)
-#    nsh = _np.atleast_1d(nsh)
-#    if nsh[0] == 1:
-#        yvar = yvar.T
-#        vary = vary.T
-#        nsh = _np.flipud(nsh)
-#
-#    # ============= #
-#    yf = list()
-#    varf = list()
-#    dydx = list()
-#    vardydx = list()
-#
-#    if func == 'spline':
-#        for ii in range(yvar.shape[1]):
-#            tmp1, tmp2, tmp3, tmp4 = spline(xvar, yvar[:, ii], xf, vary=vary[:, ii],
-#                         nmonti=nmonti, deg=deg, bbox=bbox)
-#            yf.append(tmp1.copy())
-#            varf.append(tmp2.copy())
-#            dydx.append(tmp3.copy())
-#            vardydx.append(tmp4.copy())
-#
-#    elif func == 'pchip':
-#        for ii in range(yvar.shape[1]):
-#            tmp1, tmp2, tmp3, tmp4 = pchip(xvar, yvar[:, ii], xf, vary=vary[:, ii], nmonti=nmonti)
-#            yf.append(tmp1.copy())
-#            varf.append(tmp2.copy())
-#            dydx.append(tmp3.copy())
-#            vardydx.append(tmp4.copy())
-#    else:
-#        raise("Unknown func for spline. I know currently only 'spline' and " +
-#              "'pchip'")
-#
-#    yf = _np.asarray(yf)
-#    varf = _np.asarray(varf)
-#    dydx = _np.asarray(dydx)
-#    vardydx = _np.asarray(vardydx)
-#    return yf, varf, dydx, vardydx
 
 # ======================================================================= #
 
@@ -1454,21 +1214,28 @@ def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
     LB = kwargs.get('LB', None)
     UB = kwargs.get('UB', None)
 
+#    fitfunc = kwargs.get('fitfunc', _ms.qparab)
+#    fitderivfunc = kwargs.get('dfunc', _ms.deriv_qparab)
+#    returngvec = kwargs.get('modelfunc', _ms.model_qparab)
+
+    fitfunc = kwargs.get('ffunc', _ms.twopower)
+    fitderivfunc = kwargs.get('dfunc', _ms.deriv_twopower)
+    returngvec = kwargs.get('modelfunc', _ms.model_twopower)
+
     # ==== #
 
-    def fitqparab(af, XX):
-        return _ms.qparab(XX, af)
+    def func(af, XX):
+        return fitfunc(XX, af)
 
-    def returngvec(af, XX):
-        _, gvec, info = _ms.model_qparab(_np.abs(XX), af)
+    def fgvec(af, XX):
+        _, gvec, info = returngvec(_np.abs(XX), af)
         return gvec, info.dprofdx, info.dgdx
 
-    def fitdqparabdx(af, XX):
-        return _ms.deriv_qparab(XX, af)
-
+    def derivfunc(af, XX):
+        return fitderivfunc(XX, af)
     # ==== #
 
-    info = _ms.model_qparab(XX=None)
+    info = returngvec(XX=None)
     if af0 is None:
         af0 = info.af
     if LB is None:
@@ -1477,20 +1244,15 @@ def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
         UB = info.Ubounds
     # end if
 
-#    af0 = _np.asarray([0.30, 0.002, 2.0, 0.7, -0.24, 0.30], dtype=_np.float64)
-#    LB = _np.array([  0.0, 0.0,-100,-100,-1,-1], dtype=_np.float64)
-#    UB = _np.array([ 20.0, 1.0, 100, 100, 1, 1], dtype=_np.float64)
-
     options = dict()
     options.setdefault('epsfcn', 1e-3) # 5e-4
     options.setdefault('factor',100)
     options.setdefault('maxiter',200)
-    NLfit = fitNL(rdat, pdat, vdat, af0, fitqparab, LB=LB, UB=UB, **options)
+    NLfit = fitNL(rdat, pdat, vdat, af0, func, LB=LB, UB=UB, **options)
     NLfit.run()
 
     if bootstrappit:
         NLfit.gvecfunc = returngvec
-    #    NLfit.bootstrapper(xvec=_np.abs(rvec), weightit=True)
         NLfit.bootstrapper(xvec=_np.abs(rvec), weightit=False)
         prof = NLfit.mfit
         varp = NLfit.vfit
@@ -1499,7 +1261,7 @@ def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
         dprofdx = NLfit.dprofdx.copy()
         vardlnpdrho = NLfit.vdprofdx.copy()
     else:
-        prof, gvec, info = _ms.model_qparab(_np.abs(rvec), NLfit.af)
+        prof, gvec, info = returngvec(_np.abs(rvec), NLfit.af)
         varp = NLfit.properror(_np.abs(rvec), gvec)
         varp = varp.copy()
 
@@ -1553,8 +1315,7 @@ def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
 def fit_TSneprofile(QTBdat, rvec, **kwargs):
     loggradient = kwargs.get('loggradient', True)
     plotit = kwargs.get('plotit', False)
-    gradrho = kwargs.get('gradrho',1.0)
-    amin = kwargs.get('amin', 0.51)
+    agradrho = kwargs.get('agradrho',1.0)
     returnaf = kwargs.get('returnaf',False)
     arescale = kwargs.get('arescale', 1.0)
     bootstrappit = kwargs.get('bootstrappit',False)
@@ -1563,9 +1324,13 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
     af0 = kwargs.get('af0', None)
     rescale_by_linavg = kwargs.get('rescale_by_linavg',False)
 
+    QTBdat = QTBdat.copy()
     nkey = 'roa' if 'roan' not in QTBdat else 'roan'
     rvec = _np.copy(rvec)
     roa = _np.copy(QTBdat[nkey])
+    QTBdat = build_TSfitdict(QTBin=QTBdat.update({'roa':roa}), set_edge=None,
+                iuse_ts=(~_np.isinf(roa))*(~_np.isnan(roa))*(QTBdat["ne"]>1e10))
+    roa = _np.copy(QTBdat["roa"])
     ne = _np.copy(QTBdat['ne'])
     varNL = _np.copy(QTBdat['varNL'])
     varNH = _np.copy(QTBdat['varNH'])
@@ -1574,17 +1339,6 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
         varRH = _np.copy(QTBdat['varRH'])
     # end if
     varn =  _np.copy(_np.sqrt(varNL*varNH))
-
-    iuse = (~_np.isinf(roa))*(~_np.isnan(roa))*(ne>1e10)
-    ne = ne[iuse]
-    roa = roa[iuse]
-    varNL = varNL[iuse]
-    varNH = varNH[iuse]
-    if 'varRL' in QTBdat:
-        varRL = varRL[iuse]
-        varRH = varRH[iuse]
-    # end if
-    varn = varn[iuse]
 
     if fitin is None:
         isort = _np.argsort(roa)
@@ -1636,16 +1390,13 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
     if plotit:
         _plt.figure()
         ax1 = _plt.subplot(2,1,1)
-#        ax2 = _plt.subplot(3,1,2, sharex=ax1)
         ax3 = _plt.subplot(2,1,2, sharex=ax1)
 
         ax1.grid()
-#        ax2.grid()
         ax3.grid()
 
         ax1.set_title(r'Density Profile Info')
         ax1.set_ylabel(r'$n_\mathrm{e}\ \mathrm{in}\ 10^{20}\mathrm{m}^{-3}$')
-#        ax2.set_ylabel(r'$\ln(n_\mathrm{e})$')   # ax2.set_ylabel(r'ln(n$_e$[10$^20$m$^-3$])')
         ax3.set_ylabel(r'$a/L_\mathrm{ne}$')
         ax3.set_xlabel(r'$r/a$')
 
@@ -1654,19 +1405,12 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
                      yerr=[1e-20*_np.sqrt(varNL), 1e-20*_np.sqrt(varNH)], fmt='bo') #, ecolor='r', elinewidth=2)
         else:
             ax1.errorbar(roa, 1e-20*ne, yerr=[1e-20*_np.sqrt(varNL), 1e-20*_np.sqrt(varNH)], fmt='bo') #, ecolor='r', elinewidth=2)
-#        ax1.errorbar(roa, 1e-20*ne, yerr=1e-20*_np.sqrt(varn), fmt='bo', color='b' )
-##        ax2.errorbar(roa, _np.log(ne), yerr=_np.sqrt(varn/ne**2.0), fmt='bo', color='b' )
+        # end if
 
         ax1.plot(rvec, 1e-20*nef, 'b-', lw=2)
         ylims = ax1.get_ylim()
-#        ax1.plot(rvec, 1e-20*(nef+_np.sqrt(varnef)), 'b--', lw=1)
-#        ax1.plot(rvec, 1e-20*(nef-_np.sqrt(varnef)), 'b--', lw=1)
-#        ax2.plot(rvec, logne, 'b-', lw=2)
-#        ax2.plot(rvec, logne+_np.sqrt(varlogne), 'b--', lw=1)
-#        ax2.plot(rvec, logne-_np.sqrt(varlogne), 'b--', lw=1)
         ax1.fill_between(rvec, 1e-20*(nef-_np.sqrt(varnef)), 1e-20*(nef+_np.sqrt(varnef)),
                                 interpolate=True, color='b', alpha=0.3)
-        # _, _, nint, nvar = _ut.trapz_var(rvec, dlnnedrho, vary=vardlnnedrho)
         ax1.set_xlim((plotlims[0],plotlims[1]))
         ax1.set_ylim((0,1.1*ylims[1]))
 
@@ -1676,38 +1420,28 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
             plotvardlnnedrho = vardlnnedrho.copy()
             plotdlnnedrho[idx] = _np.nan
             plotvardlnnedrho[idx] = _np.nan
-            plotdlnnedrho *= -1*amin*gradrho
-            plotvardlnnedrho *= (amin*gradrho)**2.0
+            plotdlnnedrho *= -1*agradrho
+            plotvardlnnedrho *= (agradrho)**2.0
             ax3.plot(rvec, plotdlnnedrho, 'b-', lw=2)
-#            ax3.plot(rvec, plotdlnnedrho+_np.sqrt(plotvardlnnedrho), 'b--')
-#            ax3.plot(rvec, plotdlnnedrho-_np.sqrt(plotvardlnnedrho), 'b--')
             ax3.fill_between(rvec, plotdlnnedrho-_np.sqrt(plotvardlnnedrho),
                                    plotdlnnedrho+_np.sqrt(plotvardlnnedrho),
                                    interpolate=True, color='b', alpha=0.3)
-            # nint += (_np.log(ne[0]) - _ut.interp(rvec, nint, xo=roa[0]))
-            # nint = _np.exp(nint)
             ax3.set_xlim((plotlims[0],plotlims[1]))
             ax3.set_ylim((0,15))
         else:
             vardlnnedrho = (dlnnedrho/logne)**2.0 * (vardlnnedrho/dlnnedrho**2.0+varlogne/logne**2.0)
             dlnnedrho = dlnnedrho/logne
-            plotdlnnedrho = -1*(amin*gradrho) * dlnnedrho.copy()
-            plotvardlnnedrho = ((amin*gradrho)**2.0) * vardlnnedrho.copy()
+            plotdlnnedrho = -1*(agradrho) * dlnnedrho.copy()
+            plotvardlnnedrho = ((agradrho)**2.0) * vardlnnedrho.copy()
 
             ax3.plot(rvec, plotdlnnedrho, 'b-', lw=2)
-#            ax3.plot(rvec, plotdlnnedrho+_np.sqrt(plotvardlnnedrho), 'b--')
-#            ax3.plot(rvec, plotdlnnedrho-_np.sqrt(plotvardlnnedrho), 'b--')
             ax3.fill_between(rvec, plotdlnnedrho-_np.sqrt(plotvardlnnedrho),
                                    plotdlnnedrho+_np.sqrt(plotvardlnnedrho),
                                    interpolate=True, color='b', alpha=0.3)
-            # nint += (ne[0] - _ut.interp(rvec, nint, xo=roa[0]))
             ax3.set_xlim((plotlims[0],plotlims[1]))
             ax3.set_ylim((0,30))
         # end if
-        # ax1.plot(rvec, 1e-20*nint, 'b--', lw=1)
-        # ax2.plot(rvec, _np.log(nint), 'b--', lw=1)
         _plt.tight_layout()
-
     # end if plotit
 
     # ==================== #
@@ -1721,7 +1455,7 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
 def fit_TSteprofile(QTBdat, rvec, **kwargs):
     loggradient = kwargs.get('loggradient', True)
     plotit = kwargs.get('plotit', False)
-    amin = kwargs.get('amin', 0.51)
+    agradrho = kwargs.get('agradrho', 1.00)
     returnaf = kwargs.get('returnaf',False)
     arescale = kwargs.get('arescale', 1.0)
     bootstrappit = kwargs.get('bootstrappit',False)
@@ -1730,6 +1464,8 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
     af0 = kwargs.get('af0', None)
 
     rvec = _np.copy(rvec)
+    QTBdat = QTBdat.copy()
+    QTBdat = build_TSfitdict(QTBin=QTBdat, set_edge=None)
     roa = _np.copy(QTBdat['roa'])
     Te = _np.copy(QTBdat['Te'])
     varTL = _np.copy(QTBdat['varTL'])
@@ -1739,17 +1475,6 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
         varRH = _np.copy(QTBdat['varRH'])
     # end if
     varT =  _np.copy(_np.sqrt(varTL*varTH))
-
-    iuse = (~_np.isinf(roa))*(~_np.isnan(roa))*(Te>1e-3) #*(Te<9.0)
-    Te = Te[iuse]
-    roa = roa[iuse]
-    varTL = varTL[iuse]
-    varTH = varTH[iuse]
-    if 'varRL' in QTBdat:
-        varRL = varRL[iuse]
-        varRH = varRH[iuse]
-    # end if
-    varT = varT[iuse]
 
     if fitin is None:
         isort = _np.argsort(roa)
@@ -1777,16 +1502,13 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
     if plotit:
         _plt.figure()
         ax1 = _plt.subplot(2,1,1)
-#        ax2 = _plt.subplot(3,1,2, sharex=ax1)
         ax3 = _plt.subplot(2,1,2, sharex=ax1)
 
         ax1.grid()
-#        ax2.grid()
         ax3.grid()
 
         ax1.set_title(r'Temperature Profile Info')
         ax1.set_ylabel(r'T$_e$ in KeV')
-#        ax2.set_ylabel(r'$\ln(T_\mathrm{e})$')   # ax2.set_ylabel(r'ln(T$_e$)')
         ax3.set_ylabel(r'$a/L_\mathrm{Te}$')
         ax3.set_xlabel(r'$r/a$')
 
@@ -1795,21 +1517,12 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
                      yerr=[_np.sqrt(varTL), _np.sqrt(varTH)], fmt='ro') #, ecolor='r', elinewidth=2)
         else:
             ax1.errorbar(roa, Te, yerr=[_np.sqrt(varTL), _np.sqrt(varTH)], fmt='ro') #, ecolor='r', elinewidth=2)
-
-#        ax1.errorbar(roa, Te, yerr=_np.sqrt(varT), fmt='ro', color='r' )
-##        ax2.errorbar(roa, _np.log(Te), yerr=_np.sqrt(varT/Te**2.0), fmt='bo', color='b' )
+        # end if
 
         ax1.plot(rvec, Tef, 'r-', lw=2)
-#        ylims = ax1.get_ylim()
-#        ax1.plot(rvec, (Tef+_np.sqrt(varTef)), 'r--', lw=1)
-#        ax1.plot(rvec, (Tef-_np.sqrt(varTef)), 'r--', lw=1)
-#        ax2.plot(rvec, logTe, 'b-', lw=2)
-#        ax2.plot(rvec, logTe+_np.sqrt(varlogTe), 'r--', lw=1)
-#        ax2.plot(rvec, logTe-_np.sqrt(varlogTe), 'r--', lw=1)
         ax1.fill_between(rvec, Tef-_np.sqrt(varTef), Tef+_np.sqrt(varTef),
                                     interpolate=True, color='r', alpha=0.3) # TODO!: watch for inf/nan's
 
-        # _, _, Tint, Tvar = _ut.trapz_var(rvec, dlnTedrho, vary=vardlnTedrho)
         ax1.set_xlim((plotlims[0],plotlims[1]))
         maxyy = min((_np.max(1.05*(Te+_np.sqrt(varTH))),12))
         ax1.set_ylim((0,maxyy))
@@ -1820,45 +1533,31 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
             plotvardlnTedrho = vardlnTedrho.copy()
             plotdlnTedrho[idx] = _np.nan
             plotvardlnTedrho[idx] = _np.nan
-            plotdlnTedrho *= -1*amin
-            plotvardlnTedrho *= amin**2.0
+            plotdlnTedrho *= -1*agradrho
+            plotvardlnTedrho *= agradrho**2.0
             ax3.plot(rvec, plotdlnTedrho, 'r-', lw=2)
-#            ax3.plot(rvec, plotdlnTedrho+_np.sqrt(plotvardlnTedrho), 'r--',
-#            ax3.plot(rvec, plotdlnTedrho-_np.sqrt(plotvardlnTedrho), 'r--')
             ax3.fill_between(rvec, plotdlnTedrho-_np.sqrt(plotvardlnTedrho),
                                    plotdlnTedrho+_np.sqrt(plotvardlnTedrho),
                                    interpolate=True, color='r', alpha=0.3)
 
-            # Tint += (_np.log(Te[0]) - _ut.interp(rvec, Tint, xo=roa[0]))
-            # Tint = _np.exp(Tint)
             ax3.set_xlim((plotlims[0],plotlims[1]))
-#            ax3.set_ylim((0,15))
-#            maxyy = min((_np.max(1.05*(plotdlnTedrho+_np.sqrt(plotvardlnTedrho))),15))
             maxyy = _np.max(1.05*(plotdlnTedrho+_np.sqrt(plotvardlnTedrho)))
             ax3.set_ylim((0,maxyy))
         else:
             vardlnTedrho = (dlnTedrho/logTe)**2.0 * (vardlnTedrho/dlnTedrho**2.0+varlogTe/logTe**2.0)
             dlnTedrho = dlnTedrho/logTe
-            plotdlnTedrho = -1*amin * dlnTedrho.copy()
-            plotvardlnTedrho = (amin**2.0) * vardlnTedrho.copy()
+            plotdlnTedrho = -1*agradrho * dlnTedrho.copy()
+            plotvardlnTedrho = (agradrho**2.0) * vardlnTedrho.copy()
 
             ax3.plot(rvec, plotdlnTedrho, 'r-', lw=2)
-#            ax3.plot(rvec, plotdlnTedrho+_np.sqrt(plotvardlnTedrho), 'r--',
-#            ax3.plot(rvec, plotdlnTedrho-_np.sqrt(plotvardlnTedrho), 'r--')
             ax3.fill_between(rvec, plotdlnTedrho-_np.sqrt(plotvardlnTedrho),
                                    plotdlnTedrho+_np.sqrt(plotvardlnTedrho),
                                    interpolate=True, color='r', alpha=0.3)
-            # Tint += (Te[0] - _ut.interp(rvec, Tint, xo=roa[0]))
             ax3.set_xlim((plotlims[0],plotlims[1]))
-#            ax3.set_ylim((0,30))
-#            maxyy = min((_np.max(1.05*(plotdlnTedrho+_np.sqrt(plotvardlnTedrho))),30))
             maxyy = _np.max(1.05*(plotdlnTedrho+_np.sqrt(plotvardlnTedrho)))
             ax3.set_ylim((0,maxyy))
         # end if
-        # ax1.plot(rvec, Tint, 'b--', lw=1)
-        # ax2.plot(rvec, _np.log(Tint), 'b--', lw=1)
         _plt.tight_layout()
-
     # end if plotit
 
     # ==================== #
@@ -1867,134 +1566,302 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
         return logTe, varlogTe, dlnTedrho, vardlnTedrho, af
     return logTe, varlogTe, dlnTedrho, vardlnTedrho
 
-
 # ======================================================================= #
 # ======================================================================= #
 
 
-# function [pFit,vF,info] = weightedpoly(xvar,yvar,polyorder,xfit,vary,plotit);
-#
-#inputs
-#   xvar - independent variables for fitting, predictors
-#   yvar - dependent variable for fitting
-#   polyorder - polynomial order for fitting,   def: linear, polyorder = 1
-#   xfit - predictors to evaluate the fits at,  def: xfit = 0:0.01:1
-#   vary - variance in each dependent variable, def: vary = 0;
-#   plotit - boolean for plotting,              def: plotit = 'False'
-#
-#outputs
-#   pFit - polynomial coefficients, same format as p = polyfit(xvar,yvar)
-#   vF   - Estimate of the variance in each coefficient from fit
-#   info is a structure containing the following:
-#     yf    - fit evaluated at xfit
-#     varyf - estimate of variance in yf at xfit
-#     dyfit - derivative of yf at xfit
-#     vardy - estimate of variance in dyfit at xfit
-#
-#def weightedpoly(xvar,yvar, polyorder = 1, xfit = 0.0, vary = 0.0, plotit = 'False' ):
-#
-#    if xfit == 0.0
-#        xfit = range(np.min(xvar),np.max(xvar),(np.max(xvar)-np.min(xvar))/99)
-#    #endif
-#
-#    if np.length( vary ) == 1:
-#        vary = vary*np.ones_like( yvar )
-#    #endif
-#    vary( vary == 0   )    = np.nan
-#    vary( np.isinf(yvar) ) = np.nan
-#    yvar( np.isinf(yvar) ) = np.nan
-#
-#    #Remove data that can't be fit:
-#    del vary( np.isnan(yvar) )
-#    del xvar( np.isnan(yvar) )
-#    del yvar( np.isnan(yvar) )
-#
-#    if np.length(xvar)>(polyorder):
-#            vary( np.isnan(vary) ) = 1
-#            AA(:,polyorder+1) = ones(length(xvar),1)
-#            for jj = polyorder:-1:1
-#                AA(:,jj) = (xvar.T)*AA(:,jj+1)
-#            #endfor
-#            # [pFit,sF,mse,covS] = lscov(AA,yvar.T)
-#
-#            weights = 1/vary.T
-#            # weights = (1./vary.T)/np.nanmean(1/vary.T) #sum to 1
-#            [pFit,sF,mse,covS] = lscov(AA,yvar.T,weights)
-#            vF = sF**2 #= diag(covS) )
-#    #end
-#
-#
-#    #I'm manually fitting the data so I can simultaneously propagate the error
-#    #
-#    #Fit the line and the derivative
-#    info.yf    = zeros(1,length(xfit)) #info.varyf = info.yf
-#    info.dyfit = zeros(1,length(xfit)) #info.vardy = info.dyfit
-#    ii = 0
-#    for kk = polyorder:-1:0
-#        #the line itself
-#        ii = ii+1
-#        info.yf = info.yf    + pFit(ii)*(xfit**kk)
-#
-#        ###
-#
-#        if kk>0:
-#            #The derivative
-#            info.dyfit = info.dyfit + (kk)*pFit(ii)*(xfit**(kk-1) )
-#        #endif
-#    #endfor
-#
-#    # The coefficients of the polynomial fit depend on each other:
-#    # y = c+bx
-#    # y = (yavg-bxavg)+bx
-#    # y = yavg + b(x-xavg)
-#    #
-#    # Intuitive but wrong: info.varyf = info.varyf + vF(  ii)*(xfit**(2*kk))
-#    # info.varyf = info.varyf + vF(  ii)*(xfit.^(2*kk));
-#    #
-#    # Matrix style error propagation from
-#    # http://www.stanford.edu/~kimth/www-mit/8.13/error_propagation.pdf
-#    dcovS = covS(1:(end-1),1:(end-1))
-#
-#    #Pre-allocate
-#    info.varyf = zeros(size(info.yf))
-#    info.vardy = zeros(size(info.dyfit))
-#
-#    for jj = 1:length(xfit)
-#        gvec  = ones(polyorder+1,1)
-#        dgvec = ones(polyorder  ,1)
-#
-#        for kk = polyorder:-1:1
-#            gvec(kk) = xfit(jj)*gvec(kk+1)
-#            if kk<polyorder:
-#                dgvec(kk) = xfit(jj)*dgvec(kk+1)
-#            #endif
-#        #endfor
-#        info.varyf(jj) = (gvec.T )*covS *gvec
-#        info.vardy(jj) = (dgvec.T)*dcovS*dgvec
-#    #endfor
-#    ###
-#    else:
-#        print('not enough data for fit in weightedpoly function')
-#        pFit = np.nan(1,polyorder)
-#        vF   = pFit
-#
-#        info.yf    = np.nan(1,length(xfit))
-#        info.varyf = info.yf
-#        info.dyfit = np.nan(1,length(xfit))
-#        info.vardy = info.yf
-#    #end
-#    ##########################################
-#    if plotit:
-#        figure, hold all,
-#        set(gca,'FontSize',14,'FontName','Arial')
-#        errorbar(xfit,info.yf,np.sqrt( info.varyf ),'k')
-#        errorbar(xvar,yvar,np.sqrt( vary ),'ko','MarkerSize',6,'LineWidth',2)
-#    #end plotit
-#
-#    return pFit, vF, info
+def extrap_TS(QTBdat, plotit=False):
+
+    # Extrapolate along the line of sight of the Thomson to get edge channels
+    if (QTBdat["roa"]>1.0).any() or _np.isnan(QTBdat["roa"]).any() or _np.isinf(QTBdat["roa"]).any():
+
+        # Major radial coordinate of each Thomson channel
+        rr = _np.sqrt( QTBdat['xyz'][:,0]**2.0 + QTBdat['xyz'][:,1]**2.0 )
+        QTBdat['R'] = rr.copy()
+
+        # get line-of-sight (by minimum and maximum channel, not by view coord)
+        # cartesian coordinate / "length" along line-of-sight
+        [rr, ll] = _ut.endpnts2vectors( QTBdat['xyz'][_np.argmax(rr),:],
+                                        QTBdat['xyz'][_np.argmin(rr),:], nn = 200)
+        rr = _np.sqrt(rr[:,0]**2.0 + rr[:,1]**2.0) # major radial coordinate
+
+        # extrapolate r/a along line-of-sight to get r/a > 1.0 at R-coordinates outside LCFS
+        isort, iunsort = _ut.argsort(QTBdat['R'].squeeze(), iunsort=True)
+
+        iuse = ~((QTBdat["roa"][isort]>1.0) + _np.isnan(QTBdat["roa"][isort]) + _np.isinf(QTBdat["roa"][isort]))
+        QTBdat["roa"] = _ut.interp((QTBdat['R'][isort])[iuse], (QTBdat["roa"][isort])[iuse], ei=None, xo=QTBdat['R'][isort])[iunsort]
+
+        if plotit:
+            _plt.figure()
+            _plt.plot((QTBdat['R'][isort])[iuse], (QTBdat["roa"][isort])[iuse], 'x')
+            _plt.plot(QTBdat['R'][isort], QTBdat["roa"][isort], 'o')
+            _plt.xlabel('R [m]')
+            _plt.xlabel('r/a')
+            _plt.title('Thomson channel extrapolation')
+        # end if
+    # end if
+    return QTBdat
+# end def
+
+def extrap_ECE(QMEdat, cls, rescale_amin=1.0, plotit=False):
+    # Is this right?
+    qme_xyz_origin = _np.asarray([6.4632, 0.6907, 0.35],dtype=float)
+    qme_xyz_target = _np.asarray([5.52478, 0.506607, 0.0576283],dtype=float)
+
+    #Connect the origin and target by 'nn' points ... returning the
+    # cartesian position and length along the central ray of the ECE diagnostic
+    cls.targ2vec(qme_xyz_origin, qme_xyz_target)
+    cls.setCoords(cls.rr)
+    cls.roa *= rescale_amin
+    cls.roa[_np.argmin(cls.roa):] *= -1.0
+    cls.Omegace = 1.6e-19*cls.modB/(9.11e-31)
+
+    # Extrapolate along the line of sight of the ECE to get edge channels
+    if 1:
+        # extrapolate r/a along line-of-sight to get r/a > 1.0 at R-coordinates outside LCFS
+        isort, iunsort = _ut.argsort(QMEdat['ece_freq'].squeeze(), iunsort=True)
+        iuse = ~((_np.abs(cls.roa)>1.0) + _np.isnan(cls.roa) + _np.isinf(cls.roa))
+
+        fece = 1e-9*(2.0*cls.Omegace/(2*_np.pi))
+        ece_lr = weightedPolyfit(xvar=fece[iuse], yvar=_np.asarray((cls.roa)[iuse], dtype=_np.float64),
+                xo=(QMEdat["ece_freq"]+QMEdat["ece_bw"]).squeeze()[isort], vary=None, deg=3, nargout=1).squeeze()[iunsort]
+        ece_ur = weightedPolyfit(xvar=fece[iuse], yvar=(cls.roa)[iuse],
+                xo=(QMEdat["ece_freq"]-QMEdat["ece_bw"]).squeeze()[isort], vary=None, deg=3, nargout=1).squeeze()[iunsort]
+        ece_roa = weightedPolyfit(xvar=fece[iuse], yvar=(cls.roa)[iuse],
+                xo=(QMEdat["ece_freq"]).squeeze()[isort], vary=None, deg=3, nargout=1).squeeze()[iunsort]
+
+        QMEdat["xyz"] = _np.array( (
+            weightedPolyfit(xvar=fece[iuse], yvar=(cls.rr[:,0])[iuse],
+              xo=(QMEdat["ece_freq"]).squeeze()[isort], vary=None, deg=3, nargout=1).squeeze()[iunsort],
+            weightedPolyfit(xvar=fece[iuse], yvar=(cls.rr[:,1])[iuse],
+              xo=(QMEdat["ece_freq"]).squeeze()[isort], vary=None, deg=3, nargout=1).squeeze()[iunsort],
+            weightedPolyfit(xvar=fece[iuse], yvar=(cls.rr[:,2])[iuse],
+              xo=(QMEdat["ece_freq"]).squeeze()[isort], vary=None, deg=3, nargout=1).squeeze()[iunsort]
+                                   ), dtype=_np.float64).squeeze().T[iunsort]
+    # end if
+    ece_lr = _np.abs(ece_roa - ece_lr)
+    ece_ur = _np.abs(ece_roa - ece_ur)
+
+    if plotit:
+        _plt.figure()
+        _plt.plot(fece[iuse], _np.asarray((cls.roa)[iuse], dtype=_np.float64), 'x')
+#        _plt.plot((QMEdat["ece_freq"]).squeeze(), ece_roa, 'o')
+        _plt.errorbar((QMEdat["ece_freq"]).squeeze(), ece_roa,
+                      xerr=[(QMEdat["ece_freq"]-0.5*QMEdat["ece_bw"]).squeeze(), (QMEdat["ece_freq"]+0.5*QMEdat["ece_bw"]).squeeze()],
+                      yerr=[ece_lr, ece_ur], fmt='o')
+        _plt.title("Cold plasma ECE interpolation")
+        _plt.ylabel('r/a')
+        _plt.xlabel('f [GHz]')
+
+        _plt.figure()
+        _plt.subplot(3,1,1)
+        _plt.plot(fece[iuse], (cls.rr[:,0])[iuse], 'x')
+        _plt.plot((QMEdat["ece_freq"]).squeeze(), QMEdat["xyz"][:,0], 'o')
+        _plt.ylabel('x [m]')
+        _plt.title("Cold plasma ECE interpolation")
+        _plt.subplot(3,1,2)
+        _plt.plot(fece[iuse], (cls.rr[:,1])[iuse], 'x')
+        _plt.plot((QMEdat["ece_freq"]).squeeze(), QMEdat["xyz"][:,1], 'o')
+        _plt.ylabel('y [m]')
+        _plt.subplot(3,1,3)
+        _plt.plot(fece[iuse], (cls.rr[:,2])[iuse], 'x')
+        _plt.plot((QMEdat["ece_freq"]).squeeze(), QMEdat["xyz"][:,2], 'o')
+        _plt.ylabel('z [m]')
+        _plt.xlabel('f [GHz]')
+    # end if
+    ece_lr[_np.isnan(ece_lr)] = 10.0
+    ece_ur[_np.isnan(ece_ur)] = 10.0
+    ece_roa[_np.isnan(ece_roa)] = 10.0
+
+    QMEdat['ece_roa'] = ece_roa
+    QMEdat['ece_lr'] = ece_lr
+    QMEdat['ece_ur'] = ece_ur
+    return QMEdat
+
+def add_sysTSerr(Te, TeL, TeH, ne, neL, neH, sysTSerr=0.20, nargout=6):
+    Te = Te.flatten()
+    TeL = TeL.flatten()
+    TeH = TeH.flatten()
+    ne = ne.flatten()
+    neL = neL.flatten()
+    neH = neH.flatten()
+
+   # Add in an estimate of the systematic error
+    izero = (Te==0)+(TeL==0)+(TeH==0)
+    Te[Te==0], TeL[izero], TeH[izero] = 1e-3, min((_np.nanmean(TeL[~izero]),_np.max(TeL))), min((_np.nanmean(TeH[~izero]),_np.max(TeH)))
+    TeL = _np.sqrt(Te**2.0*((TeL/Te)**2.0 + sysTSerr**2.0))# + 0.5**2.0)
+    TeH = _np.sqrt(Te**2.0*((TeH/Te)**2.0 + sysTSerr**2.0))# + 0.5**2.0)
+
+    izero = (ne==0)+(neL==0)+(neH==0)
+    ne[ne==0], neL[izero], neH[izero] = 1e16, min((_np.nanmean(neL[~izero]),_np.max(neL))), min((_np.nanmean(neH[~izero]),_np.max(neH)))
+    neL = _np.sqrt(ne**2.0*((neL/ne)**2.0 + sysTSerr**2.0))
+    neH = _np.sqrt(ne**2.0*((neH/ne)**2.0 + sysTSerr**2.0))
+
+    TeL[_np.isnan(TeL)] = _np.nanmean(TeL[~_np.isnan(TeL)])
+    TeH[_np.isnan(TeL)] = _np.nanmean(TeH[~_np.isnan(TeH)])
+    neL[_np.isnan(TeL)] = _np.nanmean(neL[~_np.isnan(neL)])
+    neH[_np.isnan(TeL)] = _np.nanmean(neH[~_np.isnan(neH)])
+
+    if nargout==1:
+        QTBin = dict()
+        QTBin["Te"] = Te
+        QTBin["TeL"] = TeL
+        QTBin["TeH"] = TeH
+        QTBin["ne"] = ne
+        QTBin["neL"] = neL
+        QTBin["neH"] = neH
+        return QTBin
+    return Te, TeL, TeH, ne, neL, neH
+
+def build_TSfitdict(QTBin, set_edge=None, iuse_ts=None, rescale_amin=1.0):
+    if iuse_ts is not None:
+        iuse_ts = _np.ones(_np.shape(QTBin['roa']), dtype=bool)
+    # end if
+
+    dictdat = dict()
+    if 'varRL' in QTBin:
+        dictdat['varRL'] =  _np.hstack((QTBin['varRL'].copy(), _np.nanmean(QTBin['varRL'].copy())))
+        dictdat['varRH'] =  _np.hstack((QTBin['varRH'].copy(), _np.nanmean(QTBin['varRH'].copy())))
+    # end if
+    dictdat['roa'] =  QTBin['roa'].copy()
+    dictdat['Te'] =   QTBin["Te"].copy()
+    dictdat['ne'] =  QTBin["ne"].copy()
+
+    dictdat['varTL'] = QTBin["TeL"].copy()**2.0
+    dictdat['varTH'] = QTBin["TeH"].copy()**2.0
+    dictdat['varNL'] = QTBin["neL"].copy()**2.0
+    dictdat['varNH'] = QTBin["neH"].copy()**2.0
+    if set_edge is not None:
+        redge = set_edge[0]
+        nedge = set_edge[1]
+        Tedge = set_edge[2]
+
+        dictdat['roa'] =  _np.hstack((dictdat['roa'], max(redge,redge*_np.max(dictdat['roa']))))
+        dictdat['Te'] =  _np.hstack((dictdat['Te'], Tedge)) # Te
+        dictdat['ne'] =  _np.hstack((dictdat['ne'], nedge)) # ne
+
+        dictdat['varTL'] = _np.hstack((dictdat['varTL'], _np.nanmean(QTBin["TeL"].copy())**2.0))
+        dictdat['varTH'] = _np.hstack((dictdat['varTH'], _np.nanmean(QTBin["TeH"].copy())**2.0))
+        dictdat['varNL'] = _np.hstack((dictdat['varNL'], _np.nanmean(QTBin["neL"].copy())**2.0))
+        dictdat['varNH'] = _np.hstack((dictdat['varNH'], _np.nanmean(QTBin["neH"].copy())**2.0))
+
+        iuse_ts = _np.hstack((iuse_ts,True))
+    else:
+        Tedge = 0.0
+    # end if
+    dictdat['roa'] /= rescale_amin # back to the fat grid (most points r/a<1.0)
+    dictdat['roan'] = dictdat['roa'].copy()
+
+    dictdat, iuse = clean_fitdict(dictdat, iuse=iuse_ts, rmax=9.0, Tmin=0.5*Tedge, Tmax=9.0)
+    return dictdat
+
+def concat_Tdat(dictdat, newdat=None):
+    addDat = False
+    if newdat is not None:
+        addDat=True
+        chmsk = newdat["chmsk"]
+        rho_use = _np.abs(newdat["roa"].copy())
+        rho_min = newdat["roaL"].copy()
+        rho_max = newdat["roaH"].copy()
+        Tdat = newdat["Te"]
+        Tvar = _np.sqrt(newdat["varTL"]*newdat["varTH"])
+    # end if
+
+    if addDat:
+        dictdat['roa'] = _np.hstack((rho_use[chmsk].copy(), dictdat['roa'].copy()))
+        dictdat['Te'] = _np.hstack((Tdat[chmsk].copy(), dictdat['Te'].copy())) # Te
+        dictdat['varTL'] = _np.hstack((Tvar[chmsk].copy(), dictdat['varTL'])) #TeL
+        dictdat['varTH'] = _np.hstack((Tvar[chmsk].copy(), dictdat['varTH'])) #TeH
+        if 'varRL' in dictdat:
+            dictdat['varRL'] = _np.hstack((rho_min[chmsk].copy()**2.0, dictdat['varRL']))
+            dictdat['varRH'] = _np.hstack((rho_max[chmsk].copy()**2.0, dictdat['varRH']))
+        # end if
+    # end if
+    return dictdat
+
+def sort_fitdict(dictdat):
+    isort = _np.argsort(_np.abs(dictdat['roa']).squeeze())
+    dictdat['roa'] = _np.abs(dictdat['roa'][isort])
+    dictdat['Te'] = dictdat['Te'][isort]
+    dictdat['varTL'] = dictdat['varTL'][isort]
+    dictdat['varTH'] = dictdat['varTH'][isort]
+    if 'varRL' in dictdat:
+        dictdat['varRL'] = dictdat['varRL'][isort]
+        dictdat['varRH'] = dictdat['varRH'][isort]
+    # end if
+    return dictdat
+
+def clean_fitdict(dictdat, iuse=None, rmax=9.0, Tmin=0.0, Tmax=9.0):
+    iuse = _np.ones(_np.shape(dictdat['roa']), dtype=bool) if iuse is None else iuse
+    iuse = (~_np.isinf(dictdat['roa']))*(~_np.isnan(dictdat['roa']))*(dictdat['Te']>Tmin)*(_np.abs(dictdat['roa'])<rmax)*(_np.abs(dictdat['Te'])<Tmax)*iuse
+    dictdat['roa'] = dictdat['roa'][iuse]
+    dictdat['Te'] = dictdat['Te'][iuse]
+    dictdat['varTL'] = dictdat['varTL'][iuse]
+    dictdat['varTH'] = dictdat['varTH'][iuse]
+    if 'varRL' in dictdat:
+        dictdat['varRL'] = dictdat['varRL'][iuse]
+        dictdat['varRH'] = dictdat['varRH'][iuse]
+    # end if
+    if "ne" in dictdat:
+        dictdat['ne'] = dictdat['ne'][iuse]
+        dictdat['varNL'] = dictdat['varNL'][iuse]
+        dictdat['varNH'] = dictdat['varNH'][iuse]
+    # end if
+    return dictdat, iuse
+
+def prep_Tdat(rdat, Tdat, Tvar, rlow=None, rhigh=None,
+              edge=None, rescale_amin=1.0):
+
+    rdat = _np.abs(rdat.copy())/rescale_amin
+    isort = _np.argsort(rdat.squeeze())
+    rdat = rdat[isort]
+    Tdat = Tdat.copy()[isort]
+    Tvar = Tvar.copy()[isort]
+
+    if edge is not None:
+        redge = edge[0]
+        Tedge = edge[1]
+
+        rdat = _np.hstack((rdat, max(redge,redge*max(rdat))))
+        Tdat = _np.hstack((Tdat, Tedge))
+        Tvar = _np.hstack((Tvar, _np.nanmean(Tvar)))
+    else:
+        Tedge = 0.0
+    # end if
+
+    rdat = _ut.cylsym_odd(rdat)
+    Tdat = _ut.cylsym_even(Tdat)
+    Tvar = _np.sqrt(_ut.cylsym_even(Tvar))
+
+    dictout, iuse = clean_fitdict({"roa":rdat, "Te":Tdat, "varTL":Tvar, "varTH":Tvar}, Tmin=0.5*Tedge)
+    rdat = dictout["roa"]
+    Tdat = dictout["Te"]
+    Tvar = dictout["varTL"]
+
+    if rlow is not None:
+        rlow = rlow.copy()/rescale_amin
+        rlow = rlow[isort]
+        rlow = _np.hstack((rlow, _np.nanmean(rlow)))
+        rlow = _ut.cylsym_even(rlow)
+        rlow = rlow[iuse]
+    if rhigh is not None:
+        rhigh = rhigh.copy()/rescale_amin
+        rhigh = rhigh[isort]
+        rhigh = _np.hstack((rhigh, _np.nanmean(rlow)))
+        rhigh = _ut.cylsym_even(rhigh)
+        rhigh = rhigh[iuse]
+    if rlow is not None and rhigh is not None:
+        return rdat, Tdat, Tvar, rlow, rhigh
+    elif rlow is not None:
+        return rdat, Tdat, Tvar, rlow
+    else:
+        return rdat, Tdat, Tvar
+    # end if
+# end def
 
 # ======================================================================= #
 # ======================================================================= #
+
 
 # =========================== #
 # ---------- testing -------- #

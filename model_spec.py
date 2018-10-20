@@ -388,8 +388,8 @@ def model_twopower(XX, af):
     info.Ubounds = _np.array([_np.inf], dtype=_np.float64)
     info.af = af
 
-    prof = af*(1.0 - XX**2.0)
-    gvec = _np.atleast_2d(prof / af)
+    prof = twopower(XX, af)          # af*(1.0 - XX**2.0)
+    gvec = partial_twopower(XX, af)  # _np.atleast_2d(prof / af)
 
     info.prof = prof
     info.gvec = gvec
