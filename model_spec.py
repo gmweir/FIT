@@ -323,9 +323,8 @@ def twopower(XX, af):
 
         y = edge/core + (1-edge/core)
         a = amplitude of core
-        b = ( edge/core - hole depth)
-        c = power scaling factor 1
-        d = power scaling factor 2
+        b = power scaling factor 1
+        c = power scaling factor 2
     """
     a = af[0]
     b = af[1]
@@ -370,7 +369,7 @@ def partial_deriv_twopower(XX, af):
         )
     return gvec
 
-def model_twopower(XX, af):
+def model_twopower(XX, af=None):
     """
     A parabolic profile with one free parameters:
         f(x) ~ a*(1.0-x^2)
@@ -379,14 +378,16 @@ def model_twopower(XX, af):
     """
 
     if af is None:
-        af = _np.array([1.0], dtype=_np.float64)
+        af = _np.array([1.0, 12.0, 3.0], dtype=_np.float64)
 #        af *= 0.1*_np.random.normal(0.0, 1.0, 1)
     # endif
 
     info = Struct()
-    info.Lbounds = _np.array([0.0], dtype=_np.float64)
-    info.Ubounds = _np.array([_np.inf], dtype=_np.float64)
+    info.Lbounds = _np.array([0.0, -20.0, -20.0], dtype=_np.float64)
+    info.Ubounds = _np.array([20, 20.0, 20.0], dtype=_np.float64)
     info.af = af
+    if XX is None:
+        return info
 
     prof = twopower(XX, af)          # af*(1.0 - XX**2.0)
     gvec = partial_twopower(XX, af)  # _np.atleast_2d(prof / af)

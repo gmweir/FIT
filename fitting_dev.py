@@ -192,30 +192,32 @@ def weightedPolyfit(xvar, yvar, xo, vary=None, deg=1, nargout=2):
         elif nargout == 4:
             return yf, varyf, dydf, vardydf
 
-    af, Vcov = _np.polyfit(xvar, yvar, deg=deg, full=False, w=weights, cov=True)
-
-    # end try
-#    if (len(xvar) - deg - 2.0) == 0.0:
-    if _np.isinf(Vcov).all():
-#        print('insufficient data points (d.o.f.) for true covariance calculation in fitting routine')
-        # this concatenation effectively reduces the number of degrees of freedom ... it's a kluge
-        af, Vcov = _np.polyfit(_np.hstack((xvar, xvar[-1:])),
-                               _np.hstack((yvar, yvar[-1:])),
-                               deg=deg, full=False,
-                               w=_np.hstack( (weights, _np.finfo(float).eps) ),
-                               cov=True)
-    # endif
-
-    if nargout == 0:
-        return af, Vcov
-    # endif
+#    af, Vcov = _np.polyfit(xvar, yvar, deg=deg, full=False, w=weights, cov=True)
+#
+#    # end try
+##    if (len(xvar) - deg - 2.0) == 0.0:
+#    if _np.isinf(Vcov).all():
+##        print('insufficient data points (d.o.f.) for true covariance calculation in fitting routine')
+#        # this concatenation effectively reduces the number of degrees of freedom ... it's a kluge
+#        af, Vcov = _np.polyfit(_np.hstack((xvar, xvar[-1:])),
+#                               _np.hstack((yvar, yvar[-1:])),
+#                               deg=deg, full=False,
+#                               w=_np.hstack( (weights, _np.finfo(float).eps) ),
+#                               cov=True)
+#    # endif
+#
+#    if nargout == 0:
+#        return af, Vcov
+#    # endif
 
     def _func(xvec, af, **fkwargs):
         return _ms.model_poly(xvec, af, npoly=deg)
 
     fitter = modelfit(xvar, yvar, ey=_np.sqrt(vary), XX=xo, func=_func)
 
-    if nargout == 1:
+    if nargout == 0:
+        return fitter.params, fitter.covmat # fitter.perror
+    elif nargout == 1:
         return fitter.prof
     elif nargout == 2:
         return fitter.prof, fitter.varprof
@@ -1214,13 +1216,13 @@ def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
     LB = kwargs.get('LB', None)
     UB = kwargs.get('UB', None)
 
-#    fitfunc = kwargs.get('fitfunc', _ms.qparab)
-#    fitderivfunc = kwargs.get('dfunc', _ms.deriv_qparab)
-#    returngvec = kwargs.get('modelfunc', _ms.model_qparab)
-
-    fitfunc = kwargs.get('ffunc', _ms.twopower)
-    fitderivfunc = kwargs.get('dfunc', _ms.deriv_twopower)
-    returngvec = kwargs.get('modelfunc', _ms.model_twopower)
+    fitfunc = kwargs.get('fitfunc', _ms.qparab)
+    fitderivfunc = kwargs.get('dfunc', _ms.deriv_qparab)
+    returngvec = kwargs.get('modelfunc', _ms.model_qparab)
+#
+#    fitfunc = kwargs.get('ffunc', _ms.twopower)
+#    fitderivfunc = kwargs.get('dfunc', _ms.deriv_twopower)
+#    returngvec = kwargs.get('modelfunc', _ms.model_twopower)
 
     # ==== #
 
@@ -1243,6 +1245,9 @@ def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
     if UB is None:
         UB = info.Ubounds
     # end if
+
+    # constrain things to be within r/a of 1.0 here, then undo it later
+    rdat /= arescale
 
     options = dict()
     options.setdefault('epsfcn', 1e-3) # 5e-4
@@ -1273,11 +1278,12 @@ def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
     vardlnpdrho = (dlnpdrho)**2.0 * ( vardlnpdrho/(dprofdx**2.0) + varp/(prof**2.0)  )
 
     # ================== #
-    rdat *= arescale
+    # back to the grid where r/a can be greater than 1
+    rdat *= arescale  # this is done locally here. only plot limits changed in fit_TS*
     rvec *= arescale
 
-    dlnpdrho *= arescale
-    vardlnpdrho *= arescale**2.0
+    dlnpdrho /= arescale       # This is a suspicious step
+    vardlnpdrho /= arescale**2.0
 
     if _np.isnan(prof[0]):
         prof[0] = af[0].copy()
@@ -1313,6 +1319,8 @@ def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
 
 
 def fit_TSneprofile(QTBdat, rvec, **kwargs):
+    edge = kwargs.get('set_edge',None)
+    iuse_ts = kwargs.get('iuse_ts', _np.ones( QTBdat["roa"].shape, dtype=bool))
     loggradient = kwargs.get('loggradient', True)
     plotit = kwargs.get('plotit', False)
     agradrho = kwargs.get('agradrho',1.0)
@@ -1328,10 +1336,15 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
     nkey = 'roa' if 'roan' not in QTBdat else 'roan'
     rvec = _np.copy(rvec)
     roa = _np.copy(QTBdat[nkey])
-    QTBdat = build_TSfitdict(QTBin=QTBdat.update({'roa':roa}), set_edge=None,
-                iuse_ts=(~_np.isinf(roa))*(~_np.isnan(roa))*(QTBdat["ne"]>1e10))
-    roa = _np.copy(QTBdat["roa"])
-    ne = _np.copy(QTBdat['ne'])
+    QTBdat["roa"] = roa.copy()
+
+    # set the edge density if necessary, then switch back to the fat grid
+    # where r/a<1.0 (mostly) ... also discard channels based on settings in
+    # clean_fitdict - used several places
+    QTBdat = build_TSfitdict(QTBin=QTBdat, set_edge=edge,
+                iuse_ts=iuse_ts*(~_np.isinf(roa))*(~_np.isnan(roa))*(QTBdat["ne"]>1e10))
+    roa = _np.copy(QTBdat["roa"])  # fat grid!
+    ne = _np.copy(QTBdat['ne'])    # [part/m3]
     varNL = _np.copy(QTBdat['varNL'])
     varNH = _np.copy(QTBdat['varNH'])
     if 'varRL' in QTBdat:
@@ -1354,23 +1367,24 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
             nfdl /= _np.abs(_np.max(rvec)-_np.min(rvec))
             vnfdl /= _np.abs(_np.max(rvec)-_np.min(rvec))**2.0
 
-            nef *= rescale_by_linavg/nfdl
+            nef *= rescale_by_linavg/nfdl  # [1e20*part/m3]
             varnef *= (rescale_by_linavg/nfdl)**2.0
 
-            af[0] *= rescale_by_linavg/af[0]
+            af[0] *= rescale_by_linavg/af[0]   # [1e20*part/m3]
         # end if
 
     else:
-        nef = 1e-20*fitin['prof']
+        nef = 1e-20*fitin['prof']  # [1e20*part/m3]
         varnef = 1e-40*fitin['varprof']
         dlnnedrho = fitin['dlnpdrho']
         vardlnnedrho = fitin['vardlnpdrho']
-        af = fitin['af']
+        af = fitin['af']  # [1e20*part/m3]
     # end if
 
+    # TODO!: watch out for nans here where r/a>=1
     # Convert back to absolute units (particles per m-3 not 1e20 m-3)
-    nef = 1e20*nef
-    varnef = 1e40*varnef  # TODO!: watch out for nans here
+    nef *= 1e20
+    varnef *= 1e40
 
     varlogne = varnef / nef**2.0
     logne = _np.log(nef)
@@ -1381,7 +1395,7 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
         plotlims = [-0.05, 1.05]
     # end if
     if arescale:
-        plotlims[0] *= arescale
+        plotlims[0] *= arescale  # fat grid
         plotlims[1] *= arescale
     # end if
 
@@ -1453,6 +1467,8 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
 
 
 def fit_TSteprofile(QTBdat, rvec, **kwargs):
+    edge = kwargs.get('set_edge',None)
+    iuse_ts = kwargs.get('iuse_ts', _np.ones( QTBdat["roa"].shape, dtype=bool))
     loggradient = kwargs.get('loggradient', True)
     plotit = kwargs.get('plotit', False)
     agradrho = kwargs.get('agradrho', 1.00)
@@ -1465,7 +1481,7 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
 
     rvec = _np.copy(rvec)
     QTBdat = QTBdat.copy()
-    QTBdat = build_TSfitdict(QTBin=QTBdat, set_edge=None)
+    QTBdat = build_TSfitdict(QTBin=QTBdat, set_edge=edge, iuse_ts=iuse_ts)
     roa = _np.copy(QTBdat['roa'])
     Te = _np.copy(QTBdat['Te'])
     varTL = _np.copy(QTBdat['varTL'])
@@ -1589,6 +1605,7 @@ def extrap_TS(QTBdat, plotit=False):
         isort, iunsort = _ut.argsort(QTBdat['R'].squeeze(), iunsort=True)
 
         iuse = ~((QTBdat["roa"][isort]>1.0) + _np.isnan(QTBdat["roa"][isort]) + _np.isinf(QTBdat["roa"][isort]))
+        iuse = iuse.flatten()
         QTBdat["roa"] = _ut.interp((QTBdat['R'][isort])[iuse], (QTBdat["roa"][isort])[iuse], ei=None, xo=QTBdat['R'][isort])[iunsort]
 
         if plotit:
@@ -1612,39 +1629,50 @@ def extrap_ECE(QMEdat, cls, rescale_amin=1.0, plotit=False):
     # cartesian position and length along the central ray of the ECE diagnostic
     cls.targ2vec(qme_xyz_origin, qme_xyz_target)
     cls.setCoords(cls.rr)
-    cls.roa *= rescale_amin
-    cls.roa[_np.argmin(cls.roa):] *= -1.0
-    cls.Omegace = 1.6e-19*cls.modB/(9.11e-31)
+    cls.roa *= rescale_amin   # r/a is now greater than 1.0 if starting on a weird fat grid
+    cls.roa[_np.argmin(cls.roa):] *= -1.0   # HFS is negative by convention
+    cls.Omegace = 1.6e-19*cls.modB/(9.11e-31)    # [rad/s], cyclotron frequency
 
     # Extrapolate along the line of sight of the ECE to get edge channels
+    rr = _np.copy(cls.rr)
+    roa = _np.copy(cls.roa).squeeze()
     if 1:
         # extrapolate r/a along line-of-sight to get r/a > 1.0 at R-coordinates outside LCFS
+        # Do this by fitting the magnetic field along the view and interpolating B vs r/a
         isort, iunsort = _ut.argsort(QMEdat['ece_freq'].squeeze(), iunsort=True)
-        iuse = ~((_np.abs(cls.roa)>1.0) + _np.isnan(cls.roa) + _np.isinf(cls.roa))
+        iuse = ~((_np.abs(roa)>1.0) + _np.isnan(roa) + _np.isinf(roa))  # use w/in LCFS for fitting
+        iuse = iuse.squeeze()
 
-        fece = 1e-9*(2.0*cls.Omegace/(2*_np.pi))
-        ece_lr = weightedPolyfit(xvar=fece[iuse], yvar=_np.asarray((cls.roa)[iuse], dtype=_np.float64),
+        fece = 1e-9*(2.0*cls.Omegace/(2*_np.pi))   # GHz
+        fece = fece.squeeze()
+
+        # interpolate to upper bandwidth bound (lower r/a for r/a increasing to LFS)
+        ece_lr = weightedPolyfit(xvar=fece[iuse].squeeze(), yvar=roa[iuse],
                 xo=(QMEdat["ece_freq"]+QMEdat["ece_bw"]).squeeze()[isort], vary=None, deg=3, nargout=1).squeeze()[iunsort]
-        ece_ur = weightedPolyfit(xvar=fece[iuse], yvar=(cls.roa)[iuse],
+        # interpolate to lower bandwidth bound
+        ece_ur = weightedPolyfit(xvar=fece[iuse].squeeze(), yvar=roa[iuse],
                 xo=(QMEdat["ece_freq"]-QMEdat["ece_bw"]).squeeze()[isort], vary=None, deg=3, nargout=1).squeeze()[iunsort]
-        ece_roa = weightedPolyfit(xvar=fece[iuse], yvar=(cls.roa)[iuse],
+        # interpolate to center frequency
+        ece_roa = weightedPolyfit(xvar=fece[iuse].squeeze(), yvar=roa[iuse],
                 xo=(QMEdat["ece_freq"]).squeeze()[isort], vary=None, deg=3, nargout=1).squeeze()[iunsort]
 
+        # interpolate to real space coordinates along view for cold plasma resonances
         QMEdat["xyz"] = _np.array( (
-            weightedPolyfit(xvar=fece[iuse], yvar=(cls.rr[:,0])[iuse],
+            weightedPolyfit(xvar=fece[iuse].squeeze(), yvar=(rr[:,0].squeeze())[iuse],
               xo=(QMEdat["ece_freq"]).squeeze()[isort], vary=None, deg=3, nargout=1).squeeze()[iunsort],
-            weightedPolyfit(xvar=fece[iuse], yvar=(cls.rr[:,1])[iuse],
+            weightedPolyfit(xvar=fece[iuse].squeeze(), yvar=(rr[:,1].squeeze())[iuse],
               xo=(QMEdat["ece_freq"]).squeeze()[isort], vary=None, deg=3, nargout=1).squeeze()[iunsort],
-            weightedPolyfit(xvar=fece[iuse], yvar=(cls.rr[:,2])[iuse],
+            weightedPolyfit(xvar=fece[iuse].squeeze(), yvar=(rr[:,2].squeeze())[iuse],
               xo=(QMEdat["ece_freq"]).squeeze()[isort], vary=None, deg=3, nargout=1).squeeze()[iunsort]
                                    ), dtype=_np.float64).squeeze().T[iunsort]
     # end if
+    # for plotting purposes make these something like error bars
     ece_lr = _np.abs(ece_roa - ece_lr)
     ece_ur = _np.abs(ece_roa - ece_ur)
 
     if plotit:
         _plt.figure()
-        _plt.plot(fece[iuse], _np.asarray((cls.roa)[iuse], dtype=_np.float64), 'x')
+        _plt.plot(fece[iuse], roa[iuse], 'x')
 #        _plt.plot((QMEdat["ece_freq"]).squeeze(), ece_roa, 'o')
         _plt.errorbar((QMEdat["ece_freq"]).squeeze(), ece_roa,
                       xerr=[(QMEdat["ece_freq"]-0.5*QMEdat["ece_bw"]).squeeze(), (QMEdat["ece_freq"]+0.5*QMEdat["ece_bw"]).squeeze()],
@@ -1669,6 +1697,7 @@ def extrap_ECE(QMEdat, cls, rescale_amin=1.0, plotit=False):
         _plt.ylabel('z [m]')
         _plt.xlabel('f [GHz]')
     # end if
+    # by convention things outside of LCFS get r/a=10 in TRAVIS, follow that here
     ece_lr[_np.isnan(ece_lr)] = 10.0
     ece_ur[_np.isnan(ece_ur)] = 10.0
     ece_roa[_np.isnan(ece_roa)] = 10.0
@@ -1678,7 +1707,15 @@ def extrap_ECE(QMEdat, cls, rescale_amin=1.0, plotit=False):
     QMEdat['ece_ur'] = ece_ur
     return QMEdat
 
-def add_sysTSerr(Te, TeL, TeH, ne, neL, neH, sysTSerr=0.20, nargout=6):
+def add_sysTSerr(QTBin, sysTSerr=0.20, nargout=6):
+#def add_sysTSerr(Te, TeL, TeH, ne, neL, neH, sysTSerr=0.20, nargout=6):
+    Te = _np.copy(QTBin["Te"])
+    TeL = _np.sqrt(QTBin['varTL'].copy())
+    TeH = _np.sqrt(QTBin['varTH'].copy())
+    ne = _np.copy(QTBin["ne"])
+    neL = _np.sqrt(QTBin['varNL'].copy())
+    neH = _np.sqrt(QTBin['varNH'].copy())
+
     Te = Te.flatten()
     TeL = TeL.flatten()
     TeH = TeH.flatten()
@@ -1703,14 +1740,18 @@ def add_sysTSerr(Te, TeL, TeH, ne, neL, neH, sysTSerr=0.20, nargout=6):
     neH[_np.isnan(TeL)] = _np.nanmean(neH[~_np.isnan(neH)])
 
     if nargout==1:
-        QTBin = dict()
-        QTBin["Te"] = Te
-        QTBin["TeL"] = TeL
-        QTBin["TeH"] = TeH
-        QTBin["ne"] = ne
-        QTBin["neL"] = neL
-        QTBin["neH"] = neH
-        return QTBin
+        QTBout = QTBin.copy()
+        QTBout["Te"] = Te
+        QTBout["TeL"] = TeL
+        QTBout["TeH"] = TeH
+        QTBout["varTL"] = TeL**2.0
+        QTBout["varTH"] = TeH**2.0
+        QTBout["ne"] = ne
+        QTBout["neL"] = neL
+        QTBout["neH"] = neH
+        QTBout["varNL"] = neL**2.0
+        QTBout["varNH"] = neH**2.0
+        return QTBout
     return Te, TeL, TeH, ne, neL, neH
 
 def build_TSfitdict(QTBin, set_edge=None, iuse_ts=None, rescale_amin=1.0):
@@ -1723,9 +1764,9 @@ def build_TSfitdict(QTBin, set_edge=None, iuse_ts=None, rescale_amin=1.0):
         dictdat['varRL'] =  _np.hstack((QTBin['varRL'].copy(), _np.nanmean(QTBin['varRL'].copy())))
         dictdat['varRH'] =  _np.hstack((QTBin['varRH'].copy(), _np.nanmean(QTBin['varRH'].copy())))
     # end if
-    dictdat['roa'] =  QTBin['roa'].copy()
-    dictdat['Te'] =   QTBin["Te"].copy()
-    dictdat['ne'] =  QTBin["ne"].copy()
+    dictdat['roa'] =  QTBin['roa'].copy()  # on the r/a > 1.0 grid
+    dictdat['Te'] =   QTBin["Te"].copy()   # []
+    dictdat['ne'] =  QTBin["ne"].copy()    # [part/m3]
 
     dictdat['varTL'] = QTBin["TeL"].copy()**2.0
     dictdat['varTH'] = QTBin["TeH"].copy()**2.0
@@ -1736,7 +1777,7 @@ def build_TSfitdict(QTBin, set_edge=None, iuse_ts=None, rescale_amin=1.0):
         nedge = set_edge[1]
         Tedge = set_edge[2]
 
-        dictdat['roa'] =  _np.hstack((dictdat['roa'], max(redge,redge*_np.max(dictdat['roa']))))
+        dictdat['roa'] =  _np.hstack((dictdat['roa'], max(redge,0.1+_np.max(dictdat['roa']))))
         dictdat['Te'] =  _np.hstack((dictdat['Te'], Tedge)) # Te
         dictdat['ne'] =  _np.hstack((dictdat['ne'], nedge)) # ne
 
@@ -1759,7 +1800,7 @@ def concat_Tdat(dictdat, newdat=None):
     addDat = False
     if newdat is not None:
         addDat=True
-        chmsk = newdat["chmsk"]
+        chmsk = _np.ones( newdat["roa"].shape, dtype=bool) if "chmsk" not in newdat else newdat["chmsk"]
         rho_use = _np.abs(newdat["roa"].copy())
         rho_min = newdat["roaL"].copy()
         rho_max = newdat["roaH"].copy()
@@ -1792,7 +1833,9 @@ def sort_fitdict(dictdat):
     return dictdat
 
 def clean_fitdict(dictdat, iuse=None, rmax=9.0, Tmin=0.0, Tmax=9.0):
-    iuse = _np.ones(_np.shape(dictdat['roa']), dtype=bool) if iuse is None else iuse
+    if iuse is None:
+        iuse = _np.ones(_np.shape(dictdat['roa']), dtype=bool)
+    # end if
     iuse = (~_np.isinf(dictdat['roa']))*(~_np.isnan(dictdat['roa']))*(dictdat['Te']>Tmin)*(_np.abs(dictdat['roa'])<rmax)*(_np.abs(dictdat['Te'])<Tmax)*iuse
     dictdat['roa'] = dictdat['roa'][iuse]
     dictdat['Te'] = dictdat['Te'][iuse]
@@ -1819,7 +1862,7 @@ def prep_Tdat(rdat, Tdat, Tvar, rlow=None, rhigh=None,
     Tvar = Tvar.copy()[isort]
 
     if edge is not None:
-        redge = edge[0]
+        redge = edge[0]/rescale_amin
         Tedge = edge[1]
 
         rdat = _np.hstack((rdat, max(redge,redge*max(rdat))))
