@@ -1622,8 +1622,11 @@ def extrap_TS(QTBdat, plotit=False):
 
 def extrap_ECE(QMEdat, cls, rescale_amin=1.0, plotit=False):
     # Is this right?
-    qme_xyz_origin = _np.asarray([6.4632, 0.6907, 0.35],dtype=float)
-    qme_xyz_target = _np.asarray([5.52478, 0.506607, 0.0576283],dtype=float)
+#    qme_xyz_origin = _np.asarray([6.4632, 0.6907, 0.35],dtype=float) # [6.5, 6.1, 0.35], in cyl .... nearly 0 deg toroidally: AEE41 is ~-45 deg
+#    qme_xyz_target = _np.asarray([5.52478, 0.506607, 0.0576283],dtype=float) # [-17,-5] in aim ang.
+#
+    qme_xyz_origin = _np.asarray([-4.731, -4.572, 0.272],dtype=float)
+    qme_xyz_target = _np.asarray([-4.092, -3.704, 0.150],dtype=float)
 
     #Connect the origin and target by 'nn' points ... returning the
     # cartesian position and length along the central ray of the ECE diagnostic
@@ -1768,10 +1771,17 @@ def build_TSfitdict(QTBin, set_edge=None, iuse_ts=None, rescale_amin=1.0):
     dictdat['Te'] =   QTBin["Te"].copy()   # []
     dictdat['ne'] =  QTBin["ne"].copy()    # [part/m3]
 
-    dictdat['varTL'] = QTBin["TeL"].copy()**2.0
-    dictdat['varTH'] = QTBin["TeH"].copy()**2.0
-    dictdat['varNL'] = QTBin["neL"].copy()**2.0
-    dictdat['varNH'] = QTBin["neH"].copy()**2.0
+    if "TeL" in dictdat:
+        dictdat['varTL'] = QTBin["TeL"].copy()**2.0
+        dictdat['varTH'] = QTBin["TeH"].copy()**2.0
+        dictdat['varNL'] = QTBin["neL"].copy()**2.0
+        dictdat['varNH'] = QTBin["neH"].copy()**2.0
+    else:
+        dictdat['varTL'] = QTBin["varTL"].copy()
+        dictdat['varTH'] = QTBin["varTH"].copy()
+        dictdat['varNL'] = QTBin["varNL"].copy()
+        dictdat['varNH'] = QTBin["varNH"].copy()
+    # end if
     if set_edge is not None:
         redge = set_edge[0]
         nedge = set_edge[1]
@@ -1785,6 +1795,11 @@ def build_TSfitdict(QTBin, set_edge=None, iuse_ts=None, rescale_amin=1.0):
         dictdat['varTH'] = _np.hstack((dictdat['varTH'], _np.nanmean(QTBin["TeH"].copy())**2.0))
         dictdat['varNL'] = _np.hstack((dictdat['varNL'], _np.nanmean(QTBin["neL"].copy())**2.0))
         dictdat['varNH'] = _np.hstack((dictdat['varNH'], _np.nanmean(QTBin["neH"].copy())**2.0))
+
+        dictdat['TeL'] = _np.sqrt(dictdat["varTL"])
+        dictdat['TeH'] = _np.sqrt(dictdat["varTH"])
+        dictdat['neL'] = _np.sqrt(dictdat["varNL"])
+        dictdat['neH'] = _np.sqrt(dictdat["varNH"])
 
         iuse_ts = _np.hstack((iuse_ts,True))
     else:
@@ -1836,19 +1851,42 @@ def clean_fitdict(dictdat, iuse=None, rmax=9.0, Tmin=0.0, Tmax=9.0):
     if iuse is None:
         iuse = _np.ones(_np.shape(dictdat['roa']), dtype=bool)
     # end if
-    iuse = (~_np.isinf(dictdat['roa']))*(~_np.isnan(dictdat['roa']))*(dictdat['Te']>Tmin)*(_np.abs(dictdat['roa'])<rmax)*(_np.abs(dictdat['Te'])<Tmax)*iuse
+    iuse = iuse*(~_np.isinf(dictdat['roa']))*(~_np.isnan(dictdat['roa']))*(dictdat['Te']>Tmin)*(_np.abs(dictdat['roa'])<rmax)*(_np.abs(dictdat['Te'])<Tmax)
     dictdat['roa'] = dictdat['roa'][iuse]
     dictdat['Te'] = dictdat['Te'][iuse]
-    dictdat['varTL'] = dictdat['varTL'][iuse]
-    dictdat['varTH'] = dictdat['varTH'][iuse]
+    if "TeL" in dictdat:
+        dictdat['TeL'] = dictdat['TeL'][iuse]
+        dictdat['TeH'] = dictdat['TeH'][iuse]
+
+        dictdat['varTL'] = dictdat['TeL']**2.0
+        dictdat['varTH'] = dictdat['TeH']**2.0
+    else:
+        dictdat['varTL'] = dictdat['varTL'][iuse]
+        dictdat['varTH'] = dictdat['varTH'][iuse]
+
+        dictdat['TeL'] = _np.sqrt(dictdat['varTL'])
+        dictdat['TeH'] = _np.sqrt(dictdat['varTH'])
+    # end if
+
     if 'varRL' in dictdat:
         dictdat['varRL'] = dictdat['varRL'][iuse]
         dictdat['varRH'] = dictdat['varRH'][iuse]
     # end if
-    if "ne" in dictdat:
+    if "ne" in dictdat and dictdat['ne'].shape==iuse.shape:
         dictdat['ne'] = dictdat['ne'][iuse]
-        dictdat['varNL'] = dictdat['varNL'][iuse]
-        dictdat['varNH'] = dictdat['varNH'][iuse]
+        if "neL" in dictdat:
+            dictdat['neL'] = dictdat['neL'][iuse]
+            dictdat['neH'] = dictdat['neH'][iuse]
+
+            dictdat['varNL'] = dictdat['neL']**2.0
+            dictdat['varNH'] = dictdat['neH']**2.0
+        else:
+            dictdat['varNL'] = dictdat['varNL'][iuse]
+            dictdat['varNH'] = dictdat['varNH'][iuse]
+
+            dictdat['neL'] = _np.sqrt(dictdat['varNL'])
+            dictdat['neH'] = _np.sqrt(dictdat['varNH'])
+        # end if
     # end if
     return dictdat, iuse
 
