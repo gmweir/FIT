@@ -1634,27 +1634,45 @@ def extrap_ECE(QMEdat, cls, rescale_amin=1.0, plotit=False):
     cls.setCoords(cls.rr)
     cls.roa *= rescale_amin   # r/a is now greater than 1.0 if starting on a weird fat grid
     cls.roa[_np.argmin(cls.roa):] *= -1.0   # HFS is negative by convention
-    cls.Omegace = 1.6e-19*cls.modB/(9.11e-31)    # [rad/s], cyclotron frequency
+    cls.Omegace = 1.6e-19*cls.modB/(9.11e-31)    # [rad/s], electron cyclotron frequency
 
     # Extrapolate along the line of sight of the ECE to get edge channels
     rr = _np.copy(cls.rr)
     roa = _np.copy(cls.roa).squeeze()
+
+    fece = 1e-9*(2.0*cls.Omegace/(2*_np.pi))   # GHz
+    fece = fece.squeeze()
+
+    RR = _np.sqrt(cls.rr[:,0]**2.0+cls.rr[:,1]**2.0) # major radius
+    Rmax = 6.15 # [m]
+    iuse = (RR<Rmax).squeeze()
+    if plotit:
+        _plt.figure()
+        _plt.subplot(2,1,1)
+        _plt.plot(RR, cls.modB, '-')
+        _plt.plot(RR[iuse], cls.modB[iuse], 'r-')
+        _plt.ylabel('|B| [T]')
+        _plt.subplot(2,1,2)
+        _plt.plot(RR, fece, '-')
+        _plt.plot(RR[iuse], fece[iuse], 'r-')
+        _plt.xlabel('R [m]')
+        _plt.ylabel(r'2f$_{ece}$ [GHz]')
+    # end if
+
     if 1:
         # extrapolate r/a along line-of-sight to get r/a > 1.0 at R-coordinates outside LCFS
         # Do this by fitting the magnetic field along the view and interpolating B vs r/a
         isort, iunsort = _ut.argsort(QMEdat['ece_freq'].squeeze(), iunsort=True)
         iuse = ~((_np.abs(roa)>1.0) + _np.isnan(roa) + _np.isinf(roa))  # use w/in LCFS for fitting
+        iuse = iuse*(RR<Rmax)
         iuse = iuse.squeeze()
-
-        fece = 1e-9*(2.0*cls.Omegace/(2*_np.pi))   # GHz
-        fece = fece.squeeze()
 
         # interpolate to upper bandwidth bound (lower r/a for r/a increasing to LFS)
         ece_lr = weightedPolyfit(xvar=fece[iuse].squeeze(), yvar=roa[iuse],
-                xo=(QMEdat["ece_freq"]+QMEdat["ece_bw"]).squeeze()[isort], vary=None, deg=3, nargout=1).squeeze()[iunsort]
+                xo=(QMEdat["ece_freq"]+0.5*QMEdat["ece_bw"]).squeeze()[isort], vary=None, deg=3, nargout=1).squeeze()[iunsort]
         # interpolate to lower bandwidth bound
         ece_ur = weightedPolyfit(xvar=fece[iuse].squeeze(), yvar=roa[iuse],
-                xo=(QMEdat["ece_freq"]-QMEdat["ece_bw"]).squeeze()[isort], vary=None, deg=3, nargout=1).squeeze()[iunsort]
+                xo=(QMEdat["ece_freq"]-0.5*QMEdat["ece_bw"]).squeeze()[isort], vary=None, deg=3, nargout=1).squeeze()[iunsort]
         # interpolate to center frequency
         ece_roa = weightedPolyfit(xvar=fece[iuse].squeeze(), yvar=roa[iuse],
                 xo=(QMEdat["ece_freq"]).squeeze()[isort], vary=None, deg=3, nargout=1).squeeze()[iunsort]
@@ -1678,7 +1696,7 @@ def extrap_ECE(QMEdat, cls, rescale_amin=1.0, plotit=False):
         _plt.plot(fece[iuse], roa[iuse], 'x')
 #        _plt.plot((QMEdat["ece_freq"]).squeeze(), ece_roa, 'o')
         _plt.errorbar((QMEdat["ece_freq"]).squeeze(), ece_roa,
-                      xerr=[(QMEdat["ece_freq"]-0.5*QMEdat["ece_bw"]).squeeze(), (QMEdat["ece_freq"]+0.5*QMEdat["ece_bw"]).squeeze()],
+                      xerr=[0.5*QMEdat["ece_bw"].squeeze(), 0.5*QMEdat["ece_bw"].squeeze()],
                       yerr=[ece_lr, ece_ur], fmt='o')
         _plt.title("Cold plasma ECE interpolation")
         _plt.ylabel('r/a')
@@ -1796,10 +1814,10 @@ def build_TSfitdict(QTBin, set_edge=None, iuse_ts=None, rescale_amin=1.0):
         dictdat['varNL'] = _np.hstack((dictdat['varNL'], _np.nanmean(QTBin["neL"].copy())**2.0))
         dictdat['varNH'] = _np.hstack((dictdat['varNH'], _np.nanmean(QTBin["neH"].copy())**2.0))
 
-        dictdat['TeL'] = _np.sqrt(dictdat["varTL"])
-        dictdat['TeH'] = _np.sqrt(dictdat["varTH"])
-        dictdat['neL'] = _np.sqrt(dictdat["varNL"])
-        dictdat['neH'] = _np.sqrt(dictdat["varNH"])
+#        dictdat['TeL'] = _np.sqrt(dictdat["varTL"])
+#        dictdat['TeH'] = _np.sqrt(dictdat["varTH"])
+#        dictdat['neL'] = _np.sqrt(dictdat["varNL"])
+#        dictdat['neH'] = _np.sqrt(dictdat["varNH"])
 
         iuse_ts = _np.hstack((iuse_ts,True))
     else:
@@ -1815,19 +1833,31 @@ def concat_Tdat(dictdat, newdat=None):
     addDat = False
     if newdat is not None:
         addDat=True
-        chmsk = _np.ones( newdat["roa"].shape, dtype=bool) if "chmsk" not in newdat else newdat["chmsk"]
+        if "chmsk" in newdat:
+            chmsk = newdat["chmsk"]
+        else:
+            chmsk = _np.ones( newdat["roa"].shape, dtype=bool)
+        # end if
         rho_use = _np.abs(newdat["roa"].copy())
         rho_min = newdat["roaL"].copy()
         rho_max = newdat["roaH"].copy()
         Tdat = newdat["Te"]
-        Tvar = _np.sqrt(newdat["varTL"]*newdat["varTH"])
+        if "varTL" in newdat:
+            Tvar = _np.sqrt(newdat["varTL"]*newdat["varTH"])
+        else:
+            Tvar = _np.abs(newdat["TeL"]*newdat["TeH"])
     # end if
 
     if addDat:
         dictdat['roa'] = _np.hstack((rho_use[chmsk].copy(), dictdat['roa'].copy()))
         dictdat['Te'] = _np.hstack((Tdat[chmsk].copy(), dictdat['Te'].copy())) # Te
-        dictdat['varTL'] = _np.hstack((Tvar[chmsk].copy(), dictdat['varTL'])) #TeL
-        dictdat['varTH'] = _np.hstack((Tvar[chmsk].copy(), dictdat['varTH'])) #TeH
+        if "varTL" in dictdat:
+            dictdat['varTL'] = _np.hstack((Tvar[chmsk].copy(), dictdat['varTL'])) #TeL
+            dictdat['varTH'] = _np.hstack((Tvar[chmsk].copy(), dictdat['varTH'])) #TeH
+        else:
+            dictdat['TeL'] = _np.hstack((_np.sqrt(Tvar[chmsk].copy()), dictdat['TeL'])) #TeL
+            dictdat['TeH'] = _np.hstack((_np.sqrt(Tvar[chmsk].copy()), dictdat['TeH'])) #TeH
+        # end if
         if 'varRL' in dictdat:
             dictdat['varRL'] = _np.hstack((rho_min[chmsk].copy()**2.0, dictdat['varRL']))
             dictdat['varRH'] = _np.hstack((rho_max[chmsk].copy()**2.0, dictdat['varRH']))
@@ -1839,8 +1869,13 @@ def sort_fitdict(dictdat):
     isort = _np.argsort(_np.abs(dictdat['roa']).squeeze())
     dictdat['roa'] = _np.abs(dictdat['roa'][isort])
     dictdat['Te'] = dictdat['Te'][isort]
-    dictdat['varTL'] = dictdat['varTL'][isort]
-    dictdat['varTH'] = dictdat['varTH'][isort]
+    if 'varTL' in dictdat:
+        dictdat['varTL'] = dictdat['varTL'][isort]
+        dictdat['varTH'] = dictdat['varTH'][isort]
+    else:
+        dictdat['TeL'] = dictdat['TeL'][isort]
+        dictdat['TeH'] = dictdat['TeH'][isort]
+    # end if
     if 'varRL' in dictdat:
         dictdat['varRL'] = dictdat['varRL'][isort]
         dictdat['varRH'] = dictdat['varRH'][isort]
@@ -1858,14 +1893,14 @@ def clean_fitdict(dictdat, iuse=None, rmax=9.0, Tmin=0.0, Tmax=9.0):
         dictdat['TeL'] = dictdat['TeL'][iuse]
         dictdat['TeH'] = dictdat['TeH'][iuse]
 
-        dictdat['varTL'] = dictdat['TeL']**2.0
-        dictdat['varTH'] = dictdat['TeH']**2.0
+#        dictdat['varTL'] = dictdat['TeL']**2.0
+#        dictdat['varTH'] = dictdat['TeH']**2.0
     else:
         dictdat['varTL'] = dictdat['varTL'][iuse]
         dictdat['varTH'] = dictdat['varTH'][iuse]
 
-        dictdat['TeL'] = _np.sqrt(dictdat['varTL'])
-        dictdat['TeH'] = _np.sqrt(dictdat['varTH'])
+#        dictdat['TeL'] = _np.sqrt(dictdat['varTL'])
+#        dictdat['TeH'] = _np.sqrt(dictdat['varTH'])
     # end if
 
     if 'varRL' in dictdat:
@@ -1878,14 +1913,14 @@ def clean_fitdict(dictdat, iuse=None, rmax=9.0, Tmin=0.0, Tmax=9.0):
             dictdat['neL'] = dictdat['neL'][iuse]
             dictdat['neH'] = dictdat['neH'][iuse]
 
-            dictdat['varNL'] = dictdat['neL']**2.0
-            dictdat['varNH'] = dictdat['neH']**2.0
+#            dictdat['varNL'] = dictdat['neL']**2.0
+#            dictdat['varNH'] = dictdat['neH']**2.0
         else:
             dictdat['varNL'] = dictdat['varNL'][iuse]
             dictdat['varNH'] = dictdat['varNH'][iuse]
 
-            dictdat['neL'] = _np.sqrt(dictdat['varNL'])
-            dictdat['neH'] = _np.sqrt(dictdat['varNH'])
+#            dictdat['neL'] = _np.sqrt(dictdat['varNL'])
+#            dictdat['neH'] = _np.sqrt(dictdat['varNH'])
         # end if
     # end if
     return dictdat, iuse

@@ -55,6 +55,22 @@ __metaclass__ = type
 
 # Fitting using the Levenberg-Marquardt algorithm.    #
 def modelfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
+    kwargs.setdefault('xtol', 1.0e-14)
+    kwargs.setdefault('ftol', 1.0e-14)
+    kwargs.setdefault('gtol', 1.0e-14)
+    kwargs.setdefault('damp', 0.)
+    kwargs.setdefault('maxiter', 2000)
+    kwargs.setdefault('factor', 100)  # 100
+    kwargs.setdefault('nprint', 1) # 100
+    kwargs.setdefault('iterfunct', 'default')
+    kwargs.setdefault('iterkw', {})
+    kwargs.setdefault('nocovar', 0)
+    kwargs.setdefault('rescale', 0)
+    kwargs.setdefault('autoderivative', 1)
+    kwargs.setdefault('quiet', 0)
+    kwargs.setdefault('diag', 0)
+    kwargs.setdefault('epsfcn', 1e-3) #5e-4) #1e-3
+    kwargs.setdefault('debug', 0)
     return fit_mpfit(x, y, ey, XX, func, fkwargs, **kwargs)
 
 def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
@@ -104,7 +120,7 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     fa = {'x':x, 'y':y, 'err':ey}
 
     # Call mpfit
-    kwargs['nprint'] = kwargs.get('nprint',10)
+#    kwargs['nprint'] = kwargs.get('nprint',10)
     m = LMFIT(mymodel, p0, parinfo=parinfo, residual_keywords=fa, **kwargs)
     #  m - object
     #   m.status   - there are more than 12 return codes (see mpfit documentation)
