@@ -18,7 +18,7 @@ import numpy as _np
 import matplotlib.pyplot as _plt
 #import pybaseutils as _pyut
 from pybaseutils.Struct import Struct
-from pybaseutils.utils import sech
+from pybaseutils.utils import sech, interp_irregularities
 
 # ========================================================================== #
 # ========================================================================== #
@@ -371,10 +371,7 @@ def partial_deriv_twopower(XX, af):
 
 def model_twopower(XX, af=None):
     """
-    A parabolic profile with one free parameters:
-        f(x) ~ a*(1.0-x^2)
-        xx - x - independent variable
-        af - a - central value of the plasma parameter
+
     """
 
     if af is None:
@@ -414,7 +411,7 @@ def expedge(XX, af):
 
 # ========= Quasi-parabolic model ========== #
 
-def model_qparab(XX, af=None, nohollow=False, prune=False, rescale=False):
+def model_qparab(XX, af=None, nohollow=False, prune=False, rescale=False, info=None):
     """
     ex// ne_parms = [0.30, 0.002, 2.0, 0.7, -0.24, 0.30]
     This function calculates the quasi-parabolic fit
@@ -427,15 +424,18 @@ def model_qparab(XX, af=None, nohollow=False, prune=False, rescale=False):
     af[4],af[5]-  hh, ww - hole depth and width
 
     """
-    info = Struct()  # Custom class that makes working with dictionaries easier
+    if info is None:
+        info = Struct()  # Custom class that makes working with dictionaries easier
 #    info.Lbounds = _np.array([    0.0, 0.0,-_np.inf,-_np.inf,-_np.inf,-_np.inf], dtype=_np.float64)
 #    info.Ubounds = _np.array([_np.inf, _np.inf, _np.inf, _np.inf, _np.inf, _np.inf], dtype=_np.float64)
-    info.Lbounds = _np.array([  0.0, 0.0,-20,-20,-1,-1], dtype=_np.float64)
-    info.Ubounds = _np.array([ 20.0, 1.0, 20, 20, 1, 1], dtype=_np.float64)
+#    info.Lbounds = _np.array([  0.0, 0.0,-20,-20,-1,-1], dtype=_np.float64)
+#    info.Ubounds = _np.array([ 20.0, 1.0, 20, 20, 1, 1], dtype=_np.float64)
+    info.Lbounds = _np.array([  0.0, 0.0,-10,-10,-1,-1], dtype=_np.float64)
+    info.Ubounds = _np.array([ 20.0, 1.0, 10, 10, 1, 1], dtype=_np.float64)
 
     if af is None:
-#        af = _np.array([5.0, 0.002, 2.0, 0.7, -0.24, 0.30], dtype=_np.float64)
-        af = randomize_initial_conditions(info.Lbounds, info.Ubounds)
+        af = _np.array([1.0, 0.002, 2.0, 0.7, -0.24, 0.30], dtype=_np.float64)
+#        af = randomize_initial_conditions(info.Lbounds, info.Ubounds)
         if nohollow:
             af[4] = 0.0
             af[5] = 1.0
@@ -464,17 +464,22 @@ def model_qparab(XX, af=None, nohollow=False, prune=False, rescale=False):
 
     af = af.reshape((len(af),))
     if _np.isfinite(af).any() == 0:
-        print("checkit!")
+        print("checkit! No finite values in fit coefficients! (from model_spec: model_qparab)")
 #    print(_np.shape(af))
 
     prof = qparab(XX, af, nohollow)
+    prof = interp_irregularities(prof, corezero=False)
     info.prof = prof
 
     gvec = partial_qparab(XX*rescale, af, nohollow)
+    gvec = interp_irregularities(gvec, corezero=False)
     info.gvec = gvec
 
     info.dprofdx = deriv_qparab(XX, af, nohollow)
+    info.dprofdx = interp_irregularities(info.dprofdx, corezero=True)
+
     info.dgdx = partial_deriv_qparab(XX*rescale, af, nohollow)
+    info.dgdx = interp_irregularities(info.dgdx, corezero=False)
 
     if prune:
         af = af[:4]

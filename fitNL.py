@@ -53,6 +53,150 @@ __metaclass__ = type
 # ======================================================================== #
 
 
+#def bootstrapfit(xdat, ydat, ey, XX, func, fkwargs={}, nmonti=300, **kwargs):
+#    kwargs.setdefault('xtol', 1.0e-14)
+#    kwargs.setdefault('ftol', 1.0e-14)
+#    kwargs.setdefault('gtol', 1.0e-14)
+#    kwargs.setdefault('damp', 0.)
+#    kwargs.setdefault('maxiter', 2000)
+#    kwargs.setdefault('factor', 100)  # 100
+#    kwargs.setdefault('nprint', 100) # 100
+#    kwargs.setdefault('iterfunct', 'default')
+#    kwargs.setdefault('iterkw', {})
+#    kwargs.setdefault('nocovar', 0)
+#    kwargs.setdefault('rescale', 0)
+#    kwargs.setdefault('autoderivative', 1)
+#    kwargs.setdefault('quiet', 1)
+#    kwargs.setdefault('diag', 0)
+#    kwargs.setdefault('epsfcn', 1e-3) #5e-4) #1e-3
+#    kwargs.setdefault('debug', 0)
+#
+#    weightit = kwargs.setdefault('weightit', False)
+#    gvecfunc = kwargs.setdefault('gvecfunc', None)
+#
+#    # =============== #
+#
+#    niterate = 1
+#    if nmonti > 1:
+#        niterate = nmonti
+#        # niterate *= len(x)
+#    # endif
+#
+#    # nch = len(x)
+#    numfit = len(info.af0)
+#    vary = ey**2.0
+#
+#    xsav = xdat.copy()
+#    ysav = ydat.copy()
+#    vsav = vary.copy()
+#
+#    af = _np.zeros((niterate, numfit), dtype=_np.float64)
+#    covmat = _np.zeros((niterate, numfit, numfit), dtype=_np.float64)
+#    vaf = _np.zeros((niterate, numfit), dtype=_np.float64)
+#    chi2 = _np.zeros((niterate,), dtype=_np.float64)
+#
+#    nx = len(XX)
+#    mfit = _np.zeros((niterate, nx), dtype=_np.float64)
+#    dprofdx = _np.zeros_like(mfit)
+#
+#    if gvecfunc is not None:
+#        gvec, _, dgdx = gvecfunc(info.af0, XX)
+#    # end if
+#    vfit = _np.zeros((niterate, nx), dtype=_np.float64) # end if
+#    vdprofdx = _np.zeros_like(vfit)
+#
+#    for mm in range(niterate):
+#        ydat = ysav.copy() + _np.sqrt(vsav)*_np.random.normal(0.0,1.0,_np.shape(ysav))
+#        vary = (ydat-ysav)**2
+##            vary = vsav.copy()
+##            vary = vsav.copy()*_np.abs((ydat-ysav)/ysav)
+##            vary = vsav.copy()*(1 + _np.abs((ydat-ysav)/ysav))
+##            cc = 1+_np.floor((mm-1)/nmonti)
+##            if nmonti > 1:
+##                ydat[cc] = ysav[cc].copy()
+##                ydat[cc] += _np.sqrt(vsav[cc]) * _np.random.normal(0.0,1.0,_np.shape(vsav[cc]))
+##                vary[cc] = (ydat[cc]-ysav[cc])**2
+##                # _np.ones((1,nch), dtype=_np.float64)*
+##            # endif
+##            print(mm, niterate)
+##            res = self.run()
+##            af[mm, :], _ = res
+##            if verbose:
+#        if mm % 10 == 0:
+#            print('%i of %i'%(mm,niterate))
+#        # end if
+#        af[mm, :], covmat[mm,:,:] = run()
+#        vaf[mm, :] = perror.copy()**2.0
+#
+#        # chi2[mm] = _np.sum(self.chi2)/(numfit-nch-1)
+#        mfit[mm, :] = func(af[mm,:].copy(), xvec.copy())
+#        chi2[mm] = _np.sum(chi2_reduced.copy())
+#        # mfit[mm, :] = self.yf.copy()
+#
+#        if gvecfunc is not None:
+#            gvec, tmp, dgdx = gvecfunc(af[mm,:].copy(), XX.copy())
+#            dprofdx[mm,:] = tmp.copy()
+#            if gvec is not None:
+#                vfit[mm,:] = properror(XX, gvec)
+#            if dgdx is not None:
+#                vdprofdx[mm,:] = properror(XX, dgdx)
+#            # end if
+#        # end if
+##            if dgdx is not None:
+##                vdfdx[mm,:] = properror(XX, dgdx)
+#        # end if
+#    # endfor
+#    xdat = xsav
+#    ydat = ysav
+#    vary = vsav
+#
+##        _plt.figure()
+##        _plt.plot(xvec, mfit.T, 'k-')
+##        _plt.plot(xvec, (mfit+_np.sqrt(vfit)).T, 'k--')
+##        _plt.plot(xvec, (mfit-_np.sqrt(vfit)).T, 'k--')
+#
+#    if weightit:
+#        # # weighted mean and covariance
+#        # aw = 1.0/(1.0-chi2) # chi2 close to 1 is good, high numbers good in aweights
+#        # # aw[_np.isnan(aw)*_np.isinf(aw)]
+#        # Weighting by chi2
+#        aw = 1.0/chi2
+##            aw = 1.0/_np.sqrt(chi2)
+#
+#        # self.af = _np.sum( af*aw, axis=0) / _np.sum(aw, axis=0)
+##            self.perror, self.af = _ut.nanwvar(af, statvary=None, systvary=None, weights=aw, dim=0)
+#        perror, af = _ut.nanwvar(af.copy(), statvary=vaf, systvary=None, weights=aw, dim=0, nargout=2)
+#        perror = _np.sqrt(perror)
+#        covmat = _np.cov( af, rowvar=False, fweights=None, aweights=aw)
+#
+##        mfit = _np.nansum( mfit * 1.0/_np.sqrt(vfit) ) / _np.nansum( 1.0/_np.sqrt(vfit) )
+##        vfit = _np.nanvar( mfit, axis=0)
+#        # weight by chi2 or by individual variances?
+#        if gvecfunc is not None:
+#            # vfit, mfit = _ut.nanwvar(mfit.copy(), statvary=vfit, systvary=None, weights=1.0/_np.sqrt(vfit), dim=0, nargout=2)
+##           vfit, mfit = _ut.nanwvar(mfit.copy(), statvary=None, systvary=None, weights=1.0/_np.sqrt(vfit), dim=0, nargout=2)
+#            vfit, mfit = _ut.nanwvar(mfit.copy(), statvary=None, systvary=None, weights=1.0/vfit, dim=0, nargout=2)
+#            vdprofdx, dprofdx = _ut.nanwvar(dprofdx.copy(), statvary=None, systvary=None, weights=1.0/vdprofdx, dim=0, nargout=2)
+#        else:
+#            aw = aw.reshape((niterate,1))*_np.ones((1,nx),dtype=_np.float64)              # reshape the weights
+##            self.vfit, self.mfit = _ut.nanwvar(mfit.copy(), statvary=vfit, systvary=None, weights=aw, dim=0)
+#            vfit, mfit = _ut.nanwvar(mfit.copy(), statvary=None, systvary=None, weights=aw, dim=0)
+#            vdprofdx, dprofdx = _ut.nanwvar(dprofdx.copy(), statvary=None, systvary=None, weights=aw, dim=0)
+#        # end if
+#    else:
+#        # straight mean and covariance
+#        af, perror = _ut.combine_var(af, statvar=None, systvar=None, axis=0)
+#        perror = _np.sqrt(perror)
+#        mfit, vfit = _ut.combine_var(mfit, statvar=None, systvar=None, axis=0)
+#        dprofdx, vdprofdx = _ut.combine_var(dprofdx, statvar=None, systvar=None, axis=0)
+#
+#        covmat = _np.cov(af, rowvar=False)
+#    # end if
+#    return af, covmat, info
+
+
+# ======================================================================== #
+
 # Fitting using the Levenberg-Marquardt algorithm.    #
 def modelfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     kwargs.setdefault('xtol', 1.0e-14)
@@ -75,35 +219,63 @@ def modelfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
 
 def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
 
-    def mymodel(p, fjac=None, x=None, y=None, err=None):
-        # Parameter values are passed in "p"
-        # If fjac==None then partial derivatives should not be
-        # computed.  It will always be None if MPFIT is called with default
-        # flag.
-        model, gvec, info = func(x, p, **fkwargs)
-        # fjac = gvec   # use analytic jacobian if uncommentedc
+    # subfunction kwargs
 
-        # Non-negative status value means MPFIT should continue, negative means
-        # stop the calculation.
-        status = 0
-        return {'status':status, 'residual':(y-model)/err}
+    # fitter kwargs
+    LB = kwargs.pop('LB', None)
+    UB = kwargs.pop('UB', None)
+    p0 = kwargs.pop('af0', None)
 
     # default initial conditions come directly from the model functions
     _, _, info = func(XX, af=None, **fkwargs)
     info.success = False
-    if 'af0' in kwargs:
-        p0 = kwargs.pop('af0')
-    else:
+    if p0 is None:
         p0 = info.af
+    if LB is None:
+        LB = info.Lbounds
+    if UB is None:
+        UB = info.Ubounds
     # end if
-
-    LB = info.Lbounds
-    UB = info.Ubounds
     numfit = len(p0)
 
     if numfit != LB.shape[0]:
         print('oops')
     # end if
+
+    # ============================================= #
+
+    def mymodel(p, fjac=None, x=None, y=None, err=None, nargout=1):
+        # Parameter values are passed in "p"
+        # If fjac==None then partial derivatives should not be
+        # computed.  It will always be None if MPFIT is called with default
+        # flag.
+        model, gvec, info = func(x, p, **fkwargs)
+        model = _ut.interp_irregularities(model, corezero=False)
+        gvec = _ut.interp_irregularities(gvec, corezero=False)
+
+        # Non-negative status value means MPFIT should continue, negative means
+        # stop the calculation.
+        status = 0
+        if _np.isnan(p).any():
+            print('NaN in model parameters!')
+            status = -2
+        elif _np.isnan(p).all():
+            print('All the model parameters are NaNs!')
+            status = -3
+        # end if
+        if kwargs['autoderivative'] == 0 and nargout == 1:
+            fjac = gvec.copy()   # use analytic jacobian
+            return {'status':status, 'residual':(y-model)/err, 'jacobian':fjac}
+        elif kwargs['autoderivative'] == 1 and nargout == 1:
+            fjac = None
+            return {'status':status, 'residual':(y-model)/err}
+        else:
+            info.prof = model.copy()
+            info.gvec = gvec.copy()
+            info.dprofdx = _ut.interp_irregularities(info.dprofdx, corezero=False) # assumes cylindrical if True
+            return model, gvec, info
+        # end if
+    # end def mymodel
 
     # Settings for each parameter of the fit.
     #   'value' is the initial value that will be updated by mpfit
@@ -142,7 +314,7 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     # ====== Post-processing ====== #
 
     # Final function evaluation
-    prof, fjac, info = func(XX, m.params)
+    prof, fjac, info = mymodel(m.params, x=XX, nargout=3)
     info.prof = prof
     info.fjac = fjac
 
@@ -157,6 +329,9 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     info.dof = len(x) - numfit # deg of freedom
 
     # calculate correlation matrix
+    if m.covar is None:
+        print('error in calculation (no covariance returned) => ', m.errmsg)
+        pass
     info.covmat = m.covar       # Covariance matrix
     info.cormat = info.covmat * 0.0
     for ii in range(numfit):
@@ -181,6 +356,9 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     if hasattr(info, 'dgdx'):
         info.vardprofdx = _ut.properror(XX, info.covmat, info.dgdx)
     # endif
+
+    info.varprof = _ut.interp_irregularities(info.varprof, corezero=False)
+    info.vardprofdx = _ut.interp_irregularities(info.vardprofdx, corezero=False)
 
     return info
 
@@ -894,7 +1072,7 @@ def test_fit(func=_ms.model_qparab, **fkwargs):
 # ========================================================================== #
 
 
-def qparabfit(x, y, ey, XX, nohollow=False, **kwargs):
+def qparabfit(x, y, ey, XX, **kwargs):
     """
     This is a wrapper for using the MPFIT LM-solver with a quasi-parabolic model.
     This was written before the general fitting model above and is deprecated (obviously)
@@ -902,11 +1080,13 @@ def qparabfit(x, y, ey, XX, nohollow=False, **kwargs):
     see no reason to remove it yet.
     """
     # subfunction kwargs
+    nohollow = kwargs.pop("nohollow", False)
 
-    # fitter kwargs
-    LB = kwargs.pop('LB', None)
-    UB = kwargs.pop('UB', None)
-    af0 = kwargs.pop('af0', None)
+    # solver kwargs
+    kwargs.setdefault('maxiter',200)
+    kwargs.setdefault('epsfcn', 1e-3)
+    kwargs.setdefault('factor',100)
+    kwargs.setdefault('autoderivative',1)
 
     # plotting kwargs
     onesided = kwargs.pop('onesided', True)
@@ -926,132 +1106,25 @@ def qparabfit(x, y, ey, XX, nohollow=False, **kwargs):
     fn = kwargs.pop('fontname', _plt.rcParams['font.family'])
 
     fontdict = {'fontsize':fs, 'fontname':fn}
-    if agradrho != 1.0 and ylbl2 == r'-$\nabla$ T$_e$/T$_e$':
+    if _np.atleast_1d(agradrho).all() != 1.0 and ylbl2 == r'-$\nabla$ T$_e$/T$_e$':
         ylbl2 = r'a/L$_{Te}$'
     # endif
 
-    def myqparab(p, fjac=None, x=None, y=None, err=None):
-        # Parameter values are passed in "p"
-        # If fjac==None then partial derivatives should not be
-        # computed.  It will always be None if MPFIT is called with default
-        # flag.
-        model, gvec, info = _ms.model_qparab(x, p)
-        # fjac = gvec
+    def myqparab(x, af=None, nohollow=False, infoin=None):
+        prune = False
+        if nohollow:            prune = True        # end if
+        return _ms.model_qparab(x, af=af, nohollow=nohollow, prune=prune, info=infoin)
 
-        # Non-negative status value means MPFIT should continue, negative means
-        # stop the calculation.
-        status = 0
-        return {'status':status, 'residual':(y-model)/err}
-
-    # default initial conditions
-
-    _, _, info = _ms.model_qparab(XX)
-    info.success = False
-    if af0 is not None:
-        p0 = af0
-    else:
-        p0 = info.af
-    # end if
-    # fjac = info.gvec
-    if LB is None:
-        LB = info.Lbounds
-    if UB is None:
-        UB = info.Ubounds
-    numfit = len(p0)
-
-    # Settings for each parameter of the fit.
-    #   'value' is the initial value that will be updated by mpfit
-    #   'fixed' is a boolean: 0 vary this parameter, 1 do not vary this parameter
-    #   'limited' is a pair of booleans in a list [Lower bound, Upper bound]:
-    #       ex//   [0, 0] -> no lower or upper bounds on parameter
-    #       ex//   [0, 1] -> no lower bound on parameter, but create an upper bound
-    #       ex//   [1, 1] -> lower and upper bounds on parameter
-    #   'limits' lower and upper bound values matching boolean mask in 'limited'
-    parinfo = [{'value':p0[ii], 'fixed':0, 'limited':[1,1], 'limits':[LB[ii],UB[ii]]}
-                for ii in range(numfit)]
+    # Call mpfit
+    info = fit_mpfit(x, y, ey, XX, myqparab, fkwargs={"nohollow":nohollow}, **kwargs)
 
     if nohollow:
-        p0[4] = 0.0
-        parinfo[4]['fixed'] = 1
-        parinfo[4]['value'] = p0[4]   # hole depth set to 0.0
-        p0[5] = 1.0
-        parinfo[5]['fixed'] = 1
-        parinfo[5]['value'] = p0[5]   # hole width set to 1.0
+        # add back in the two parameters after fitting with hollowness
+        _, _, info = myqparab(XX, af=info.params, nohollow=False, infoin=info)
+        info.params = info.af.copy()
+        info.LB = info.Lbounds.copy()
+        info.UB = info.Ubounds.copy()
     # endif
-
-    # Pass data into the solver through keywords
-    fa = {'x':x, 'y':y, 'err':ey}
-    kwargs.setdefault('maxiter',200)
-    kwargs.setdefault('epsfcn', 1e-3)
-    kwargs.setdefault('factor',100)
-    # Call mpfit
-    m = LMFIT(myqparab, p0, parinfo=parinfo, residual_keywords=fa, **kwargs)
-    #  m - object
-    #   m.status   - there are more than 12 return codes (see mpfit documentation)
-    #   m.errmsg   - a string error or warning message
-    #   m.fnorm    - value of final summed squared residuals
-    #   m.covar    - covaraince matrix
-    #           set to None if terminated abnormally
-    #   m.nfev     - number of calls to fitting function
-    #   m.niter    - number if iterations completed
-    #   m.perror   - formal 1-sigma uncertainty for each parameter (0 if fixed or touching boundary)
-    #           .... only meaningful if the fit is weighted.  (errors given)
-    #   m.params   - outputs!
-
-    if (m.status <= 0):
-        print('error message = ', m.errmsg)
-        return info
-    # end error checking
-
-    # ====== Post-processing ====== #
-
-    # Final function evaluation
-    prof, fjac, info = _ms.model_qparab(XX, m.params)
-
-    prof = _ut.interp_irregularities(prof)
-    fjac = _ut.interp_irregularities(fjac)
-    info.prof = _ut.interp_irregularities(info.prof)
-    info.dprofdx = _ut.interp_irregularities(info.dprofdx)
-
-    info.prof = prof
-    info.fjac = fjac
-
-    # Store the optimization information / messages and a boolean indicating success
-    info.mpfit = m
-    info.success = True
-
-    # Actual fitting parameters
-    info.params = m.params
-
-    # degrees of freedom in fit
-    info.dof = len(x) - numfit # deg of freedom
-    if nohollow:   info.dof += 2     # endif
-
-    # calculate correlation matrix
-    info.covmat = m.covar       # Covariance matrix
-    info.cormat = info.covmat * 0.0
-    for ii in range(numfit):
-        for jj in range(numfit):
-            info.cormat[ii,jj] = info.covmat[ii,jj]/_np.sqrt(info.covmat[ii,ii]*info.covmat[jj,jj])
-        # end for
-    # end for
-
-    # ====== Error Propagation ====== #
-
-    # scaled uncertainties in fitting parameters
-    info.chi2_reduced = _np.sqrt(m.fnorm / info.dof)
-    info.perror = m.perror * info.chi2_reduced
-
-    # Scaled covariance matrix
-    info.covmat = info.chi2_reduced * info.covmat
-
-    # Propagate uncertainties in fitting parameters (scaled covariance) into
-    # the profile and it's derivative
-    info.varprof = _ut.properror(XX, info.covmat, fjac)
-    info.vardprofdx = _ut.properror(XX, info.covmat, info.dgdx)
-
-    info.varprof = _ut.interp_irregularities(info.varprof)
-    info.vardprofdx = _ut.interp_irregularities(info.vardprofdx)
 
     # ================================= #
 
@@ -1105,7 +1178,6 @@ def qparabfit(x, y, ey, XX, nohollow=False, **kwargs):
         ax2.set_ylim(ylims2)
         ax1.grid()
         ax2.grid()
-
     # end if plotit
 
     return info
@@ -1114,6 +1186,25 @@ def qparabfit(x, y, ey, XX, nohollow=False, **kwargs):
 
 
 def test_qparab_fit(nohollow=False):
+    solver_options = {}  # end if
+    solver_options.setdefault('xtol', 1.0e-14)
+    solver_options.setdefault('ftol', 1.0e-14)
+    solver_options.setdefault('gtol', 1.0e-14)
+    solver_options.setdefault('damp', 0.)
+    solver_options.setdefault('maxiter', 2000)
+    solver_options.setdefault('factor', 1)  # 100
+    solver_options.setdefault('nprint', 1)
+    solver_options.setdefault('iterfunct', 'default')
+    solver_options.setdefault('iterkw', {})
+    solver_options.setdefault('nocovar', 0)
+    solver_options.setdefault('rescale', 0)
+    solver_options.setdefault('autoderivative', 1)
+    solver_options.setdefault('quiet', 0)
+    solver_options.setdefault('diag', 0)
+    solver_options.setdefault('epsfcn', 1e-3) #5e-4) #1e-3
+    solver_options.setdefault('debug', 0)
+    # default to finite differencing in mpfit for jacobian
+    # solver_options.setdefault('autoderivative', 1)
 
     aa= _np.asarray([0.30, 0.002, 2.0, 0.7, -0.24, 0.30], dtype=float)
     if nohollow:
@@ -1128,29 +1219,35 @@ def test_qparab_fit(nohollow=False):
     XX = _np.linspace( 0.0, 1.0, 99)
     yxx, _, _ = _ms.model_qparab(XX, aa)
 
-    info = qparabfit(xdat, ydat, yerr, XX, nohollow=False)
+    info = qparabfit(xdat, ydat, yerr, XX, nohollow=False, **solver_options)
 
 #    assert _np.allclose(info.params, aa)
 #    assert info.dof==len(xdat)-len(aa)
 
     ydat += yerr*_np.random.normal(0.0, 1.0, len(xdat))
-    info = _ms.qparab(xdat, ydat, yerr, XX, nohollow=False)
+    info = qparabfit(xdat, ydat, yerr, XX, nohollow=False, **solver_options)
 
     _plt.figure()
     ax1 = _plt.subplot(3, 1, 1)
     _plt.errorbar(xdat, ydat, yerr=yerr, fmt='bo')
     _plt.plot(XX, yxx, 'b-')
     _plt.plot(XX, info.prof, 'r-')
-    _plt.plot(XX, info.prof-_np.sqrt(info.varprof), 'r--')
-    _plt.plot(XX, info.prof+_np.sqrt(info.varprof), 'r--')
-    #_plt.fill_between(XX, info.prof-_np.sqrt(info.varprof))
+#    _plt.plot(XX, info.prof-_np.sqrt(info.varprof), 'r--')
+#    _plt.plot(XX, info.prof+_np.sqrt(info.varprof), 'r--')
+    _plt.fill_between(XX, info.prof-_np.sqrt(info.varprof),
+                          info.prof+_np.sqrt(info.varprof),
+                      interpolate=True, color='r', alpha=0.3)
+
     _plt.ylim((0, 1.2*_np.max(ydat)))
 
     _plt.subplot(3, 1, 2, sharex=ax1)
     _plt.plot(xdat, temp.dprofdx, 'bo')
     _plt.plot(XX, info.dprofdx, 'r-')
-    _plt.plot(XX, info.dprofdx-_np.sqrt(info.vardprofdx), 'r--')
-    _plt.plot(XX, info.dprofdx+_np.sqrt(info.vardprofdx), 'r--')
+#    _plt.plot(XX, info.dprofdx-_np.sqrt(info.vardprofdx), 'r--')
+#    _plt.plot(XX, info.dprofdx+_np.sqrt(info.vardprofdx), 'r--')
+    _plt.fill_between(XX, info.dprofdx-_np.sqrt(info.vardprofdx),
+                          info.dprofdx+_np.sqrt(info.vardprofdx),
+                      interpolate=True, color='r', alpha=0.3)
     _plt.ylim((_np.min((0,1.2*_np.min(info.dprofdx))), 1.2*_np.max(info.dprofdx)))
 
     _plt.subplot(3, 1, 3)
