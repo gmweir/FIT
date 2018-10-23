@@ -1211,14 +1211,16 @@ def spline_bs(xvar, yvar, vary, xf=None, func="spline", nmonti=300, deg=3, bbox=
 
 def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
     arescale = kwargs.get('arescale',1.0)
+    agradrho = kwargs.get('agradrho', 1.0)
     bootstrappit = kwargs.get('bootstrappit',True)
     af0 = kwargs.get('af0', None)
     LB = kwargs.get('LB', None)
     UB = kwargs.get('UB', None)
 
-    fitfunc = kwargs.get('fitfunc', _ms.qparab)
-    fitderivfunc = kwargs.get('dfunc', _ms.deriv_qparab)
-    returngvec = kwargs.get('modelfunc', _ms.model_qparab)
+#    fitfunc = kwargs.get('fitfunc', _ms.qparab)
+#    fitderivfunc = kwargs.get('dfunc', _ms.deriv_qparab)
+#    returngvec = kwargs.get('modelfunc', _ms.model_qparab)
+    modelfunc = kwargs.get('modelfunc', _ms.model_qparab)
 #
 #    fitfunc = kwargs.get('ffunc', _ms.twopower)
 #    fitderivfunc = kwargs.get('dfunc', _ms.deriv_twopower)
@@ -1227,17 +1229,23 @@ def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
     # ==== #
 
     def func(af, XX):
-        return fitfunc(XX, af)
+        prof, _, _ = modelfunc(_np.abs(XX), af)
+        return prof
+#        return fitfunc(XX, af)
 
     def fgvec(af, XX):
-        _, gvec, info = returngvec(_np.abs(XX), af)
+        _, gvec, info = modelfunc(_np.abs(XX), af)
+        # _, gvec, info = returngvec(_np.abs(XX), af)
         return gvec, info.dprofdx, info.dgdx
 
-    def derivfunc(af, XX):
-        return fitderivfunc(XX, af)
+#    def derivfunc(af, XX):
+#        _, _, info = modelfunc(_np.abs(XX), af)
+#        # _, gvec, info = returngvec(_np.abs(XX), af)
+#        return info.dprofdx
+##        return fitderivfunc(XX, af)
     # ==== #
 
-    info = returngvec(XX=None)
+    info = modelfunc(XX=None)
     if af0 is None:
         af0 = info.af
     if LB is None:
@@ -1250,6 +1258,7 @@ def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
     rdat /= arescale
 
     options = dict()
+    options.setdefault('nprint', 1) # 5e-4
     options.setdefault('epsfcn', 1e-3) # 5e-4
     options.setdefault('factor',100)
     options.setdefault('maxiter',200)
@@ -1257,7 +1266,7 @@ def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
     NLfit.run()
 
     if bootstrappit:
-        NLfit.gvecfunc = returngvec
+        NLfit.gvecfunc = fgvec
         NLfit.bootstrapper(xvec=_np.abs(rvec), weightit=False)
         prof = NLfit.mfit
         varp = NLfit.vfit
@@ -1266,7 +1275,7 @@ def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
         dprofdx = NLfit.dprofdx.copy()
         vardlnpdrho = NLfit.vdprofdx.copy()
     else:
-        prof, gvec, info = returngvec(_np.abs(rvec), NLfit.af)
+        prof, gvec, info = modelfunc(_np.abs(rvec), NLfit.af)
         varp = NLfit.properror(_np.abs(rvec), gvec)
         varp = varp.copy()
 
@@ -1307,12 +1316,19 @@ def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
         ax1.errorbar(rdat, pdat, yerr=_np.sqrt(vdat), fmt='ko', color='k' )
 
         ax1.plot(rvec, prof, 'k-', lw=2)
-        ax1.plot(rvec, prof+_np.sqrt(varp), 'k--', lw=1)
-        ax1.plot(rvec, prof-_np.sqrt(varp), 'k--', lw=1)
+#        ax1.plot(rvec, prof+_np.sqrt(varp), 'k--', lw=1)
+#        ax1.plot(rvec, prof-_np.sqrt(varp), 'k--', lw=1)
+        ax1.fill_between(rvec, prof-_np.sqrt(varp),
+                               prof+_np.sqrt(varp),
+                               interpolate=True, color='k', alpha=0.3)
 
-        ax3.plot(rvec, dlnpdrho, 'k-',
-                 rvec, dlnpdrho+_np.sqrt(vardlnpdrho), 'k--',
-                 rvec, dlnpdrho-_np.sqrt(vardlnpdrho), 'k--')
+        ax3.plot(rvec, agradrho*dlnpdrho, 'k-'),
+#                 rvec, agradrho*(dlnpdrho+_np.sqrt(vardlnpdrho)), 'k--',
+#                 rvec, agradrho*(dlnpdrho-_np.sqrt(vardlnpdrho)), 'k--')
+        ax1.fill_between(rvec, agradrho*(dlnpdrho-_np.sqrt(vardlnpdrho)),
+                               agradrho*(dlnpdrho+_np.sqrt(vardlnpdrho)),
+                               interpolate=True, color='k', alpha=0.3)
+
     # end if
 
     return prof, varp, dlnpdrho, vardlnpdrho, af
