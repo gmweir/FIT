@@ -226,6 +226,8 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     UB = kwargs.pop('UB', None)
     p0 = kwargs.pop('af0', None)
 
+    skipwithnans = kwargs.pop('PassBadFit', False)
+
     # default initial conditions come directly from the model functions
     _, _, info = func(XX, af=None, **fkwargs)
     info.success = False
@@ -306,21 +308,39 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     #           .... only meaningful if the fit is weighted.  (errors given)
     #   m.params   - outputs!
 
+    # Store the optimization information / messages and a boolean indicating success
+    info.mpfit = m
+    info.success = True
+
     if (m.status <= 0):
+        info.success = False
         print('error message = ', m.errmsg)
+        raise ValueError('The NL fitter failed to converge: see fit_mpfit/modelfit in fitNL')
         return info
     # end error checking
 
-    # ====== Post-processing ====== #
+    # check covariance matrix
+    if m.covar is None:
+        info.success = False
+        errmsg = 'error in calculation (no covariance returned) => %s'%(m.errmsg,)
+        if skipwithnans:
+            print(errmsg)
+            m.params = _np.nan*_np.ones_like(p0)
+            m.perror = _np.nan*_np.ones_like(p0)
+            m.covar = _np.nan*_np.ones( (numfit,numfit))
+            m.fnorm = _np.nan
+            pass
+        else:
+            raise ValueError(errmsg)
+        # end if
+    # end if
+    info.errmsg = m.errmsg
 
+    # ====== Post-processing ====== #
     # Final function evaluation
     prof, fjac, info = mymodel(m.params, x=XX, nargout=3)
     info.prof = prof
     info.fjac = fjac
-
-    # Store the optimization information / messages and a boolean indicating success
-    info.mpfit = m
-    info.success = True
 
     # Actual fitting parameters
     info.params = m.params
@@ -329,9 +349,6 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     info.dof = len(x) - numfit # deg of freedom
 
     # calculate correlation matrix
-    if m.covar is None:
-        print('error in calculation (no covariance returned) => ', m.errmsg)
-        pass
     info.covmat = m.covar       # Covariance matrix
     info.cormat = info.covmat * 0.0
     for ii in range(numfit):
@@ -1204,9 +1221,9 @@ def qparabfit(x, y, ey, XX, **kwargs):
 
 def test_qparab_fit(nohollow=False):
     solver_options = {}  # end if
-    solver_options.setdefault('xtol', 1.0e-14)
-    solver_options.setdefault('ftol', 1.0e-14)
-    solver_options.setdefault('gtol', 1.0e-14)
+    solver_options.setdefault('xtol', 1.0e-16)
+    solver_options.setdefault('ftol', 1.0e-16)
+    solver_options.setdefault('gtol', 1.0e-16)
     solver_options.setdefault('damp', 0.)
     solver_options.setdefault('maxiter', 2000)
     solver_options.setdefault('factor', 1)  # 100
