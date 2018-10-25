@@ -337,7 +337,6 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     info.errmsg = m.errmsg
 
     # ====== Post-processing ====== #
-
     # Final function evaluation
     prof, fjac, info = mymodel(m.params, x=XX, nargout=3)
     info.prof = prof
