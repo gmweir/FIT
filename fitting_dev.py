@@ -1225,6 +1225,7 @@ def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
 #    fitfunc = kwargs.get('ffunc', _ms.twopower)
 #    fitderivfunc = kwargs.get('dfunc', _ms.deriv_twopower)
 #    returngvec = kwargs.get('modelfunc', _ms.model_twopower)
+#    modelfunc = kwargs.get('modelfunc', _ms.model_2power)
 
     # ==== #
 
@@ -1260,8 +1261,8 @@ def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
     options = dict()
     options.setdefault('nprint', 1) # 5e-4
     options.setdefault('epsfcn', 1e-3) # 5e-4
-    options.setdefault('factor',100)
-    options.setdefault('maxiter',200)
+    options.setdefault('factor',50) # 100
+    options.setdefault('maxiter',500)
     NLfit = fitNL(rdat, pdat, vdat, af0, func, LB=LB, UB=UB, **options)
     NLfit.run()
 

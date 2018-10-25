@@ -163,6 +163,10 @@ def model_gaussian(XX, af=None):
     info.Ubounds = _np.array([_np.inf, _np.inf, _np.inf], dtype=_np.float64)
     info.af = af
 
+#    def MinMaxUnScaler(af, ymin, ymax):
+#        af[0] = (ymax-ymin)*af[0]+ymin
+#        return af
+
     if XX is None:
         return info
 
@@ -383,10 +387,14 @@ def model_twopower(XX, af=None):
     info.Lbounds = _np.array([0.0, -20.0, -20.0], dtype=_np.float64)
     info.Ubounds = _np.array([20, 20.0, 20.0], dtype=_np.float64)
     info.af = af
+
+#    def MinMaxUnScaler(af, ymin, ymax):
+#        return af
+
     if XX is None:
         return info
 
-    prof = twopower(XX, af)          # af*(1.0 - XX**2.0)
+    prof = twopower(XX, af)          # a2+(a1-a2)*(1.0 - XX**a3)**a4
     gvec = partial_twopower(XX, af)  # _np.atleast_2d(prof / af)
 
     info.prof = prof
@@ -467,19 +475,23 @@ def model_qparab(XX, af=None, nohollow=False, prune=False, rescale=False, info=N
         print("checkit! No finite values in fit coefficients! (from model_spec: model_qparab)")
 #    print(_np.shape(af))
 
-    prof = qparab(XX, af, nohollow)
-    prof = interp_irregularities(prof, corezero=False)
-    info.prof = prof
+    try:
+        prof = qparab(XX, af, nohollow)
+        prof = interp_irregularities(prof, corezero=False)
+        info.prof = prof
 
-    gvec = partial_qparab(XX*rescale, af, nohollow)
-    gvec = interp_irregularities(gvec, corezero=False)
-    info.gvec = gvec
+        gvec = partial_qparab(XX*rescale, af, nohollow)
+        gvec = interp_irregularities(gvec, corezero=False)  # invalid slice
+        info.gvec = gvec
 
-    info.dprofdx = deriv_qparab(XX, af, nohollow)
-    info.dprofdx = interp_irregularities(info.dprofdx, corezero=True)
+        info.dprofdx = deriv_qparab(XX, af, nohollow)
+        info.dprofdx = interp_irregularities(info.dprofdx, corezero=True)
 
-    info.dgdx = partial_deriv_qparab(XX*rescale, af, nohollow)
-    info.dgdx = interp_irregularities(info.dgdx, corezero=False)
+        info.dgdx = partial_deriv_qparab(XX*rescale, af, nohollow)
+        info.dgdx = interp_irregularities(info.dgdx, corezero=False)
+    except:
+        pass
+        raise
 
     if prune:
         af = af[:4]
@@ -1275,7 +1287,7 @@ def model_massberg(XX, af):
 # ========================================================================== #
 
 
-def model_2power(XX, af):
+def model_2power(XX, af=None):
     """
     A two power profile fit with four free parameters:
     prof ~ f(x) = (Core-Edge)*(1-x^pow1)^pow2 + Edge
@@ -1284,18 +1296,25 @@ def model_2power(XX, af):
         af[2] - pow1 - first power
         af[3] - pow2 - second power
     """
+
+    info = Struct()
+#    info.Lbounds = _np.array([0.0, 0.0, -_np.inf, -_np.inf], dtype=_np.float64)
+#    info.Ubounds = _np.array([_np.inf, _np.inf, _np.inf, _np.inf], dtype=_np.float64)
+    info.Lbounds = _np.array([0.0, 0.0, -20.0, -20.0], dtype=_np.float64)
+    info.Ubounds = _np.array([15.0, 1.0, 20.0, 20.0], dtype=_np.float64)
+
     if af is None:
         af = _np.array([1.0, 0.0, 2.0, 1.0], dtype=_np.float64)
 #        af *= 0.1*_np.random.normal(0.0, 1.0, len(af))
     # endif
 
+    info.af = _np.copy(af)
+    if XX is None:
+        return info
+    # endif
+
     nx = len(XX)
     XX = _np.abs(XX)
-
-    info = Struct()
-    info.Lbounds = _np.array([0.0, 0.0, -_np.inf, -_np.inf], dtype=_np.float64)
-    info.Ubounds = _np.array([_np.inf, _np.inf, _np.inf, _np.inf], dtype=_np.float64)
-    info.af = af
 
     # f(x) = (Core-Edge)*(1-x^pow1)^pow2 + Edge
     prof = (af[0]-af[1])*(1.0-XX**af[2])**af[3] + af[1]

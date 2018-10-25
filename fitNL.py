@@ -579,13 +579,13 @@ class fitNL_base(Struct):
         # ========================== #
 
         solver_options = {}
-        solver_options['xtol'] = kwargs.pop('xtol', 1.0e-14) # 1e-10
-        solver_options['ftol'] = kwargs.pop('ftol', 1.0e-14) # 1e-10
-        solver_options['gtol'] = kwargs.pop('gtol', 1.0e-14) # 1e-10
+        solver_options['xtol'] = kwargs.pop('xtol', 1.0e-12) # 1e-10
+        solver_options['ftol'] = kwargs.pop('ftol', 1.0e-12) # 1e-10
+        solver_options['gtol'] = kwargs.pop('gtol', 1.0e-12) # 1e-10
         solver_options['damp'] = kwargs.pop('damp', 0)
         solver_options['maxiter'] = kwargs.pop('maxiter', 2000) # 200
-        solver_options['factor'] = kwargs.pop('factor', 100) # 100 without rescale, scales the chi2? or the parameters?
-        solver_options['nprint'] = kwargs.pop('nprint', 100)    # debug info
+        solver_options['factor'] = kwargs.pop('factor', 1) # 100 without rescale, scales the chi2? or the parameters?
+        solver_options['nprint'] = kwargs.pop('nprint', 10)    # debug info
         solver_options['iterfunct'] = kwargs.pop('iterfunct', 'default')
         solver_options['iterkw'] = kwargs.pop('iterkw', {})
         solver_options['nocovar'] = kwargs.pop('nocovar', 0)
@@ -633,8 +633,12 @@ class fitNL_base(Struct):
     # ========================== #
 
     def calc_chi2(self, af):
-        self.chi2 = (self.func(af, self.xdat) - self.ydat)
-        self.chi2 = self.chi2 / _np.sqrt(self.vary)
+#        try:
+        if 1:
+            self.chi2 = (self.func(af, self.xdat) - self.ydat)
+            self.chi2 = self.chi2 / _np.sqrt(self.vary)
+#        except:
+#            pass
         return self.chi2
 
     def bootstrapper(self, xvec=None, **kwargs):
@@ -794,6 +798,14 @@ class fitNL_base(Struct):
 # ======================================================================== #
 # ======================================================================== #
 
+def MinMaxScaler(ydat, ymin, ymax, forward=True):
+    if forward:
+        return (ydat-ymin)/(ymax-ymin)
+    else:
+        return (ymax-ymin)*ydat+ymin
+    # end if
+# end def
+
 class fitNL(fitNL_base):
 
 #    def __init__(self, xdat, ydat, vary=None, af0=[], func=None, options={}, **kwargs):
@@ -824,13 +836,13 @@ class fitNL(fitNL_base):
 
     def run(self):
         if not hasattr(self, 'solver_options'):  self.solver_options = {}  # end if
-        self.solver_options.setdefault('xtol', 1.0e-14)
-        self.solver_options.setdefault('ftol', 1.0e-14)
-        self.solver_options.setdefault('gtol', 1.0e-14)
+        self.solver_options.setdefault('xtol', 1.0e-12) # 1e-14
+        self.solver_options.setdefault('ftol', 1.0e-12) # 1e-14
+        self.solver_options.setdefault('gtol', 1.0e-12) # 1e-14
         self.solver_options.setdefault('damp', 0.)
         self.solver_options.setdefault('maxiter', 2000)
         self.solver_options.setdefault('factor', 100)  # 100
-        self.solver_options.setdefault('nprint', 100)
+        self.solver_options.setdefault('nprint', 10)
         self.solver_options.setdefault('iterfunct', 'default')
         self.solver_options.setdefault('iterkw', {})
         self.solver_options.setdefault('nocovar', 0)
@@ -880,6 +892,11 @@ class fitNL(fitNL_base):
             # Non-negative status value means MPFIT should continue, negative means
             # stop the calculation.
             status = 0
+            if _np.isnan(p).all():
+                status = -3
+            elif _np.isnan(p).any():
+                status = -2
+            # end if
             self.gvec = None
             return {'status':status, 'residual':chi2}
 
