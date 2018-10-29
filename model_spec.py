@@ -130,7 +130,7 @@ def gaussian(xx, AA, x0, ss):
     return AA*_np.exp(-(xx-x0)**2/(2.0*ss**2))
 
 def partial_gaussian(xx, AA, x0, ss):
-    gvec = _np.zeros( (3,), dtype=_np.float64)
+    gvec = _np.zeros( (3,len(xx)), dtype=_np.float64)
     gvec[0,:] = _np.exp(-(xx-x0)**2/(2.0*ss**2))
     gvec[1,:] = AA*(xx-x0)*_np.exp((-0.5*(xx-x0)**2.0)/(ss**2.0))/(ss**2.0)
     gvec[2,:] = AA*((xx-x0)**2.0) *_np.exp((-0.5*(xx-x0)**2.0)/(ss**2.0))/(ss**3.0)
@@ -140,7 +140,7 @@ def deriv_gaussian(xx, AA, x0, ss):
     return -1.0*AA*(xx-x0)*_np.exp((-0.5*(xx-x0)**2.0)/(ss**2.0))/(ss**2.0)
 
 def partial_deriv_gaussian(xx, AA, x0, ss):
-    gvec = _np.zeros( (3,), dtype=_np.float64)
+    gvec = _np.zeros( (3,len(xx)), dtype=_np.float64)
 
     gvec[0,:] = -1.0*(xx-x0)*_np.exp(-0.5*(xx-x0)**2/(ss**2))/(ss**2.0)
     gvec[1,:] = AA*_np.exp(-0.5*(xx-x0)**2/(ss**2))*(ss*2.0-xx*2.0+2*xx*x0-x0**2.0)/(ss**4.0)
@@ -1773,7 +1773,7 @@ def get_test_Prad(xvar, exppow=14.0, dVdrho=None):
     dPdV = normalize_test_prof(xvar, dPdx, dVdrho)
     return dPdV
 
-def get_test_Pdep(xvar, rloc=0.1, rhalfwidth=0.05, dVdrho=None):
+def get_test_Pdep(xvar, rloc=0.1, rhalfwidth=0.05, dVdrho=None, A0=None):
     sh = _np.shape(xvar)
     if dVdrho is None:        dVdrho = _np.ones_like(xvar)    # endif
     # Normalized gaussian for the test power deposition shape : dPdroa
@@ -1786,6 +1786,9 @@ def get_test_Pdep(xvar, rloc=0.1, rhalfwidth=0.05, dVdrho=None):
     # Test ECRH power density in MW/m3
     dPdV = normalize_test_prof(xvar, dPdx, dVdrho)
     dPdV = dPdV.reshape(sh)
+    if A0 is not None:
+        dPdV *= A0
+    # end if
     return dPdV
 # end def
 

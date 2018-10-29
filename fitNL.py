@@ -768,10 +768,11 @@ class fitNL_base(Struct):
 #            self.vfit = _np.nanvar( mfit, axis=0)
             # weight by chi2 or by individual variances?
             if gvecfunc is not None:
-                # self.vfit, self.mfit = _ut.nanwvar(mfit.copy(), statvary=vfit, systvary=None, weights=1.0/_np.sqrt(vfit), dim=0, nargout=2)
+                 self.vfit, self.mfit = _ut.nanwvar(mfit.copy(), statvary=vfit, systvary=None, weights=aw, dim=0, nargout=2)
+                 self.vdprofdx, self.dprofdx = _ut.nanwvar(dprofdx.copy(), statvary=vdprofdx, systvary=None, weights=aw, dim=0, nargout=2)
 #                self.vfit, self.mfit = _ut.nanwvar(mfit.copy(), statvary=None, systvary=None, weights=1.0/_np.sqrt(vfit), dim=0, nargout=2)
-                self.vfit, self.mfit = _ut.nanwvar(mfit.copy(), statvary=None, systvary=None, weights=1.0/vfit, dim=0, nargout=2)
-                self.vdprofdx, self.dprofdx = _ut.nanwvar(dprofdx.copy(), statvary=None, systvary=None, weights=1.0/vdprofdx, dim=0, nargout=2)
+#                self.vfit, self.mfit = _ut.nanwvar(mfit.copy(), statvary=None, systvary=None, weights=1.0/vfit, dim=0, nargout=2)
+#                self.vdprofdx, self.dprofdx = _ut.nanwvar(dprofdx.copy(), statvary=None, systvary=None, weights=1.0/vdprofdx, dim=0, nargout=2)
             else:
                 aw = aw.reshape((niterate,1))*_np.ones((1,nx),dtype=_np.float64)              # reshape the weights
     #            self.vfit, self.mfit = _ut.nanwvar(mfit.copy(), statvary=vfit, systvary=None, weights=aw, dim=0)
@@ -780,10 +781,12 @@ class fitNL_base(Struct):
             # end if
         else:
             # straight mean and covariance
-            self.af, self.perror = _ut.combine_var(af, statvar=None, systvar=None, axis=0)
+            self.af, self.perror = _ut.combine_var(af, statvar=vaf, systvar=None, axis=0)
             self.perror = _np.sqrt(self.perror)
-            self.mfit, self.vfit = _ut.combine_var(mfit, statvar=None, systvar=None, axis=0)
-            self.dprofdx, self.vdprofdx = _ut.combine_var(dprofdx, statvar=None, systvar=None, axis=0)
+            self.mfit, self.vfit = _ut.combine_var(mfit, statvar=vfit, systvar=None, axis=0)
+            self.dprofdx, self.vdprofdx = _ut.combine_var(dprofdx, statvar=vdprofdx, systvar=None, axis=0)
+#            self.mfit, self.vfit = _ut.combine_var(mfit, statvar=None, systvar=None, axis=0)
+#            self.dprofdx, self.vdprofdx = _ut.combine_var(dprofdx, statvar=None, systvar=None, axis=0)
 
             self.covmat = _np.cov(af, rowvar=False)
         # end if
