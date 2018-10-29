@@ -653,7 +653,7 @@ class fitNL_base(Struct):
 #        try:
         if 1:
             self.chi2 = (self.func(af, self.xdat) - self.ydat)
-            self.chi2 = self.chi2 / _np.sqrt(self.vary)
+            self.chi2 /= _np.sqrt(self.vary)
 #        except:
 #            pass
         return self.chi2
@@ -661,6 +661,10 @@ class fitNL_base(Struct):
     def bootstrapper(self, xvec=None, **kwargs):
 #        self.solver_options['nprint'] = 100    # debug info
         self.solver_options['quiet'] = 1 # debug info
+
+
+        if not hasattr(self, 'nmonti'):  self.nmonti=300  # end if
+        nmonti = kwargs.setdefault('nmonti', self.nmonti)
 
         if not hasattr(self, 'weightit'):  self.weightit = False  # end if
         weightit = kwargs.setdefault('weightit', self.weightit)
@@ -674,8 +678,8 @@ class fitNL_base(Struct):
         # =============== #
 
         niterate = 1
-        if self.nmonti > 1:
-            niterate = self.nmonti
+        if nmonti > 1:
+            niterate = _np.copy(nmonti)
             # niterate *= len(self.xdat)
         # endif
 
@@ -724,7 +728,7 @@ class fitNL_base(Struct):
             vaf[mm, :] = self.perror.copy()**2.0
 
             # chi2[mm] = _np.sum(self.chi2)/(numfit-nch-1)
-            mfit[mm, :] = self.func(af[mm,:].copy(), xvec.copy())
+            mfit[mm, :] = (self.func(af[mm,:].copy(), xvec.copy())).copy()
             chi2[mm] = _np.sum(self.chi2_reduced.copy())
             # mfit[mm, :] = self.yf.copy()
 
@@ -732,18 +736,18 @@ class fitNL_base(Struct):
                 gvec, tmp, dgdx = gvecfunc(af[mm,:].copy(), xvec.copy())
                 dprofdx[mm,:] = tmp.copy()
                 if gvec is not None:
-                    vfit[mm,:] = self.properror(xvec, gvec)
+                    vfit[mm,:] = (self.properror(xvec, gvec)).copy()
                 if dgdx is not None:
-                    vdprofdx[mm,:] = self.properror(xvec, dgdx)
+                    vdprofdx[mm,:] = (self.properror(xvec, dgdx)).copy()
                 # end if
             # end if
 #            if dgdx is not None:
 #                vdfdx[mm,:] = self.properror(self.xx, dgdx)
             # end if
         # endfor
-        self.xdat = xsav
-        self.ydat = ysav
-        self.vary = vsav
+        self.xdat = xsav.copy()
+        self.ydat = ysav.copy()
+        self.vary = vsav.copy()
 
 #        _plt.figure()
 #        _plt.plot(xvec, mfit.T, 'k-')
@@ -781,12 +785,12 @@ class fitNL_base(Struct):
             # end if
         else:
             # straight mean and covariance
-            self.af, self.perror = _ut.combine_var(af, statvar=vaf, systvar=None, axis=0)
+            self.af, self.perror = _ut.combine_var(af.copy(), statvar=vaf.copy(), systvar=None, axis=0)
+#            self.af, self.perror = _ut.combine_var(af, statvar=None, systvar=None, axis=0)
             self.perror = _np.sqrt(self.perror)
-            self.mfit, self.vfit = _ut.combine_var(mfit, statvar=vfit, systvar=None, axis=0)
-            self.dprofdx, self.vdprofdx = _ut.combine_var(dprofdx, statvar=vdprofdx, systvar=None, axis=0)
+            self.mfit, self.vfit = _ut.combine_var(mfit.copy(), statvar=vfit.copy(), systvar=None, axis=0)
 #            self.mfit, self.vfit = _ut.combine_var(mfit, statvar=None, systvar=None, axis=0)
-#            self.dprofdx, self.vdprofdx = _ut.combine_var(dprofdx, statvar=None, systvar=None, axis=0)
+            self.dprofdx, self.vdprofdx = _ut.combine_var(dprofdx, statvar=vdprofdx.copy(), systvar=None, axis=0)
 
             self.covmat = _np.cov(af, rowvar=False)
         # end if
@@ -1026,8 +1030,9 @@ class fitNL(fitNL_base):
         _plt.errorbar(self.xdat, self.ydat, yerr=yerr, fmt='ko')
         _plt.plot(xx, yf, 'b-')
         if hasattr(self, 'vfit'):
-            _plt.plot(xx, yf+_np.sqrt(self.vfit), 'b--')
-            _plt.plot(xx, yf-_np.sqrt(self.vfit), 'b--')
+            _plt.fill_between(xx, yf-_np.sqrt(self.vfit), yf+_np.sqrt(self.vfit), interpolate=True, color='b', alpha=0.3)
+#            _plt.plot(xx, yf+_np.sqrt(self.vfit), 'b--')
+#            _plt.plot(xx, yf-_np.sqrt(self.vfit), 'b--')
         _plt.title('Input data and fitted model')
         _plt.show()
     # ===================================================================== #
@@ -1380,12 +1385,12 @@ def test_fitNL(test_qparab=True):
     af0 = 0.1*_np.asarray(af, dtype=float)
 
     y = mymodel(af, x)
-    y += 0.1*_np.sin(0.53 * 2*_np.pi*x/(_np.max(x)-_np.min(x)))
+    y += 0.05*_np.sin(0.53 * 2*_np.pi*x/(_np.max(x)-_np.min(x)))
     y += 0.3*_np.mean(y)*_np.random.normal(0.0, 1.0, len(y))
 #    vary = None
 #    vary = _np.zeros_like(y)
     vary = 0.05*_np.mean(y)
-    vary += ( 0.3*_np.mean(y)*_np.random.normal(0.0, 1.0, len(y)) )**2.0
+    vary += ( 0.2*_np.mean(y)*_np.random.normal(0.0, 1.0, len(y)) )**2.0
 
     if test_qparab:
         import pybaseutils as _pyb
@@ -1402,7 +1407,7 @@ def test_fitNL(test_qparab=True):
     ft = fitNL(xdat=x, ydat=y, vary=vary, af0=af0, func=mymodel, **options)
     ft.run()
     ft.xx = _np.linspace(x.min(), x.max(), num=100)
-    ft.properror(xvec=None, gvec=myjac(ft.af, ft.xx))   # use with analytic jacobian
+    ft.properror(xvec=ft.xx, gvec=myjac(ft.af, ft.xx))   # use with analytic jacobian
 #    ft.bootstrapper(ft.xx)   # use with no analytic jacobian
 #    a, b = ft.af
     ft.plot()
@@ -1417,12 +1422,13 @@ def test_fitNL(test_qparab=True):
 # ========================================================================== #
 
 if __name__=="__main__":
-    test_qparab_fit(nohollow=False)
-    test_qparab_fit(nohollow=True)
-#    ft = test_fitNL()
+#    test_qparab_fit(nohollow=False)
+#    test_qparab_fit(nohollow=True)
+#    ft = test_fitNL(True)
+#    ft = test_fitNL(False)
 
 #    test_fit(_ms.model_qparab, nohollow=False)
-#    test_fit(_ms.model_qparab, nohollow=True)
+    test_fit(_ms.model_qparab, nohollow=True)
 #    test_fit(_ms.model_ProdExp, npoly=2)
 #    test_fit(_ms.model_ProdExp, npoly=3)
 #    test_fit(_ms.model_ProdExp, npoly=4)

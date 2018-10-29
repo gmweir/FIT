@@ -378,14 +378,13 @@ def model_twopower(XX, af=None):
 
     """
 
+    info = Struct()
+    info.Lbounds = _np.array([0.0, -20.0, -20.0], dtype=_np.float64)
+    info.Ubounds = _np.array([20, 20.0, 20.0], dtype=_np.float64)
     if af is None:
         af = _np.array([1.0, 12.0, 3.0], dtype=_np.float64)
 #        af *= 0.1*_np.random.normal(0.0, 1.0, 1)
     # endif
-
-    info = Struct()
-    info.Lbounds = _np.array([0.0, -20.0, -20.0], dtype=_np.float64)
-    info.Ubounds = _np.array([20, 20.0, 20.0], dtype=_np.float64)
     info.af = af
 
 #    def MinMaxUnScaler(af, ymin, ymax):
@@ -1298,10 +1297,10 @@ def model_2power(XX, af=None):
     """
 
     info = Struct()
-#    info.Lbounds = _np.array([0.0, 0.0, -_np.inf, -_np.inf], dtype=_np.float64)
-#    info.Ubounds = _np.array([_np.inf, _np.inf, _np.inf, _np.inf], dtype=_np.float64)
-    info.Lbounds = _np.array([0.0, 0.0, -20.0, -20.0], dtype=_np.float64)
-    info.Ubounds = _np.array([15.0, 1.0, 20.0, 20.0], dtype=_np.float64)
+    info.Lbounds = _np.array([0.0, 0.0, -_np.inf, -_np.inf], dtype=_np.float64)
+    info.Ubounds = _np.array([_np.inf, _np.inf, _np.inf, _np.inf], dtype=_np.float64)
+#    info.Lbounds = _np.array([0.0, 0.0, -20.0, -20.0], dtype=_np.float64)
+#    info.Ubounds = _np.array([15.0, 1.0, 20.0, 20.0], dtype=_np.float64)
 
     if af is None:
         af = _np.array([1.0, 0.0, 2.0, 1.0], dtype=_np.float64)

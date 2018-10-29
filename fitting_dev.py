@@ -1212,7 +1212,7 @@ def spline_bs(xvar, yvar, vary, xf=None, func="spline", nmonti=300, deg=3, bbox=
 def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
     arescale = kwargs.get('arescale',1.0)
     agradrho = kwargs.get('agradrho', 1.0)
-    bootstrappit = kwargs.get('bootstrappit',True)
+    bootstrappit = kwargs.get('bootstrappit',False)
     af0 = kwargs.get('af0', None)
     LB = kwargs.get('LB', None)
     UB = kwargs.get('UB', None)
@@ -1225,11 +1225,14 @@ def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
 #    fitfunc = kwargs.get('ffunc', _ms.twopower)
 #    fitderivfunc = kwargs.get('dfunc', _ms.deriv_twopower)
 #    returngvec = kwargs.get('modelfunc', _ms.model_twopower)
+#    modelfunc = kwargs.get('modelfunc', _ms.model_twopower)
 #    modelfunc = kwargs.get('modelfunc', _ms.model_2power)
 
     # ==== #
 
     def func(af, XX):
+        if (_np.isfinite(af)==0).any():
+            print(1)
         prof, _, _ = modelfunc(_np.abs(XX), af)
         return prof
 #        return fitfunc(XX, af)
@@ -1259,30 +1262,40 @@ def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
     rdat /= arescale
 
     options = dict()
-    options.setdefault('nprint', 1) # 5e-4
+    options.setdefault('quiet', 0)
+    options.setdefault('nprint', 10)
     options.setdefault('epsfcn', 1e-3) # 5e-4
-    options.setdefault('factor',50) # 100
+    options.setdefault('factor',100) # 100
     options.setdefault('maxiter',500)
-    NLfit = fitNL(rdat, pdat, vdat, af0, func, LB=LB, UB=UB, **options)
+    NLfit = fitNL(xdat=rdat.copy(), ydat=pdat.copy(), vary=vdat.copy(),
+                  af0=af0, func=func, LB=LB.copy(), UB=UB.copy(), **options)
     NLfit.run()
 
     if bootstrappit:
         NLfit.gvecfunc = fgvec
-        NLfit.bootstrapper(xvec=_np.abs(rvec), weightit=False)
-        prof = NLfit.mfit
-        varp = NLfit.vfit
+        NLfit.bootstrapper(xvec=_np.abs(rvec), weightit=False, nmonti=300)
+        prof = NLfit.mfit.copy()
+        varp = NLfit.vfit.copy()
         varp = varp.copy()
 
         dprofdx = NLfit.dprofdx.copy()
         vardlnpdrho = NLfit.vdprofdx.copy()
     else:
         prof, gvec, info = modelfunc(_np.abs(rvec), NLfit.af)
-        varp = NLfit.properror(_np.abs(rvec), gvec)
+        varp = (NLfit.properror(_np.abs(rvec), gvec)).copy()
         varp = varp.copy()
 
         dprofdx = info.dprofdx.copy()
-        vardlnpdrho = NLfit.properror(_np.abs(rvec), info.dgdx)
+        vardlnpdrho = (NLfit.properror(_np.abs(rvec), info.dgdx)).copy()
     # end if
+    prof = _ut.interp_irregularities(prof, corezero=False)
+    varp = _ut.interp_irregularities(varp, corezero=False)
+    dprofdx = _ut.interp_irregularities(dprofdx, corezero=True)
+    vardlnpdrho = _ut.interp_irregularities(vardlnpdrho, corezero=False)
+
+    dpdx, vardpdx = findiff1d(rdat.copy(), pdat.copy(), varu=vdat.copy(), order=1)
+    vardlnpdx = (dpdx/pdat)**2.0 * ( vardpdx/(dpdx**2.0) + vdat/(pdat**2.0)  )
+
     af = NLfit.af.copy()
     dlnpdrho = dprofdx / prof
     vardlnpdrho = (dlnpdrho)**2.0 * ( vardlnpdrho/(dprofdx**2.0) + varp/(prof**2.0)  )
@@ -1295,14 +1308,14 @@ def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
     dlnpdrho /= arescale       # This is a suspicious step
     vardlnpdrho /= arescale**2.0
 
-    if _np.isnan(prof[0]):
-        prof[0] = af[0].copy()
-        varp[0] = varp[1].copy()
-        dlnpdrho[0] = 0.0
-        vardlnpdrho[0] = vardlnpdrho[1].copy()
-    # end if
+#    if _np.isnan(prof[0]):
+#        prof[0] = af[0].copy()
+#        varp[0] = varp[1].copy()
+#        dlnpdrho[0] = 0.0
+#        vardlnpdrho[0] = vardlnpdrho[1].copy()
+#    # end if
 
-    if 0:
+    if 1:
         _plt.figure()
         ax1 = _plt.subplot(2,1,1)
         ax3 = _plt.subplot(2,1,2, sharex=ax1)
@@ -1315,7 +1328,6 @@ def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
         ax3.set_xlabel(r'$r/a$')
 
         ax1.errorbar(rdat, pdat, yerr=_np.sqrt(vdat), fmt='ko', color='k' )
-
         ax1.plot(rvec, prof, 'k-', lw=2)
 #        ax1.plot(rvec, prof+_np.sqrt(varp), 'k--', lw=1)
 #        ax1.plot(rvec, prof-_np.sqrt(varp), 'k--', lw=1)
@@ -1323,11 +1335,13 @@ def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
                                prof+_np.sqrt(varp),
                                interpolate=True, color='k', alpha=0.3)
 
-        ax3.plot(rvec, agradrho*dlnpdrho, 'k-'),
+
+        ax3.errorbar(rdat, -1.0*agradrho*dpdx/pdat, yerr=agradrho*_np.sqrt(vardlnpdx), fmt='ko', color='k' )
+        ax3.plot(rvec,-1.0*agradrho*dlnpdrho, 'k-'),
 #                 rvec, agradrho*(dlnpdrho+_np.sqrt(vardlnpdrho)), 'k--',
 #                 rvec, agradrho*(dlnpdrho-_np.sqrt(vardlnpdrho)), 'k--')
-        ax1.fill_between(rvec, agradrho*(dlnpdrho-_np.sqrt(vardlnpdrho)),
-                               agradrho*(dlnpdrho+_np.sqrt(vardlnpdrho)),
+        ax3.fill_between(rvec, -1.0*agradrho*(dlnpdrho-_np.sqrt(vardlnpdrho)),
+                               -1.0*agradrho*(dlnpdrho+_np.sqrt(vardlnpdrho)),
                                interpolate=True, color='k', alpha=0.3)
 
     # end if
@@ -1343,7 +1357,7 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
     agradrho = kwargs.get('agradrho',1.0)
     returnaf = kwargs.get('returnaf',False)
     arescale = kwargs.get('arescale', 1.0)
-    bootstrappit = kwargs.get('bootstrappit',False)
+    bootstrappit = kwargs.get('bootstrappit',True)
     plotlims = kwargs.get('plotlims', None)
     fitin = kwargs.get('fitin', None)
     af0 = kwargs.get('af0', None)
@@ -1371,12 +1385,22 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
     varn =  _np.copy(_np.sqrt(varNL*varNH))
 
     if fitin is None:
-        isort = _np.argsort(roa)
+        ri = _ut.cylsym_odd(roa.copy())
+        nei = _ut.cylsym_even(ne.copy())
+        varni = _ut.cylsym_even(varn.copy())
 
+#        isort = _np.argsort(roa)
+        isort = _np.argsort(ri)
         nef, varnef, dlnnedrho, vardlnnedrho, af = fit_profile(
-            roa[isort], 1e-20*ne[isort], 1e-40*varn[isort], rvec, arescale=arescale,
-            bootstrappit=bootstrappit, af0=af0)
+            ri[isort], 1e-20*nei[isort], 1e-40*varni[isort], rvec,
+            arescale=arescale, bootstrappit=bootstrappit, af0=af0)
+#            roa[isort], 1e-20*ne[isort], 1e-40*varn[isort], rvec, arescale=arescale,
+#            bootstrappit=bootstrappit, af0=af0)
 
+#        nef = _ut.interp_irregularities(nef, corezero=False)
+#        varnef = _ut.interp_irregularities(varnef, corezero=False)
+#        dlnnedrho = _ut.interp_irregularities(dlnnedrho, corezero=True)
+#        vardlnnedrho = _ut.interp_irregularities(vardlnnedrho, corezero=False)
         if rescale_by_linavg:
             rescale_by_linavg *= 1e-20
             iuse = ~(_np.isinf(nef) + _np.isnan(nef))
@@ -1402,6 +1426,9 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
     # Convert back to absolute units (particles per m-3 not 1e20 m-3)
     nef *= 1e20
     varnef *= 1e40
+
+    dpdx, vardpdx = findiff1d(roa.copy(), ne.copy(), varu=varn.copy(), order=1)
+    vardlnpdx = (dpdx/ne)**2.0 * ( vardpdx/(dpdx**2.0) + varn/(ne**2.0)  )
 
     varlogne = varnef / nef**2.0
     logne = _np.log(nef)
@@ -1445,6 +1472,7 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
         ax1.set_xlim((plotlims[0],plotlims[1]))
         ax1.set_ylim((0,1.1*ylims[1]))
 
+        aplot = _ut.interp(rvec,agradrho,None,roa)
         if loggradient:
             idx = _np.where(_np.abs(rvec) < 0.05)
             plotdlnnedrho = dlnnedrho.copy()
@@ -1453,24 +1481,25 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
             plotvardlnnedrho[idx] = _np.nan
             plotdlnnedrho *= -1*agradrho
             plotvardlnnedrho *= (agradrho)**2.0
+            ax3.errorbar(roa, -1.0*aplot*dpdx/ne, yerr=aplot*_np.sqrt(vardlnpdx), fmt='bo', color='b' )
             ax3.plot(rvec, plotdlnnedrho, 'b-', lw=2)
             ax3.fill_between(rvec, plotdlnnedrho-_np.sqrt(plotvardlnnedrho),
                                    plotdlnnedrho+_np.sqrt(plotvardlnnedrho),
                                    interpolate=True, color='b', alpha=0.3)
             ax3.set_xlim((plotlims[0],plotlims[1]))
-            ax3.set_ylim((0,15))
+#            ax3.set_ylim((0,15))
         else:
             vardlnnedrho = (dlnnedrho/logne)**2.0 * (vardlnnedrho/dlnnedrho**2.0+varlogne/logne**2.0)
             dlnnedrho = dlnnedrho/logne
             plotdlnnedrho = -1*(agradrho) * dlnnedrho.copy()
             plotvardlnnedrho = ((agradrho)**2.0) * vardlnnedrho.copy()
-
+            ax3.errorbar(roa, -1.0*aplot*dpdx/ne, yerr=aplot*_np.sqrt(vardlnpdx), fmt='bo', color='b' )
             ax3.plot(rvec, plotdlnnedrho, 'b-', lw=2)
             ax3.fill_between(rvec, plotdlnnedrho-_np.sqrt(plotvardlnnedrho),
                                    plotdlnnedrho+_np.sqrt(plotvardlnnedrho),
                                    interpolate=True, color='b', alpha=0.3)
             ax3.set_xlim((plotlims[0],plotlims[1]))
-            ax3.set_ylim((0,30))
+#            ax3.set_ylim((0,30))
         # end if
         _plt.tight_layout()
     # end if plotit
@@ -1491,7 +1520,7 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
     agradrho = kwargs.get('agradrho', 1.00)
     returnaf = kwargs.get('returnaf',False)
     arescale = kwargs.get('arescale', 1.0)
-    bootstrappit = kwargs.get('bootstrappit',False)
+    bootstrappit = kwargs.get('bootstrappit',True)
     plotlims = kwargs.get('plotlims', None)
     fitin = kwargs.get('fitin', None)
     af0 = kwargs.get('af0', None)
@@ -1510,10 +1539,22 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
     varT =  _np.copy(_np.sqrt(varTL*varTH))
 
     if fitin is None:
-        isort = _np.argsort(roa)
+        ri = _ut.cylsym_odd(roa)
+        Tei = _ut.cylsym_even(Te)
+        varTi = _ut.cylsym_even(varT)
+
+#        isort = _np.argsort(roa)
+        isort = _np.argsort(ri)
         Tef, varTef, dlnTedrho, vardlnTedrho, af = fit_profile(
-            roa[isort], Te[isort], varT[isort], rvec,
+            ri[isort], Tei[isort], varTi[isort], rvec,
             arescale=arescale, bootstrappit=bootstrappit, af0=af0)
+#            roa[isort], Te[isort], varT[isort], rvec,
+#            arescale=arescale, bootstrappit=bootstrappit, af0=af0)
+
+#        Tef = _ut.interp_irregularities(Tef, corezero=False)
+#        varTef = _ut.interp_irregularities(varTef, corezero=False)
+#        dlnTedrho = _ut.interp_irregularities(dlnTedrho, corezero=True)
+#        vardlnTedrho = _ut.interp_irregularities(vardlnTedrho, corezero=False)
     else:
         Tef = fitin['prof']
         varTef = fitin['varprof']
@@ -1521,6 +1562,10 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
         vardlnTedrho = fitin['vardlnpdrho']
         af = fitin['af']
     # end if
+
+    dpdx, vardpdx = findiff1d(roa.copy(), Te.copy(), varu=varT.copy(), order=1)
+    vardlnpdx = (dpdx/Te)**2.0 * ( vardpdx/(dpdx**2.0) + varT/(Te**2.0)  )
+
     varlogTe = varTef / Tef**2.0
     logTe = _np.log(Tef)
 
@@ -1560,6 +1605,7 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
         maxyy = min((_np.max(1.05*(Te+_np.sqrt(varTH))),12))
         ax1.set_ylim((0,maxyy))
 
+        aplot = _ut.interp(rvec,agradrho,None,roa)
         if loggradient:
             idx = _np.where(_np.abs(rvec) < 0.05)
             plotdlnTedrho = dlnTedrho.copy()
@@ -1568,6 +1614,7 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
             plotvardlnTedrho[idx] = _np.nan
             plotdlnTedrho *= -1*agradrho
             plotvardlnTedrho *= agradrho**2.0
+            ax3.errorbar(roa, -1.0*aplot*dpdx/Te, yerr=aplot*_np.sqrt(vardlnpdx), fmt='ro', color='r')
             ax3.plot(rvec, plotdlnTedrho, 'r-', lw=2)
             ax3.fill_between(rvec, plotdlnTedrho-_np.sqrt(plotvardlnTedrho),
                                    plotdlnTedrho+_np.sqrt(plotvardlnTedrho),
@@ -1575,20 +1622,20 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
 
             ax3.set_xlim((plotlims[0],plotlims[1]))
             maxyy = _np.max(1.05*(plotdlnTedrho+_np.sqrt(plotvardlnTedrho)))
-            ax3.set_ylim((0,maxyy))
+#            ax3.set_ylim((0,maxyy))
         else:
             vardlnTedrho = (dlnTedrho/logTe)**2.0 * (vardlnTedrho/dlnTedrho**2.0+varlogTe/logTe**2.0)
             dlnTedrho = dlnTedrho/logTe
             plotdlnTedrho = -1*agradrho * dlnTedrho.copy()
             plotvardlnTedrho = (agradrho**2.0) * vardlnTedrho.copy()
-
+            ax3.errorbar(roa, -1.0*aplot*dpdx/Te, yerr=aplot*_np.sqrt(vardlnpdx), fmt='ro', color='r')
             ax3.plot(rvec, plotdlnTedrho, 'r-', lw=2)
             ax3.fill_between(rvec, plotdlnTedrho-_np.sqrt(plotvardlnTedrho),
                                    plotdlnTedrho+_np.sqrt(plotvardlnTedrho),
                                    interpolate=True, color='r', alpha=0.3)
             ax3.set_xlim((plotlims[0],plotlims[1]))
             maxyy = _np.max(1.05*(plotdlnTedrho+_np.sqrt(plotvardlnTedrho)))
-            ax3.set_ylim((0,maxyy))
+#            ax3.set_ylim((0,maxyy))
         # end if
         _plt.tight_layout()
     # end if plotit
@@ -2236,9 +2283,10 @@ if __name__=="__main__":
     QTBdat['varTL'] = (0.1*QTBdat['Te'])**2.0
     QTBdat['varTH'] = (0.1*QTBdat['Te'])**2.0
 
-    nout = fit_TSneprofile(QTBdat, _np.linspace(0, 1.05, num=51), plotit=True, amin=0.51, returnaf=False)
+    Tout = fit_TSteprofile(QTBdat, rvec=_np.linspace(0, 1.05, num=51), plotit=True, agradrho=1.20, returnaf=False)
 
-    Tout = fit_TSteprofile(QTBdat, _np.linspace(0, 1.05, num=51), plotit=True, amin=0.51, returnaf=False)
+    nout = fit_TSneprofile(QTBdat, rvec=_np.linspace(0, 1.05, num=51), plotit=True, agradrho=1.20, returnaf=False)
+
 #    test_linreg()
 #    test_derivatives()
 
