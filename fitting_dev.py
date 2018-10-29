@@ -1440,9 +1440,13 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
     # ================== #
 
     if plotit:
+        if len(_np.atleast_1d(agradrho)) ==1:
+            agr = agradrho*_np.ones_like(roa)
+        else:
+            agr = _ut.interp(rvec,agradrho,None,roa)
         dndx, vdndx = findiff1d(roa.copy(), ne.copy(), varn.copy())
-        vdndx = agradrho**2.0 * (dndx / ne)**2.0 * ( vdndx/(dndx**2.0) + varn/(ne**2.0)  )
-        dndx = -1.0*agradrho*dndx / ne
+        vdndx = agr**2.0 * (dndx / ne)**2.0 * ( vdndx/(dndx**2.0) + varn/(ne**2.0)  )
+        dndx = -1.0*agr*dndx / ne
 
         _plt.figure()
         ax1 = _plt.subplot(2,1,1)
@@ -1563,9 +1567,13 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
     # ================== #
 
     if plotit:
+        if len(_np.atleast_1d(agradrho)) ==1:
+            agr = agradrho*_np.ones_like(roa)
+        else:
+            agr = _ut.interp(rvec,agradrho,None,roa)
         dTdx, vdTdx = findiff1d(roa.copy(), Te.copy(), varT.copy())
-        vdTdx = agradrho**2.0 * (dTdx / Te)**2.0 * ( vdTdx/(dTdx**2.0) + varT/(Te**2.0)  )
-        dTdx = -1.0*agradrho*dTdx / Te
+        vdTdx = agr**2.0 * (dTdx / Te)**2.0 * ( vdTdx/(dTdx**2.0) + varT/(Te**2.0)  )
+        dTdx = -1.0*agr*dTdx / Te
 
         _plt.figure()
         ax1 = _plt.subplot(2,1,1)
