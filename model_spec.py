@@ -36,6 +36,76 @@ def randomize_initial_conditions(LB, UB):
     # end for
     return af
 
+def rescale_xlims(XX, forward=True, ascl=None):
+    if ascl is None:
+        ascl = max(_np.max(XX), 1.0)
+    # end if
+    if forward:
+        return XX/ascl
+    else:
+        return XX*ascl
+
+def rescale_problem(pdat=0, vdat=0, info=None, nargout=1):
+    """
+    When fitting this problem it is convenient to scale it to order 1:
+        slope = _np.nanmax(pdat)-_np.nanmin(pdat)
+        offset = _np.nanmin(pdat)
+
+        pdat = (pdat-offset)/slope
+        vdat = vdat/slope**2.0
+
+    After fitting, then the algebra necessary to unscale the problem to original
+    units is:
+        prof = slope*prof+offset
+        varp = varp*slope**2.0
+
+        dprofdx = (slope*dprofdx)
+        vardprofdx = slope**2.0 * vardprofdx
+
+    Note that when scaling the problem, it is best to propagate errors from
+    covariance / gvec / dgdx before rescaling
+    """
+    if info is None:
+        slope = _np.nanmax(pdat)-_np.nanmin(pdat)
+        offset = _np.nanmin(pdat)
+
+        pdat = (pdat.copy()-offset)/slope
+        vdat = vdat.copy()/slope**2.0
+
+        return pdat, vdat, slope, offset
+    elif info is not None:
+        slope = info.slope
+        offset = info.offset
+
+        if hasattr(info,'pdat'):
+            info.pdat = info.pdat*slope+offset
+            info.vdat = info.vdat * (slope**2.0)
+        # end if
+        if hasattr(info,'dprofdx'):
+            info.dprofdx = slope*info.dprofdx
+            info.vardprofdx = (slope**2.0)*info.vardprofdx
+        # end if
+
+        if hasattr(info,'prof'):
+            info.prof = slope*info.prof+offset
+            info.varp = (slope**2.0)*info.varp
+        # end if
+
+        info.af = info.unscaleaf(info.af, info.slope, info.offset)
+        if nargout == 1:
+            return info
+        else:
+            return info.prof, info.varp, info.dprofdx, info.vardprofdx, info.af
+    else:
+#        print('for a backward unscaling: you must provide the info Struct from the fit!')
+        raise ValueError('for a backward unscaling: you must provide the info Struct from the fit!')
+    # end if
+# end def rescale problem
+
+# ========================================================================== #
+# ========================================================================== #
+
+
 def line(XX, a):
     y = a[0]*XX+a[1]
     return y
@@ -45,6 +115,58 @@ def line_gvec(XX, a):
     gvec[0,:] = XX.copy() # aa[0]
     gvec[1,:] = 1.0       # aa[1]
     return gvec
+
+def deriv_line(XX, a):
+    dydx = a[0]*_np.ones_like(XX)
+    return dydx
+
+def partial_deriv_line(XX, a):
+    dgdx = _np.zeros( (2,_np.size(XX)), dtype=_np.float64)
+    dgdx[0,:] = _np.ones_like(XX)  # aa[0]
+    dgdx[1,:] = _np.zeros_like(XX) # aa[1]
+    return dgdx
+
+def model_line(XX, af=None):
+    """
+     y = a * x + b
+
+     if the data is scaled, then unscaling it goes like this:
+         (y-miny)/(maxy-miny) = (y-offset)/slope
+         (y-offset)/slope = a' x + b'
+
+         y-offset = slope* a' * x + slope * b'
+         y = slope* a' * x + slope * b' + offset
+         a = slope*a'
+         b = slope*b' + offset
+    """
+    if af is None:
+        af = _np.asarray([2.0,1.0], dtype=_np.float64)
+    # endif
+
+    info = Struct()
+    info.Lbounds = _np.array([-_np.inf, -_np.inf], dtype=_np.float64)
+    info.Ubounds = _np.array([_np.inf, _np.inf], dtype=_np.float64)
+    info.af = af
+
+    def unscaleaf(ain, slope, offset=0.0):
+        aout = _np.copy(ain)
+        aout[0] = slope*aout[0]
+        aout[1] = slope*aout[1] + offset
+        return aout
+    info.unscaleaf = unscaleaf
+    if XX is None:
+        return info
+
+    prof = line(XX, af)
+    gvec = line_gvec(XX, af)
+
+    info.prof = prof
+    info.gvec = gvec
+    info.dprofdx = deriv_line(XX, af)
+    info.dgdx = partial_deriv_line(XX, af)
+    return prof, gvec, info
+
+# ========================================================================== #
 
 def polyeval(a, x):
     """
@@ -152,6 +274,15 @@ def model_gaussian(XX, af=None):
     A gaussian with three free parameters:
         xx - x - independent variable
         af - magnitude, shift, width
+
+        af[0]*_np.exp(-(xx-af[1])**2/(2.0*af[2]**2))
+
+    If fitting with scaling, then the algebra necessary to unscale the problem
+    to original units is:
+        af[0] = slope*af[0]
+        offset = 0.0  (in practice, this is necessary for this fit)
+
+    found in the info Structure
     """
 
     if af is None:
@@ -163,10 +294,11 @@ def model_gaussian(XX, af=None):
     info.Ubounds = _np.array([_np.inf, _np.inf, _np.inf], dtype=_np.float64)
     info.af = af
 
-#    def MinMaxUnScaler(af, ymin, ymax):
-#        af[0] = (ymax-ymin)*af[0]+ymin
-#        return af
-
+    def unscaleaf(ain, slope, offset=0.0):
+        aout = _np.copy(ain)
+        aout[0] = slope*aout[0]
+        return aout
+    info.unscaleaf = unscaleaf
     if XX is None:
         return info
 
@@ -184,7 +316,8 @@ def model_gaussian(XX, af=None):
 def edgepower(XX, af):
     """
     model a two-power fit
-        first-half of a quasi-parabolic (no hole depth width or decaying edge)
+        b+(1-b)*(1-XX^c)^d
+        first-half of a quasi-parabolic (hole depth, no width or decaying edge)
 
         y = edge/core + (1-edge/core)
         a = amplitude of core
@@ -287,10 +420,40 @@ def partial_deriv2_edgepower(XX, af):
 
 def model_edgepower(XX, af=None):
     """
-    A parabolic profile with one free parameters:
-        y = edge/core + (1-edge/core)
+... this is identical to model_2power and model_twopower, just different formulations
+
+    model a two-power fit
+        a*(b+(1-b)*(1-XX^c)^d)
+        first-half of a quasi-parabolic (hole depth, no width or decaying edge)
+
+        y/a = edge/core + (1-edge/core)
+        af[0] = a = amplitude of core
+        af[0] = b = ( edge/core - hole depth)
+        af[1] = c = power scaling factor 1
+        af[2] = d = power scaling factor 2
+
         xx - x - independent variable
-        af - a - central value of the plasma parameter
+
+    It is kind of dumb to try and scale / unscale this fit.  It is already scaled mostly.
+
+    If fitting with scaling, then the algebra necessary to unscale the problem
+    to original units is:
+        a = core
+        b = edge/core;   b = offset/(slope+offset)
+
+        y/a = edge/core + (1-edge/core)*(1-x^c)^d
+        y = edge + (core-edge)*(1-x^c)^d
+        prof = offset + slope*(1-x^c)^d
+
+        # Edge = offset
+        # Core - Edge = slope;  Core = slope+offset;
+        # b = edge/core = offset/(slope+offset)
+
+        af[0] = edge/core = offset/(slope+offset)
+
+        (y/a -b)/(1-b) = (1-x^c)^d
+
+    found in the info Structure
     """
 
     if af is None:
@@ -302,6 +465,11 @@ def model_edgepower(XX, af=None):
     info.Ubounds = _np.array([_np.inf, 20.0, 20.0], dtype=_np.float64)
     info.af = af
 
+    def unscaleaf(ain, slope, offset=0.0):
+        aout = _np.copy(ain)
+        aout[0] = slope*aout[0]
+        return aout
+    info.unscaleaf = unscaleaf
     if XX is None:
         return info
 
@@ -322,7 +490,7 @@ def twopower(XX, af):
     """
     model a two-power fit
         first-half of a quasi-parabolic (no hole depth width or decaying edge)
-
+                .... dumb: reproduced everywhere: y-offset = slope*(1-x^b)^c
         y = a*(1.0 - x**b)**c
 
         y = edge/core + (1-edge/core)
@@ -375,7 +543,20 @@ def partial_deriv_twopower(XX, af):
 
 def model_twopower(XX, af=None):
     """
+    model a two-power fit
+        first-half of a quasi-parabolic (no hole depth width or decaying edge)
+                .... dumb: reproduced everywhere: y-offset = slope*(1-x^b)^c
+        y = a*(1.0 - x**b)**c
 
+        y = edge/core + (1-edge/core)
+        a = amplitude of core
+        b = power scaling factor 1
+        c = power scaling factor 2
+
+        To unscale the problem
+            prof = slope*(1-x^b)^c+offset
+            slope = (a-b) ~ core-edge
+            offset = b = edge
     """
 
     info = Struct()
@@ -387,9 +568,11 @@ def model_twopower(XX, af=None):
     # endif
     info.af = af
 
-#    def MinMaxUnScaler(af, ymin, ymax):
-#        return af
-
+    def unscaleaf(ain, slope, offset=0.0):
+        aout = _np.copy(ain)
+        aout[0] = slope
+        return aout
+    info.unscaleaf = unscaleaf
     if XX is None:
         return info
 
@@ -430,6 +613,14 @@ def model_qparab(XX, af=None, nohollow=False, prune=False, rescale=False, info=N
     af[2],af[3]-  pp, qq - power scaling parameters
     af[4],af[5]-  hh, ww - hole depth and width
 
+    If fitting with scaling, then the algebra necessary to unscale the problem
+    to original units is:
+            af[0] is Y0, af[1] if Y1/Y0; Y1 = af[1]*af[0]
+
+        af[1] = (slope*af[1]*af[0]+offset)/(slope*af[0]+offset)
+        af[0] = slope*af[0]+offset
+    found in the info Structure
+
     """
     if info is None:
         info = Struct()  # Custom class that makes working with dictionaries easier
@@ -448,13 +639,18 @@ def model_qparab(XX, af=None, nohollow=False, prune=False, rescale=False, info=N
             af[5] = 1.0
         # endif
     if len(af) == 4:
-#    elif len(af) == 4:
         nohollow = True
         af = _np.hstack((af,0.0))
         af = _np.hstack((af,1.0))
     # endif
-
     info.af = _np.copy(af)
+
+    def unscaleaf(ain, slope, offset):
+        aout = _np.copy(ain)
+        aout[1] = (slope*ain[1]*ain[0]+offset)/(slope*ain[0]+offset)
+        aout[0] = slope*ain[0]+offset
+        return aout
+    info.unscaleaf = unscaleaf
     if XX is None:
         return info
     # endif
@@ -476,7 +672,7 @@ def model_qparab(XX, af=None, nohollow=False, prune=False, rescale=False, info=N
 
     try:
         prof = qparab(XX, af, nohollow)
-        prof = interp_irregularities(prof, corezero=False)
+#        prof = interp_irregularities(prof, corezero=False)
         info.prof = prof
 
         gvec = partial_qparab(XX*rescale, af, nohollow)
@@ -484,10 +680,10 @@ def model_qparab(XX, af=None, nohollow=False, prune=False, rescale=False, info=N
         info.gvec = gvec
 
         info.dprofdx = deriv_qparab(XX, af, nohollow)
-        info.dprofdx = interp_irregularities(info.dprofdx, corezero=True)
+#        info.dprofdx = interp_irregularities(info.dprofdx, corezero=True)
 
         info.dgdx = partial_deriv_qparab(XX*rescale, af, nohollow)
-        info.dgdx = interp_irregularities(info.dgdx, corezero=False)
+#        info.dgdx = interp_irregularities(info.dgdx, corezero=False)
     except:
         pass
         raise
@@ -507,14 +703,6 @@ def model_qparab(XX, af=None, nohollow=False, prune=False, rescale=False, info=N
 
 # ========= Subfunctions of the quasi-parabolic model ========== #
 
-def rescale_xlims(XX, forward=True, ascl=None):
-    if ascl is None:
-        ascl = max(_np.max(XX), 1.0)
-    # end if
-    if forward:
-        return XX/ascl
-    else:
-        return XX*ascl
 
 # Set the plasma density, temperature, and Zeff profiles (TRAVIS INPUTS)
 def qparab(XX, *aa, **kwargs):
@@ -1294,6 +1482,15 @@ def model_2power(XX, af=None):
         af[1] - Edge - edge value of the plasma parameter
         af[2] - pow1 - first power
         af[3] - pow2 - second power
+
+    If fitting with scaling, then the algebra necessary to unscale the problem
+    to original units is:
+        # Edge = offset
+        # Core - Edge = slope;  Core = slope+offset
+        af[1] = offset
+        af[0] = slope+offset
+
+    found in the info Structure
     """
 
     info = Struct()
@@ -1308,6 +1505,13 @@ def model_2power(XX, af=None):
     # endif
 
     info.af = _np.copy(af)
+
+    def unscaleaf(ain, slope, offset):
+        aout = _np.copy(ain)
+        aout[1] = _np.copy(offset)
+        aout[0] = slope+offset
+        return aout
+    info.unscaleaf = unscaleaf
     if XX is None:
         return info
     # endif

@@ -54,13 +54,13 @@ __metaclass__ = type
 
 
 #def bootstrapfit(xdat, ydat, ey, XX, func, fkwargs={}, nmonti=300, **kwargs):
-#    kwargs.setdefault('xtol', 1.0e-14)
-#    kwargs.setdefault('ftol', 1.0e-14)
-#    kwargs.setdefault('gtol', 1.0e-14)
+#    kwargs.setdefault('xtol', 1e-14)
+#    kwargs.setdefault('ftol', 1e-14)
+#    kwargs.setdefault('gtol', 1e-14)
 #    kwargs.setdefault('damp', 0.)
-#    kwargs.setdefault('maxiter', 2000)
+#    kwargs.setdefault('maxiter', 600)
 #    kwargs.setdefault('factor', 100)  # 100
-#    kwargs.setdefault('nprint', 100) # 100
+#    kwargs.setdefault('nprint', 10) # 100
 #    kwargs.setdefault('iterfunct', 'default')
 #    kwargs.setdefault('iterkw', {})
 #    kwargs.setdefault('nocovar', 0)
@@ -68,7 +68,7 @@ __metaclass__ = type
 #    kwargs.setdefault('autoderivative', 1)
 #    kwargs.setdefault('quiet', 1)
 #    kwargs.setdefault('diag', 0)
-#    kwargs.setdefault('epsfcn', 1e-3) #5e-4) #1e-3
+#    kwargs.setdefault('epsfcn', max((_np.nanmean(_np.diff(xdat)),1e-2))) #5e-4) #1e-3
 #    kwargs.setdefault('debug', 0)
 #
 #    weightit = kwargs.setdefault('weightit', False)
@@ -199,13 +199,13 @@ __metaclass__ = type
 
 # Fitting using the Levenberg-Marquardt algorithm.    #
 def modelfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
-    kwargs.setdefault('xtol', 1.0e-14)
-    kwargs.setdefault('ftol', 1.0e-14)
-    kwargs.setdefault('gtol', 1.0e-14)
+    kwargs.setdefault('xtol', 1e-14)
+    kwargs.setdefault('ftol', 1e-14)
+    kwargs.setdefault('gtol', 1e-14)
     kwargs.setdefault('damp', 0.)
-    kwargs.setdefault('maxiter', 2000)
+    kwargs.setdefault('maxiter', 600)
     kwargs.setdefault('factor', 100)  # 100
-    kwargs.setdefault('nprint', 1) # 100
+    kwargs.setdefault('nprint', 10) # 100
     kwargs.setdefault('iterfunct', 'default')
     kwargs.setdefault('iterkw', {})
     kwargs.setdefault('nocovar', 0)
@@ -213,7 +213,7 @@ def modelfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     kwargs.setdefault('autoderivative', 1)
     kwargs.setdefault('quiet', 0)
     kwargs.setdefault('diag', 0)
-    kwargs.setdefault('epsfcn', 1e-3) #5e-4) #1e-3
+    kwargs.setdefault('epsfcn', max((_np.nanmean(_np.diff(x.copy())),1e-2))) #5e-4) #1e-3
     kwargs.setdefault('debug', 0)
     return fit_mpfit(x, y, ey, XX, func, fkwargs, **kwargs)
 
@@ -596,12 +596,12 @@ class fitNL_base(Struct):
         # ========================== #
 
         solver_options = {}
-        solver_options['xtol'] = kwargs.pop('xtol', 1.0e-12) # 1e-10
-        solver_options['ftol'] = kwargs.pop('ftol', 1.0e-12) # 1e-10
-        solver_options['gtol'] = kwargs.pop('gtol', 1.0e-12) # 1e-10
+        solver_options['xtol'] = kwargs.pop('xtol', 1e-14) # 1e-10
+        solver_options['ftol'] = kwargs.pop('ftol', 1e-14) # 1e-10
+        solver_options['gtol'] = kwargs.pop('gtol', 1e-14) # 1e-10
         solver_options['damp'] = kwargs.pop('damp', 0)
-        solver_options['maxiter'] = kwargs.pop('maxiter', 2000) # 200
-        solver_options['factor'] = kwargs.pop('factor', 1) # 100 without rescale, scales the chi2? or the parameters?
+        solver_options['maxiter'] = kwargs.pop('maxiter', 600) # 200
+        solver_options['factor'] = kwargs.pop('factor', 100) # 100 without rescale, scales the chi2? or the parameters?
         solver_options['nprint'] = kwargs.pop('nprint', 10)    # debug info
         solver_options['iterfunct'] = kwargs.pop('iterfunct', 'default')
         solver_options['iterkw'] = kwargs.pop('iterkw', {})
@@ -610,7 +610,7 @@ class fitNL_base(Struct):
 #        solver_options['autoderivative'] = kwargs.pop('autoderivative', 1)  # if 0, then you must supply gvec
         solver_options['quiet'] = kwargs.pop('quiet', 0)
         solver_options['diag'] = kwargs.pop('diag', 0) # with rescale: positive scale factor for variables
-        solver_options['epsfcn'] = kwargs.pop('epsfcn', 1e-3)  # 0.001
+        solver_options['epsfcn'] = kwargs.pop('epsfcn', max((_np.nanmean(_np.diff(xdat.copy())),1e-2))) # 0.001
         solver_options['debug'] = kwargs.pop('debug', 0)
 #        if fjac is None:
         if 1:  # the other way doesn't work yet
@@ -671,8 +671,8 @@ class fitNL_base(Struct):
 
         if xvec is None and hasattr(self, 'xx'):  xvec = self.xx  # endif
 
-        if not hasattr(self, 'gvecfunc'):  self.gvecfunc = None  # end if
-        gvecfunc = kwargs.setdefault('gvecfunc', self.gvecfunc)
+#        if not hasattr(self, 'gvecfunc'):  self.gvecfunc = None  # end if
+#        gvecfunc = kwargs.setdefault('gvecfunc', self.gvecfunc)
 
         self.__dict__.update(kwargs)
         # =============== #
@@ -693,16 +693,16 @@ class fitNL_base(Struct):
         vaf = _np.zeros((niterate, numfit), dtype=_np.float64)
         chi2 = _np.zeros((niterate,), dtype=_np.float64)
 
-        nx = len(xvec)
+#        nx = len(xvec)
 #        self.mfit = self.func(self.af, xvec)
-        mfit = _np.zeros((niterate, nx), dtype=_np.float64)
-        dprofdx = _np.zeros_like(mfit)
+#        mfit = _np.zeros((niterate, nx), dtype=_np.float64)
+#        dprofdx = _np.zeros_like(mfit)
 
-        if gvecfunc is not None:
-            gvec, _, dgdx = gvecfunc(self.af, xvec)
-        # end if
-        vfit = _np.zeros((niterate, nx), dtype=_np.float64) # end if
-        vdprofdx = _np.zeros_like(vfit)
+#        if gvecfunc is not None:
+#            gvec, _, dgdx = gvecfunc(self.af, xvec)
+#        # end if
+#        vfit = _np.zeros((niterate, nx), dtype=_np.float64) # end if
+#        vdprofdx = _np.zeros_like(vfit)
 
         for mm in range(niterate):
             self.ydat = ysav.copy() + _np.sqrt(vsav)*_np.random.normal(0.0,1.0,_np.shape(ysav))
@@ -728,18 +728,19 @@ class fitNL_base(Struct):
             vaf[mm, :] = self.perror.copy()**2.0
 
             # chi2[mm] = _np.sum(self.chi2)/(numfit-nch-1)
-            mfit[mm, :] = (self.func(af[mm,:].copy(), xvec.copy())).copy()
+#            mfit[mm, :] = (self.func(af[mm,:].copy(), xvec.copy())).copy()
             chi2[mm] = _np.sum(self.chi2_reduced.copy())
             # mfit[mm, :] = self.yf.copy()
 
-            if gvecfunc is not None:
-                gvec, tmp, dgdx = gvecfunc(af[mm,:].copy(), xvec.copy())
-                dprofdx[mm,:] = tmp.copy()
-                if gvec is not None:
-                    vfit[mm,:] = (self.properror(xvec, gvec)).copy()
-                if dgdx is not None:
-                    vdprofdx[mm,:] = (self.properror(xvec, dgdx)).copy()
-                # end if
+            covmat[mm] = _np.copy(self.covmat)
+#            if gvecfunc is not None:
+#                gvec, tmp, dgdx = gvecfunc(af[mm,:].copy(), xvec.copy())
+#                dprofdx[mm,:] = tmp.copy()
+#                if gvec is not None:
+#                    vfit[mm,:] = (self.properror(xvec, gvec)).copy()
+#                if dgdx is not None:
+#                    vdprofdx[mm,:] = (self.properror(xvec, dgdx)).copy()
+#                # end if
             # end if
 #            if dgdx is not None:
 #                vdfdx[mm,:] = self.properror(self.xx, dgdx)
@@ -766,32 +767,35 @@ class fitNL_base(Struct):
 #            self.perror, self.af = _ut.nanwvar(af, statvary=None, systvary=None, weights=aw, dim=0)
             self.perror, self.af = _ut.nanwvar(af.copy(), statvary=vaf, systvary=None, weights=aw, dim=0, nargout=2)
             self.perror = _np.sqrt(self.perror)
+
+            # sum over covariance matrix elements ... combine variances statistically
             self.covmat = _np.cov( af, rowvar=False, fweights=None, aweights=aw)
 
 #            self.mfit = _np.nansum( mfit * 1.0/_np.sqrt(vfit) ) / _np.nansum( 1.0/_np.sqrt(vfit) )
 #            self.vfit = _np.nanvar( mfit, axis=0)
             # weight by chi2 or by individual variances?
-            if gvecfunc is not None:
-                 self.vfit, self.mfit = _ut.nanwvar(mfit.copy(), statvary=vfit, systvary=None, weights=aw, dim=0, nargout=2)
-                 self.vdprofdx, self.dprofdx = _ut.nanwvar(dprofdx.copy(), statvary=vdprofdx, systvary=None, weights=aw, dim=0, nargout=2)
-#                self.vfit, self.mfit = _ut.nanwvar(mfit.copy(), statvary=None, systvary=None, weights=1.0/_np.sqrt(vfit), dim=0, nargout=2)
-#                self.vfit, self.mfit = _ut.nanwvar(mfit.copy(), statvary=None, systvary=None, weights=1.0/vfit, dim=0, nargout=2)
-#                self.vdprofdx, self.dprofdx = _ut.nanwvar(dprofdx.copy(), statvary=None, systvary=None, weights=1.0/vdprofdx, dim=0, nargout=2)
-            else:
-                aw = aw.reshape((niterate,1))*_np.ones((1,nx),dtype=_np.float64)              # reshape the weights
-    #            self.vfit, self.mfit = _ut.nanwvar(mfit.copy(), statvary=vfit, systvary=None, weights=aw, dim=0)
-                self.vfit, self.mfit = _ut.nanwvar(mfit.copy(), statvary=None, systvary=None, weights=aw, dim=0)
-                self.vdprofdx, self.dprofdx = _ut.nanwvar(dprofdx.copy(), statvary=None, systvary=None, weights=aw, dim=0)
-            # end if
+#            if gvecfunc is not None:
+#                 self.vfit, self.mfit = _ut.nanwvar(mfit.copy(), statvary=vfit, systvary=None, weights=aw, dim=0, nargout=2)
+#                 self.vdprofdx, self.dprofdx = _ut.nanwvar(dprofdx.copy(), statvary=vdprofdx, systvary=None, weights=aw, dim=0, nargout=2)
+##                self.vfit, self.mfit = _ut.nanwvar(mfit.copy(), statvary=None, systvary=None, weights=1.0/_np.sqrt(vfit), dim=0, nargout=2)
+##                self.vfit, self.mfit = _ut.nanwvar(mfit.copy(), statvary=None, systvary=None, weights=1.0/vfit, dim=0, nargout=2)
+##                self.vdprofdx, self.dprofdx = _ut.nanwvar(dprofdx.copy(), statvary=None, systvary=None, weights=1.0/vdprofdx, dim=0, nargout=2)
+#            else:
+#                aw = aw.reshape((niterate,1))*_np.ones((1,nx),dtype=_np.float64)              # reshape the weights
+#    #            self.vfit, self.mfit = _ut.nanwvar(mfit.copy(), statvary=vfit, systvary=None, weights=aw, dim=0)
+#                self.vfit, self.mfit = _ut.nanwvar(mfit.copy(), statvary=None, systvary=None, weights=aw, dim=0)
+#                self.vdprofdx, self.dprofdx = _ut.nanwvar(dprofdx.copy(), statvary=None, systvary=None, weights=aw, dim=0)
+#            # end if
         else:
             # straight mean and covariance
             self.af, self.perror = _ut.combine_var(af.copy(), statvar=vaf.copy(), systvar=None, axis=0)
 #            self.af, self.perror = _ut.combine_var(af, statvar=None, systvar=None, axis=0)
             self.perror = _np.sqrt(self.perror)
-            self.mfit, self.vfit = _ut.combine_var(mfit.copy(), statvar=vfit.copy(), systvar=None, axis=0)
-#            self.mfit, self.vfit = _ut.combine_var(mfit, statvar=None, systvar=None, axis=0)
-            self.dprofdx, self.vdprofdx = _ut.combine_var(dprofdx, statvar=vdprofdx.copy(), systvar=None, axis=0)
+#            self.mfit, self.vfit = _ut.combine_var(mfit.copy(), statvar=vfit.copy(), systvar=None, axis=0)
+##            self.mfit, self.vfit = _ut.combine_var(mfit, statvar=None, systvar=None, axis=0)
+#            self.dprofdx, self.vdprofdx = _ut.combine_var(dprofdx, statvar=vdprofdx.copy(), systvar=None, axis=0)
 
+            # sum over covariance matrix elements ... combine variances statistically
             self.covmat = _np.cov(af, rowvar=False)
         # end if
         return self.af, self.covmat
@@ -822,13 +826,13 @@ class fitNL_base(Struct):
 # ======================================================================== #
 # ======================================================================== #
 
-def MinMaxScaler(ydat, ymin, ymax, forward=True):
-    if forward:
-        return (ydat-ymin)/(ymax-ymin)
-    else:
-        return (ymax-ymin)*ydat+ymin
-    # end if
-# end def
+#def MinMaxScaler(ydat, ymin, ymax, forward=True):
+#    if forward:
+#        return (ydat-ymin)/(ymax-ymin)
+#    else:
+#        return (ymax-ymin)*ydat+ymin
+#    # end if
+## end def
 
 class fitNL(fitNL_base):
 
@@ -860,11 +864,11 @@ class fitNL(fitNL_base):
 
     def run(self):
         if not hasattr(self, 'solver_options'):  self.solver_options = {}  # end if
-        self.solver_options.setdefault('xtol', 1.0e-12) # 1e-14
-        self.solver_options.setdefault('ftol', 1.0e-12) # 1e-14
-        self.solver_options.setdefault('gtol', 1.0e-12) # 1e-14
+        self.solver_options.setdefault('xtol', 1e-14) # 1e-14
+        self.solver_options.setdefault('ftol', 1e-14) # 1e-14
+        self.solver_options.setdefault('gtol', 1e-14) # 1e-14
         self.solver_options.setdefault('damp', 0.)
-        self.solver_options.setdefault('maxiter', 2000)
+        self.solver_options.setdefault('maxiter', 600)
         self.solver_options.setdefault('factor', 100)  # 100
         self.solver_options.setdefault('nprint', 10)
         self.solver_options.setdefault('iterfunct', 'default')
@@ -874,7 +878,7 @@ class fitNL(fitNL_base):
         self.solver_options.setdefault('autoderivative', 1)
         self.solver_options.setdefault('quiet', 0)
         self.solver_options.setdefault('diag', 0)
-        self.solver_options.setdefault('epsfcn', 1e-3) #5e-4) #1e-3
+        self.solver_options.setdefault('epsfcn', max((_np.nanmean(_np.diff(self.xdat.copy())),1e-2))) #5e-4) #1e-3
         self.solver_options.setdefault('debug', 0)
 #        # default to finite differencing in mpfit for jacobian
 #        self.solver_options.setdefault('autoderivative', 1)
@@ -1030,7 +1034,8 @@ class fitNL(fitNL_base):
         _plt.errorbar(self.xdat, self.ydat, yerr=yerr, fmt='ko')
         _plt.plot(xx, yf, 'b-')
         if hasattr(self, 'vfit'):
-            _plt.fill_between(xx, yf-_np.sqrt(self.vfit), yf+_np.sqrt(self.vfit), interpolate=True, color='b', alpha=0.3)
+            _plt.fill_between(xx, yf-_np.sqrt(self.vfit), yf+_np.sqrt(self.vfit),
+                              interpolate=True, color='b', alpha=0.3)
 #            _plt.plot(xx, yf+_np.sqrt(self.vfit), 'b--')
 #            _plt.plot(xx, yf-_np.sqrt(self.vfit), 'b--')
         _plt.title('Input data and fitted model')
@@ -1123,10 +1128,11 @@ def qparabfit(x, y, ey, XX, **kwargs):
     """
     # subfunction kwargs
     nohollow = kwargs.pop("nohollow", False)
+    scale_by_data = kwargs.pop('scale_problem',True)
 
     # solver kwargs
-    kwargs.setdefault('maxiter',200)
-    kwargs.setdefault('epsfcn', 1e-3)
+    kwargs.setdefault('maxiter',600)
+    kwargs.setdefault('epsfcn', max((_np.nanmean(_np.diff(x.copy())),1e-2)))
     kwargs.setdefault('factor',100)
     kwargs.setdefault('autoderivative',1)
 
@@ -1135,7 +1141,7 @@ def qparabfit(x, y, ey, XX, **kwargs):
     plotit = kwargs.pop('plotit', True)
     xlbl = kwargs.pop('xlabel', r'$r/a$')
     ylbl1 = kwargs.pop('ylabel1', r'T$_e$ [KeV]')
-    ylbl2 = kwargs.pop('ylabel2', r'-$\nabla$ T$_e$/T$_e$')
+    ylbl2 = kwargs.pop('ylabel2', r'$-a\nabla\rho\nabla T_e/T_e$')
     titl = kwargs.pop('title', r'Quasi-parabolic profile fit')
     clr = kwargs.pop('color', 'r')
     alph = kwargs.pop('alpha', 0.3)
@@ -1157,9 +1163,36 @@ def qparabfit(x, y, ey, XX, **kwargs):
         if nohollow:            prune = True        # end if
         return _ms.model_qparab(x, af=af, nohollow=nohollow, prune=prune, info=infoin)
 
+    info = myqparab(None)
+    af0 = info.af.copy()
+    if scale_by_data:
+        y, ey2, slope, offset = _ms.rescale_problem(_np.copy(y), _np.copy(ey)**2.0)
+        ey = _np.sqrt(ey2)
+        af0[0] = 1.0
+        af0[1] = 0.0
+    # end if
+#    af0[0] = y[_np.argmin(x)].copy()
+    kwargs.setdefault('af0',af0)
+
     # Call mpfit
     info = fit_mpfit(x, y, ey, XX, myqparab, fkwargs={"nohollow":nohollow}, **kwargs)
 
+    if scale_by_data:
+        # slope = _np.nanmax(pdat)-_np.nanmin(pdat)
+        # offset = _np.nanmin(pdat)
+#        info.prof = _np.copy(prof)
+        info.varp = _np.copy(info.varprof)
+#        info.dprofdx = _np.copy(dprofdx)
+#        info.vardprofdx = _np.copy(vardprofdx)
+#        info.af = _np.copy(af)
+        info.slope = slope
+        info.offset = offset
+        info = _ms.rescale_problem(info=info, nargout=1)
+        info.varprof = info.varp
+        y = y*slope+offset
+        ey2 = ey2*(slope**2.0)
+        ey = _np.sqrt(ey2)
+    # end if
     if nohollow:
         # add back in the two parameters after fitting with hollowness
         _, _, info = myqparab(XX, af=info.params, nohollow=False, infoin=info)
@@ -1228,25 +1261,6 @@ def qparabfit(x, y, ey, XX, **kwargs):
 
 
 def test_qparab_fit(nohollow=False):
-    solver_options = {}  # end if
-    solver_options.setdefault('xtol', 1.0e-16)
-    solver_options.setdefault('ftol', 1.0e-16)
-    solver_options.setdefault('gtol', 1.0e-16)
-    solver_options.setdefault('damp', 0.)
-    solver_options.setdefault('maxiter', 2000)
-    solver_options.setdefault('factor', 1)  # 100
-    solver_options.setdefault('nprint', 1)
-    solver_options.setdefault('iterfunct', 'default')
-    solver_options.setdefault('iterkw', {})
-    solver_options.setdefault('nocovar', 0)
-    solver_options.setdefault('rescale', 0)
-    solver_options.setdefault('autoderivative', 1)
-    solver_options.setdefault('quiet', 0)
-    solver_options.setdefault('diag', 0)
-    solver_options.setdefault('epsfcn', 1e-3) #5e-4) #1e-3
-    solver_options.setdefault('debug', 0)
-    # default to finite differencing in mpfit for jacobian
-    # solver_options.setdefault('autoderivative', 1)
 
     aa= _np.asarray([0.30, 0.002, 2.0, 0.7, -0.24, 0.30], dtype=float)
     if nohollow:
@@ -1257,6 +1271,31 @@ def test_qparab_fit(nohollow=False):
     xdat = _np.linspace(0.05, 0.95, 10)
     ydat, _, temp = _ms.model_qparab(xdat, aa)
     yerr = 0.10*ydat
+
+    # ============================================== #
+
+    solver_options = {}  # end if
+    solver_options.setdefault('xtol', 1e-14)
+    solver_options.setdefault('ftol', 1e-14)
+    solver_options.setdefault('gtol', 1e-14)
+    solver_options.setdefault('damp', 0.)
+    solver_options.setdefault('maxiter', 600)
+    solver_options.setdefault('factor', 100)  # 100
+    solver_options.setdefault('nprint', 10)
+    solver_options.setdefault('iterfunct', 'default')
+    solver_options.setdefault('iterkw', {})
+    solver_options.setdefault('nocovar', 0)
+    solver_options.setdefault('rescale', 0)
+    solver_options.setdefault('autoderivative', 1)
+    solver_options.setdefault('quiet', 0)
+    solver_options.setdefault('diag', 0)
+    solver_options.setdefault('epsfcn', max((_np.nanmean(_np.diff(xdat.copy())),1e-2))) #5e-4) #1e-3
+    solver_options.setdefault('debug', 0)
+    # default to finite differencing in mpfit for jacobian
+    # solver_options.setdefault('autoderivative', 1)
+
+    # ============================================== #
+
 
     XX = _np.linspace( 0.0, 1.0, 99)
     yxx, _, _ = _ms.model_qparab(XX, aa)
@@ -1349,26 +1388,19 @@ def test_dat(multichannel=True):
     return x, y, vary
 
 
-def test_fitNL(test_qparab=True):
+def test_fitNL(test_qparab=True, scale_by_data=True):
+    try:
+        import model_spec as _ms
+    except:
+        from . import model_spec as _ms
+    # end try
     def test_line_data():
-        try:
-            from model_spec import line as model, line_gvec as pderivmodel
-        except:
-            from .model_spec import line as model, line_gvec as pderivmodel
         af = [0.2353335600009, 3.1234563234]
-        LB = [-_np.inf, -_np.inf]
-        UB = [ _np.inf,  _np.inf]
-        return af, model, pderivmodel, LB, UB
+        return af, _ms.line, _ms.line_gvec, _ms.model_line
 
     def test_qparab_data():
-        try:
-            from model_spec import qparab as model, partial_qparab as pderivmodel
-        except:
-            from .model_spec import qparab as model, partial_qparab as pderivmodel
         af = _np.array([5.0, 0.002, 2.0, 0.7, -0.24, 0.30], dtype=_np.float64)
-        LB = [       0,       0, -10.0, -10.0, -1, 0.002]
-        UB = [ _np.inf, _np.inf,  10.0,  10.0,  1, 1.00]
-        return af, model, pderivmodel, LB, UB
+        return af, _ms.qparab, _ms.partial_qparab, _ms.model_qparab
 
     def mymodel(_a, _x):
         return model(_x, _a)
@@ -1376,10 +1408,10 @@ def test_fitNL(test_qparab=True):
         return pderivmodel(_x, _a)
 
     if test_qparab:
-        af, model, pderivmodel, LB, UB = test_qparab_data()
+        af, model, pderivmodel, wrapper = test_qparab_data()
         x = _np.linspace(-0.8, 1.05, 11)
     else:
-        af, model, pderivmodel, LB, UB = test_line_data()
+        af, model, pderivmodel, wrapper = test_line_data()
         x = _np.linspace(-2, 15, 100)
     # endif
     af0 = 0.1*_np.asarray(af, dtype=float)
@@ -1398,10 +1430,16 @@ def test_fitNL(test_qparab=True):
         y = _pyb.utils.cylsym_even(y)
         vary = _pyb.utils.cylsym_even(vary)
     # endif
+    info = wrapper(XX=None)
+
+    if scale_by_data:
+        y, vary, slope, offset = _ms.rescale_problem(_np.copy(y), _np.copy(vary))
+    # end if
+
     options = {}
 #    options = {'fjac':myjac, 'UB':UB, 'LB':LB}
 #    options = {'fjac':myjac}
-#    options = {'UB':UB, 'LB':LB}
+    options = {'UB':info.Ubounds, 'LB':info.Lbounds}
 #    ft = fitNL(xdat=x, ydat=y, vary=vary, af0=af0, func=mymodel, fjac=myjac)
 #    ft = fitNL(xdat=x, ydat=y, vary=vary, af0=af0, func=mymodel)
     ft = fitNL(xdat=x, ydat=y, vary=vary, af0=af0, func=mymodel, **options)
@@ -1409,7 +1447,28 @@ def test_fitNL(test_qparab=True):
     ft.xx = _np.linspace(x.min(), x.max(), num=100)
     ft.properror(xvec=ft.xx, gvec=myjac(ft.af, ft.xx))   # use with analytic jacobian
 #    ft.bootstrapper(ft.xx)   # use with no analytic jacobian
+#    ft.yf = ft.func(ft.af, ft.xx)
 #    a, b = ft.af
+
+    if scale_by_data:
+#        self.af
+#        self.chi2_reduced
+#        self.perror
+#        self.covmat
+
+        ft.pdat = ft.ydat
+        ft.vdat = ft.vary
+        ft.prof = ft.yf
+        ft.varp = ft.vfit
+        ft.slope = slope
+        ft.offset = offset
+        ft.unscaleaf = info.unscaleaf
+        ft = _ms.rescale_problem(info=ft, nargout=1)
+        ft.ydat = ft.pdat
+        ft.vary = ft.vdat
+        ft.vfit = ft.varp
+        ft.yf = ft.prof
+    # end if
     ft.plot()
 
 #    a, b, Var_a, Var_b = linreg(x, y, verbose=True, varY=vary, varX=None, cov=False, plotit=True)
@@ -1422,13 +1481,13 @@ def test_fitNL(test_qparab=True):
 # ========================================================================== #
 
 if __name__=="__main__":
-#    test_qparab_fit(nohollow=False)
-#    test_qparab_fit(nohollow=True)
-#    ft = test_fitNL(True)
-#    ft = test_fitNL(False)
+    test_qparab_fit(nohollow=False)
+    test_qparab_fit(nohollow=True)
+    ft = test_fitNL(True)
+    ft = test_fitNL(False)
 
 #    test_fit(_ms.model_qparab, nohollow=False)
-    test_fit(_ms.model_qparab, nohollow=True)
+#    test_fit(_ms.model_qparab, nohollow=True)
 #    test_fit(_ms.model_ProdExp, npoly=2)
 #    test_fit(_ms.model_ProdExp, npoly=3)
 #    test_fit(_ms.model_ProdExp, npoly=4)
