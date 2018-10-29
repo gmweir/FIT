@@ -662,6 +662,10 @@ class fitNL_base(Struct):
 #        self.solver_options['nprint'] = 100    # debug info
         self.solver_options['quiet'] = 1 # debug info
 
+
+        if not hasattr(self, 'nmonti'):  self.nmonti=300  # end if
+        nmonti = kwargs.setdefault('nmonti', self.nmonti)
+
         if not hasattr(self, 'weightit'):  self.weightit = False  # end if
         weightit = kwargs.setdefault('weightit', self.weightit)
 
@@ -674,8 +678,8 @@ class fitNL_base(Struct):
         # =============== #
 
         niterate = 1
-        if self.nmonti > 1:
-            niterate = self.nmonti
+        if nmonti > 1:
+            niterate = _np.copy(nmonti)
             # niterate *= len(self.xdat)
         # endif
 
@@ -724,7 +728,7 @@ class fitNL_base(Struct):
             vaf[mm, :] = self.perror.copy()**2.0
 
             # chi2[mm] = _np.sum(self.chi2)/(numfit-nch-1)
-            mfit[mm, :] = self.func(af[mm,:].copy(), xvec.copy())
+            mfit[mm, :] = (self.func(af[mm,:].copy(), xvec.copy())).copy()
             chi2[mm] = _np.sum(self.chi2_reduced.copy())
             # mfit[mm, :] = self.yf.copy()
 
@@ -732,18 +736,18 @@ class fitNL_base(Struct):
                 gvec, tmp, dgdx = gvecfunc(af[mm,:].copy(), xvec.copy())
                 dprofdx[mm,:] = tmp.copy()
                 if gvec is not None:
-                    vfit[mm,:] = self.properror(xvec, gvec)
+                    vfit[mm,:] = (self.properror(xvec, gvec)).copy()
                 if dgdx is not None:
-                    vdprofdx[mm,:] = self.properror(xvec, dgdx)
+                    vdprofdx[mm,:] = (self.properror(xvec, dgdx)).copy()
                 # end if
             # end if
 #            if dgdx is not None:
 #                vdfdx[mm,:] = self.properror(self.xx, dgdx)
             # end if
         # endfor
-        self.xdat = xsav
-        self.ydat = ysav
-        self.vary = vsav
+        self.xdat = xsav.copy()
+        self.ydat = ysav.copy()
+        self.vary = vsav.copy()
 
 #        _plt.figure()
 #        _plt.plot(xvec, mfit.T, 'k-')
@@ -780,10 +784,12 @@ class fitNL_base(Struct):
             # end if
         else:
             # straight mean and covariance
-            self.af, self.perror = _ut.combine_var(af, statvar=None, systvar=None, axis=0)
+            self.af, self.perror = _ut.combine_var(af.copy(), statvar=vaf.copy(), systvar=None, axis=0)
+#            self.af, self.perror = _ut.combine_var(af, statvar=None, systvar=None, axis=0)
             self.perror = _np.sqrt(self.perror)
-            self.mfit, self.vfit = _ut.combine_var(mfit, statvar=None, systvar=None, axis=0)
-            self.dprofdx, self.vdprofdx = _ut.combine_var(dprofdx, statvar=None, systvar=None, axis=0)
+            self.mfit, self.vfit = _ut.combine_var(mfit.copy(), statvar=vfit.copy(), systvar=None, axis=0)
+#            self.mfit, self.vfit = _ut.combine_var(mfit, statvar=None, systvar=None, axis=0)
+            self.dprofdx, self.vdprofdx = _ut.combine_var(dprofdx, statvar=vdprofdx.copy(), systvar=None, axis=0)
 
             self.covmat = _np.cov(af, rowvar=False)
         # end if
