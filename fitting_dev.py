@@ -882,12 +882,13 @@ def deriv_bsgaussian(xvar, u, varu, axis=0, nmonti=1000, sigma=1, mode='nearest'
 #            utemp = u + _np.sqrt(varu)*utemp
             vtemp = varu.copy()
             utemp = u.copy()
-            if axis == 0:
-                utemp[cc,:] += _np.sqrt(vtemp[cc,:])*_np.random.randn(1)
-                vtemp[cc,:] = (utemp[cc,:]-u[cc,:])**2.0
-            elif axis == 1:
-                utemp[:,cc] += _np.sqrt(vtemp[:,cc])*_np.random.randn(1)
-                vtemp[:,cc] = (utemp[:,cc]-u[:,cc])**2.0
+            utemp[cc] += _np.sqrt(vtemp[cc])*_np.random.randn(1)
+            vtemp[cc] = (utemp[cc]-u[cc])**2.0
+#            if axis == 0:
+#                utemp[cc,:] += _np.sqrt(vtemp[cc,:])*_np.random.randn(1)
+#                vtemp[cc,:] = (utemp[cc,:]-u[cc,:])**2.0
+#            elif axis == 1:
+
             # end if
 
             # Convolve with the derivative of a Gaussian to get the derivative
@@ -1324,20 +1325,26 @@ def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
         NLfit.gvecfunc = fgvec
         NLfit.bootstrapper(xvec=_np.abs(rvec), weightit=False)
 
-        prof = NLfit.mfit
-        varp = NLfit.vfit
-        varp = varp.copy()
-
-        dprofdx = NLfit.dprofdx.copy()
-        vardprofdx = NLfit.vdprofdx.copy()
-    else:
-        prof, gvec, info = modelfunc(_np.abs(rvec), NLfit.af)
-        varp = NLfit.properror(_np.abs(rvec), gvec)
-        varp = varp.copy()
-
-        dprofdx = info.dprofdx.copy()
-        vardprofdx = NLfit.properror(_np.abs(rvec), info.dgdx)
+#        prof = NLfit.mfit
+#        varp = NLfit.vfit
+#        varp = varp.copy()
+#
+#        dprofdx = NLfit.dprofdx.copy()
+#        vardprofdx = NLfit.vdprofdx.copy()
+#    else:
+#        prof, gvec, info = modelfunc(_np.abs(rvec), NLfit.af)
+#        varp = NLfit.properror(_np.abs(rvec), gvec)
+#        varp = varp.copy()
+#
+#        dprofdx = info.dprofdx.copy()
+#        vardprofdx = NLfit.properror(_np.abs(rvec), info.dgdx)
     # end if
+    prof, gvec, info = modelfunc(_np.abs(rvec), NLfit.af)
+    varp = NLfit.properror(_np.abs(rvec), gvec)
+    varp = varp.copy()
+
+    dprofdx = info.dprofdx.copy()
+    vardprofdx = NLfit.properror(_np.abs(rvec), info.dgdx)
     af = NLfit.af.copy()
 
     if scale_by_data:

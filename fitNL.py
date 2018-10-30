@@ -632,7 +632,7 @@ class fitNL_base(Struct):
 
         # ========================== #
 
-        self.nmonti = kwargs.pop("nmonti", 300)
+        self.nmonti = kwargs.pop("nmonti", 600)
         self.af0 = kwargs.pop("af0", self.af0)
         self.LB = kwargs.pop("LB", -_np.Inf*_np.ones_like(self.af0))
         self.UB = kwargs.pop("UB",  _np.Inf*_np.ones_like(self.af0))
