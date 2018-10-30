@@ -676,7 +676,7 @@ def model_qparab(XX, af=None, nohollow=False, prune=False, rescale=False, info=N
         info.prof = prof
 
         gvec = partial_qparab(XX*rescale, af, nohollow)
-        gvec = interp_irregularities(gvec, corezero=False)  # invalid slice
+#        gvec = interp_irregularities(gvec, corezero=False)  # invalid slice
         info.gvec = gvec
 
         info.dprofdx = deriv_qparab(XX, af, nohollow)

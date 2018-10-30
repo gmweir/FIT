@@ -391,7 +391,7 @@ def findiffnp(xvar, u, varu=None, order=1):
     dx = _np.gradient(xvar)
 
     # Pre-allocate
-    nmonti = 300
+    nmonti = 1000   # TODO!: convert this into iterating over shape ... wiggle one parameter at a time: resampling with replacement!
     dudx = _np.zeros((nmonti, nsh[0], nsh[1]), dtype=_np.float64)
     for ii in range(nmonti):
 
@@ -704,19 +704,29 @@ def findiff2d(x, y, u):
 # =============================== #
 
 
-def interp_profile(roa, ne, varne, rvec, loggradient=True):
+def interp_profile(roa, ne, varne, rvec, loggradient=True, **kwargs):
 
     # ================= #
     # Preconditioning   #
     # ================= #
 
-    xfit = _ut.cylsym_odd(roa)
-    if loggradient:
-        yfit = _ut.cylsym_even(_np.log(ne))
-        vfit = _ut.cylsym_even(varne/(ne**2.0))
+    roa = roa.copy()
+    ne = ne.copy()
+    varne = varne.copy()
+    rvec = rvec.copy()
+    if roa[0] == 0.0:
+        xfit = _np.concatenate((-_np.flipud(roa),roa[1:]))
+        yfit = _np.concatenate(( _np.flipud(ne),ne[1:]))
+        vfit = _np.concatenate(( _np.flipud(varne),varne[1:]))
     else:
+        xfit = _ut.cylsym_odd(roa)
         yfit = _ut.cylsym_even(ne)
         vfit = _ut.cylsym_even(varne)
+    # end if
+
+    if loggradient:
+        yfit = _np.log(ne)
+        vfit = varne/(ne**2.0)
     # endif
     ne = _np.atleast_2d(ne)
     roa = _np.atleast_2d(roa)
@@ -746,13 +756,16 @@ def interp_profile(roa, ne, varne, rvec, loggradient=True):
     yf = _np.zeros_like(dyfdr)
     varyf = _np.zeros_like(vardyfdr)
     for ii in range(_np.size(dyfdr, axis=1)):
-        dydr, vardydr = deriv_bsgaussian(xfit[:,ii], yfit[:,ii], vfit[:,ii])
+        y, vy = deriv_bsgaussian(xfit[:,ii], yfit[:,ii], vfit[:,ii], derivorder=0, **kwargs)
+        dydr, vardydr = deriv_bsgaussian(xfit[:,ii], yfit[:,ii], vfit[:,ii], derivorder=1, **kwargs)
 
+        yf[:,ii], varyf[:,ii] = _ut.interp(xfit[:,ii], y, _np.sqrt(vy), rvec[:,ii])
         dyfdr[:,ii], vardyfdr[:,ii] = _ut.interp(xfit[:,ii], dydr, _np.sqrt(vardydr), rvec[:,ii])
 
-        _, _, yf[:,ii], varyf[:,ii] = _ut.trapz_var(rvec[:,ii], dyfdr[:,ii], None, vardyfdr[:,ii], dim=0)
-
-        yf[:,ii] += (ne[0,ii]-_ut.interp(rvec[:,ii], yf[:,ii], None, roa[0,ii]))
+#        _, _, yf[:,ii], varyf[:,ii] = _ut.trapz_var1d(rvec[:,ii], dyfdr[:,ii], None, vardyfdr[:,ii])
+##        _, _, yf[:,ii], varyf[:,ii] = _ut.trapz_var(rvec[:,ii], dyfdr[:,ii], None, vardyfdr[:,ii], dim=0)
+#
+#        yf[:,ii] += (ne[0,ii]-_ut.interp(rvec[:,ii], yf[:,ii], None, roa[0,ii]))
     # endfor
 
     if _np.size(yf, axis=1) == 1:
@@ -767,7 +780,7 @@ def interp_profile(roa, ne, varne, rvec, loggradient=True):
 # ======================================================================== #
 
 
-def deriv_bsgaussian(xvar, u, varu, axis=0, nmonti=300, sigma=1, mode='nearest', derivorder=1):
+def deriv_bsgaussian(xvar, u, varu, axis=0, nmonti=1000, sigma=1, mode='nearest', derivorder=1):
     """
     function [dudx, vardudx] = deriv_bsgaussian(xvar, u, varu, axis=1,
                            nmonti=300, derivorder=1, sigma=1, mode='nearest')
@@ -850,26 +863,48 @@ def deriv_bsgaussian(xvar, u, varu, axis=0, nmonti=300, sigma=1, mode='nearest',
     # computational methods.
 
     # Pre-allocate
-    dudx = _np.zeros((nmonti, nsh[0], nsh[1]), dtype=_np.float64)
-    for ii in range(nmonti):
+#    if nmonti>1:
+    niterate = nsh[axis]*nmonti
+    _np.random.seed(1)
+    if 1:
+        cc = -1
+        dudx = _np.zeros((niterate, nsh[0], nsh[1]), dtype=_np.float64)
+        for ii in range(niterate):
+            cc += 1
+            if cc>=nsh[axis]:
+                cc = 0
+            # end if
+            # Wiggle the input data within its statistical uncertainty
+            # utemp = _np.random.normal(0.0, 1.0, _np.size(u, axis=axis))
+            # utemp = utemp.reshape(nsh[0], nsh[1])
+#            utemp = _np.random.normal(0.0, 1.0, _np.shape(u))
+#            utemp = _np.random.randn(_np.shape(u))
+#            utemp = u + _np.sqrt(varu)*utemp
+            vtemp = varu.copy()
+            utemp = u.copy()
+            if axis == 0:
+                utemp[cc,:] += _np.sqrt(vtemp[cc,:])*_np.random.randn(1)
+                vtemp[cc,:] = (utemp[cc,:]-u[cc,:])**2.0
+            elif axis == 1:
+                utemp[:,cc] += _np.sqrt(vtemp[:,cc])*_np.random.randn(1)
+                vtemp[:,cc] = (utemp[:,cc]-u[:,cc])**2.0
+            # end if
 
-        # Wiggle the input data within its statistical uncertainty
-        # utemp = _np.random.normal(0.0, 1.0, _np.size(u, axis=axis))
-        # utemp = utemp.reshape(nsh[0], nsh[1])
-        utemp = _np.random.normal(0.0, 1.0, _np.shape(u))
-        utemp = u + _np.sqrt(varu)*utemp
+            # Convolve with the derivative of a Gaussian to get the derivative
+            # There is some smoothing in this procedure
+            utemp = _ndimage.gaussian_filter1d(utemp.copy(), sigma=sigma, order=derivorder,
+                                              axis=axis, mode=mode)
+            # utemp /= dx  # dx
+            dudx[ii, :, :] = utemp.copy()
+        # endfor
 
-        # Convolve with the derivative of a Gaussian to get the derivative
-        # There is some smoothing in this procedure
-        utemp = _ndimage.gaussian_filter1d(utemp, sigma=sigma, order=derivorder,
-                                          axis=axis, mode=mode)
-        # utemp /= dx  # dx
-        dudx[ii, :, :] = utemp.copy()
-    # endfor
-
-    # Take mean and variance of the derivative
-    vardudx = _np.nanvar(dudx, axis=0)
-    dudx = _np.nanmean(dudx, axis=0)
+        # Take mean and variance of the derivative
+        vardudx = _np.nanvar(dudx, axis=0)
+        dudx = _np.nanmean(dudx, axis=0)
+#    else:
+#        dudx = _ndimage.gaussian_filter1d(utemp, sigma=sigma, order=derivorder,
+#                                           axis=axis, mode=mode)
+    # end if
 
     if _np.size(dudx, axis=0) == 1:
         dudx = dudx.T
@@ -1177,11 +1212,22 @@ def spline_bs(xvar, yvar, vary, xf=None, func="spline", nmonti=300, deg=3, bbox=
 
     xvar = xvar.reshape((nsh[0],), order='C')
 
-    dydx = _np.zeros( (nmonti, nxf, nsh[1]), dtype=_np.float64)
-    yf = _np.zeros( (nmonti, nxf, nsh[1]), dtype=_np.float64)
-    for ii in range(nmonti):
-        utemp = yvar + _np.sqrt(vary)*_np.random.normal(0.0, 1.0, _np.shape(yvar))
-        vtemp = (utemp-yvar)**2.0
+    niterate = len(xvar)
+    niterate *= nmonti
+
+    dydx = _np.zeros( (niterate, nxf, nsh[1]), dtype=_np.float64)
+    yf = _np.zeros( (niterate, nxf, nsh[1]), dtype=_np.float64)
+    cc = -1
+    for ii in range(niterate):
+        utemp = yvar.copy()
+        vtemp = vary.copy()
+        cc += 1
+        if cc >= nsh[0]:
+            cc = 0
+        # end if
+        utemp[cc,:] += _np.sqrt(vary[cc,:])*_np.random.normal(0.0, 1.0, _np.shape(vary[cc,:]))
+        vtemp[cc,:] = (utemp[cc,:]-yvar[cc,:])**2.0
+
         if func == 'pchip':
             yf[ii, :], dydx[ii, :] = pchip(xvar, utemp, xf)
         else:
@@ -2270,9 +2316,11 @@ if __name__=="__main__":
     QTBdat['varTL'] = (0.1*QTBdat['Te'])**2.0
     QTBdat['varTH'] = (0.1*QTBdat['Te'])**2.0
 
-    nout = fit_TSneprofile(QTBdat, _np.linspace(0, 1.05, num=51), plotit=True, amin=0.51, returnaf=False)
+    nout = fit_TSneprofile(QTBdat, _np.linspace(0, 1.05, num=51), plotit=True,
+                           agradrho=1.20, returnaf=False, bootstrappit=True)
 
-    Tout = fit_TSteprofile(QTBdat, _np.linspace(0, 1.05, num=51), plotit=True, amin=0.51, returnaf=False)
+    Tout = fit_TSteprofile(QTBdat, _np.linspace(0, 1.05, num=51), plotit=True,
+                           agradrho=1.20, returnaf=False, bootstrappit=True)
 #    test_linreg()
 #    test_derivatives()
 

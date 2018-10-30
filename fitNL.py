@@ -543,8 +543,17 @@ def fit_mcleastsq(p0, xdat, ydat, func, yerr_systematic=0.0, nmonti=300):
 
     # several hundred random data sets are generated and fitted
     ps = []
-    for ii in range(nmonti):
-        yy = ydat + _np.random.normal(0., sigma_err_total, len(ydat))
+    niterate = len(ydat)
+    niterate *= nmonti
+    cc = -1
+    for ii in range(niterate):
+        yy = ydat.copy()
+        cc += 1
+        if cc >= len(ydat):
+            cc = 0
+        # end if
+        yy[cc] += _np.random.normal(0., sigma_err_total, 1)
+#        yy = ydat + _np.random.normal(0., sigma_err_total, len(ydat))
 
         mcfit, mccov = leastsq(errf, p0, args=(xdat, yy), full_output=0)
 
@@ -663,7 +672,7 @@ class fitNL_base(Struct):
         self.solver_options['quiet'] = 1 # debug info
 
 
-        if not hasattr(self, 'nmonti'):  self.nmonti=300  # end if
+        if not hasattr(self, 'nmonti'):  self.nmonti=400  # end if
         nmonti = kwargs.setdefault('nmonti', self.nmonti)
 
         if not hasattr(self, 'weightit'):  self.weightit = False  # end if
@@ -677,17 +686,21 @@ class fitNL_base(Struct):
         self.__dict__.update(kwargs)
         # =============== #
 
-        niterate = 1
-        if nmonti > 1:
-            niterate = _np.copy(nmonti)
-            # niterate *= len(self.xdat)
-        # endif
-
 #        nch = len(self.xdat)
         numfit = len(self.af0)
         xsav = self.xdat.copy()
         ysav = self.ydat.copy()
         vsav = self.vary.copy()
+
+        # =============== #
+
+        niterate = len(xsav)
+        if nmonti > 1:
+#            niterate = _np.copy(nmonti)
+            niterate *= _np.copy(nmonti)
+            # niterate *= len(self.xdat)
+        # endif
+
         af = _np.zeros((niterate, numfit), dtype=_np.float64)
         covmat = _np.zeros((niterate, numfit, numfit), dtype=_np.float64)
         vaf = _np.zeros((niterate, numfit), dtype=_np.float64)
@@ -704,19 +717,27 @@ class fitNL_base(Struct):
 #        vfit = _np.zeros((niterate, nx), dtype=_np.float64) # end if
 #        vdprofdx = _np.zeros_like(vfit)
 
+        _np.random.seed(1)
+        cc = -1
         for mm in range(niterate):
-            self.ydat = ysav.copy() + _np.sqrt(vsav)*_np.random.normal(0.0,1.0,_np.shape(ysav))
-            self.vary = (self.ydat-ysav)**2
+#            self.ydat = ysav.copy() + _np.sqrt(vsav)*_np.random.normal(0.0,1.0,_np.shape(ysav))
+#            self.vary = (self.ydat-ysav)**2
 #            self.vary = vsav.copy()
 #            self.vary = vsav.copy()*_np.abs((self.ydat-ysav)/ysav)
 #            self.vary = vsav.copy()*(1 + _np.abs((self.ydat-ysav)/ysav))
 #            cc = 1+_np.floor((mm-1)/self.nmonti)
 #            if self.nmonti > 1:
-#                self.ydat[cc] = ysav[cc].copy()
-#                self.ydat[cc] += _np.sqrt(vsav[cc]) * _np.random.normal(0.0,1.0,_np.shape(vsav[cc]))
-#                self.vary[cc] = (self.ydat[cc]-ysav[cc])**2
-#                    # _np.ones((1,nch), dtype=_np.float64)*
-#            # endif
+            cc += 1
+            if (cc >= len(xsav)):
+                cc = 0
+            # end if
+            if 1:
+                self.ydat = ysav.copy()
+                self.vary = vsav.copy()
+                self.ydat[cc] += _np.sqrt(vsav[cc]) * _np.random.normal(0.0,1.0,_np.shape(vsav[cc]))
+                self.vary[cc] = (self.ydat[cc]-ysav[cc])**2
+                    # _np.ones((1,nch), dtype=_np.float64)*
+            # endif
 #            print(mm, niterate)
 #            res = self.run()
 #            af[mm, :], _ = res
