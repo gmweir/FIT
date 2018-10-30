@@ -213,13 +213,14 @@ def modelfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     kwargs.setdefault('autoderivative', 1)
     kwargs.setdefault('quiet', 0)
     kwargs.setdefault('diag', 0)
-    kwargs.setdefault('epsfcn', max((_np.nanmean(_np.diff(x.copy())),1e-2))) #5e-4) #1e-3
+    kwargs.setdefault('epsfcn', max((_np.nanmean(_np.diff(x.copy())),1e-3))) #5e-4) #1e-3
     kwargs.setdefault('debug', 0)
     return fit_mpfit(x, y, ey, XX, func, fkwargs, **kwargs)
 
 def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
 
     # subfunction kwargs
+    scale_by_data = kwargs.pop('scale_problem',True)
 
     # fitter kwargs
     LB = kwargs.pop('LB', None)
@@ -242,6 +243,11 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
 
     if numfit != LB.shape[0]:
         print('oops')
+    # end if
+
+    if scale_by_data:
+        y, ey2, slope, offset = _ms.rescale_problem(_np.copy(y), _np.copy(ey)**2.0)
+        ey = _np.sqrt(ey2)
     # end if
 
     # ============================================= #
@@ -376,6 +382,17 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
 
     info.varprof = _ut.interp_irregularities(info.varprof, corezero=False)
     info.vardprofdx = _ut.interp_irregularities(info.vardprofdx, corezero=False)
+
+    if scale_by_data:
+        info.varp = _np.copy(info.varprof)
+        info.slope = slope
+        info.offset = offset
+        info = _ms.rescale_problem(info=info, nargout=1)
+        info.varprof = info.varp
+        y = y*slope+offset
+        ey2 = ey2*(slope**2.0)
+        ey = _np.sqrt(ey2)
+    # end if
 
     return info
 

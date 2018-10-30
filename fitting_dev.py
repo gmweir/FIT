@@ -850,11 +850,11 @@ def deriv_bsgaussian(xvar, u, varu, axis=0, nmonti=1000, sigma=1, mode='nearest'
         varu = varu.reshape(nsh[1], nsh[0])
         nsh = _np.flipud(_np.atleast_1d(nsh))
     # endif
-    if (nsh[1] == 1):
-        u = u.reshape(nsh[0],)
-        varu = varu.reshape(nsh[0],)
-        nsh = _np.flipud(_np.atleast_1d(nsh))
-    # endif
+#    if (nsh[1] == 1):
+#        u = u.reshape(nsh[0],)
+#        varu = varu.reshape(nsh[0],)
+#        nsh = (nsh[0],1)
+#    # endif
 
     # =================================================================== #
     # Estimate the variance by wiggling the input data within it's
@@ -864,6 +864,7 @@ def deriv_bsgaussian(xvar, u, varu, axis=0, nmonti=1000, sigma=1, mode='nearest'
 
     # Pre-allocate
 #    if nmonti>1:
+
     niterate = nsh[axis]*nmonti
     _np.random.seed(1)
     if 1:
