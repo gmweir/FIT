@@ -1017,6 +1017,13 @@ def model_poly(XX, af=None, npoly=4):
     Model - chi ~ sum( af(ii)*XX^(polyorder-ii))
     af    - estimate of fitting parameters
     XX    - independent variable
+
+     if the data is scaled, then unscaling it goes like this:
+         (y-miny)/(maxy-miny) = (y-offset)/slope
+         (y-offset)/slope = sum_i(a_i'*x^i)
+
+         y = slope* sum_i(a_i'*x^i) + offset
+         a_i = slope*a'
     """
     info = Struct()
     info.Lbounds = -_np.inf*_np.ones((npoly+1,), dtype=_np.float64)
@@ -1031,6 +1038,12 @@ def model_poly(XX, af=None, npoly=4):
     info.Lbounds = -_np.inf*_np.ones((npoly+1,), dtype=_np.float64)
     info.Ubounds = _np.inf*_np.ones((npoly+1,), dtype=_np.float64)
     info.af = af
+
+    def unscaleaf(ain, slope, offset=0.0):
+        aout = _np.copy(ain)
+        aout = ain*slope
+        return aout
+    info.unscaleaf = unscaleaf
 
     num_fit = _np.size(af)  # Number of fitting parameters
     nx = _np.size(XX)
@@ -1483,13 +1496,26 @@ def model_2power(XX, af=None):
         af[2] - pow1 - first power
         af[3] - pow2 - second power
 
+
     If fitting with scaling, then the algebra necessary to unscale the problem
     to original units is:
-        # Edge = offset
-        # Core - Edge = slope;  Core = slope+offset
-        af[1] = offset
-        af[0] = slope+offset
+        y = (a-b)*(1- x^c)^d + b
+             = a*(1- x^c)^d + b*(1 - (1- x^c)^d)
+         (y-miny)/(maxy-miny) = (y-offset)/slope
+         (y-offset)/slope = (a'-b')*(1- x^c')^d' + b'
 
+         y = (slope*a'-slope*b')*(1- x^c')^d' + slope*b'+offset
+           = slope*a'*(1- x^c')^d'+ slope*b'*(1-(1- x^c')^d')+offset
+         y-offset = slope*a'*(1- x^c')^d'+ slope*b'*(1-(1- x^c')^d')
+         a = slope*a'
+         b = slope*b' + offset  ... offset pushes into prof, messes up error prop. a little bit
+         c = c'
+         d = d'
+
+        ... to  make this actually work you need:
+           f(x) = (Core-Edge1)*(1-x^pow1)^pow2 + Edge0
+           where
+            af[4] - Edge0 - offset value subtracted from fit... should be fixed to zero, but necessary for rescaling
     found in the info Structure
     """
 
@@ -1507,9 +1533,10 @@ def model_2power(XX, af=None):
     info.af = _np.copy(af)
 
     def unscaleaf(ain, slope, offset):
+        """ this cannot reproduce the original fit do to the offset"""
         aout = _np.copy(ain)
-        aout[1] = _np.copy(offset)
-        aout[0] = slope+offset
+        aout[0] = slope*ain[0]
+        aout[1] = slope*ain[1]
         return aout
     info.unscaleaf = unscaleaf
     if XX is None:
