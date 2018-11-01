@@ -1902,12 +1902,8 @@ def model_chieff(af=None, XX=None, model_number=1, npoly=4, nargout=1, verbose=F
 
     elif model_number == 7:
         if verbose: print('Modeling with the derivative of a quasiparabolic profile')  # endif
-
-        def tfunc(XX, af):
+        def tfunc(XX, af, npoly=None):
             _, _, info = model_qparab(XX, af)
-#            if af is None:
-#                af = _np.asarray([10]+info.af.tolist(), dtype=_np.float64)
-#            # end if
 
             info.prof = deriv_qparab(XX, info.af)
             info.gvec = partial_deriv_qparab(XX, info.af)
@@ -1915,17 +1911,24 @@ def model_chieff(af=None, XX=None, model_number=1, npoly=4, nargout=1, verbose=F
             info.dgdx = partial_deriv2_qparab(XX, info.af)
 
             info.prof = -1.0*info.prof
-            ## info.prof += 10.0
             info.dprofdx = -1.0*info.dprofdx
             info.gvec = -1.0*info.gvec
             info.dgdx = -1.0*info.dgdx
+            return info.prof, info.gvec, info
 
-#            info.af = _np.copy(af)
-#            info.prof += af[0]
-#            info.gvec = _np.insert(info.gvec, [0], _np.ones(_np.shape(info.gvec[0,:]), dtype=_np.float64), axis=0)
-#            info.dgdx = _np.insert(info.dgdx, [0], _np.zeros(_np.shape(info.dgdx[0,:]), dtype=_np.float64), axis=0)
-#            info.Lbounds = _np.asarray([-_np.inf]+info.Lbounds.tolist(), dtype=_np.float64)
-#            info.Ubounds = _np.asarray([ _np.inf]+info.Ubounds.tolist(), dtype=_np.float64)
+        def tfunc_plus(XX, af, npoly=None):
+            if af is None:
+                _, _, info = tfunc(XX, af, npoly)
+                af = _np.asarray(info.af.tolist()+[3.0], dtype=_np.float64)
+            else:
+                _, _, info = tfunc(XX, af[:-1], npoly)
+            # end if
+            info.af = _np.copy(af)
+            info.prof += af[-1].copy()
+            info.gvec = _np.insert(info.gvec, [-1], _np.ones(_np.shape(info.gvec[0,:]), dtype=_np.float64), axis=0)
+            info.dgdx = _np.insert(info.dgdx, [-1], _np.zeros(_np.shape(info.dgdx[0,:]), dtype=_np.float64), axis=0)
+            info.Lbounds = _np.asarray(info.Lbounds.tolist()+[-20.0], dtype=_np.float64)
+            info.Ubounds = _np.asarray(info.Ubounds.tolist()+[ 20.0], dtype=_np.float64)
             return info.prof, info.gvec, info
         [chi_eff, gvec, info] = tfunc(XX, af)
         info.func = tfunc
@@ -1937,8 +1940,10 @@ def model_chieff(af=None, XX=None, model_number=1, npoly=4, nargout=1, verbose=F
 
     elif model_number == 9:
         if verbose: print('Modeling with a 2-power profile')  # endif
-        [chi_eff, gvec, info] = model_2power(XX, af)
-        info.func = model_2power
+        def tfunc(XX, af, npoly=None):
+            return model_2power(XX, af)
+        [chi_eff, gvec, info] = tfunc(XX, af)
+        info.func = tfunc
 
     # end switch-case
 

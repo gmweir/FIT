@@ -16,7 +16,7 @@ import numpy as _np
 import matplotlib.pyplot as _plt
 from pybaseutils.Struct import Struct
 from pybaseutils import utils as _ut
-from FIT import model_spec as _ms
+from FIT import model_spec as _ms, derivatives as _dd
 
 # Ideally, we'll use the straight python implementation of LMFIT.
 # This is mostly python agnostic and has better option controls
@@ -228,6 +228,7 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     p0 = kwargs.pop('af0', None)
 
     skipwithnans = kwargs.pop('PassBadFit', False)
+    plotit = kwargs.pop('plotit', False)
 
     # default initial conditions come directly from the model functions
     _, _, info = func(XX, af=None, **fkwargs)
@@ -293,7 +294,8 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     #       ex//   [0, 1] -> no lower bound on parameter, but create an upper bound
     #       ex//   [1, 1] -> lower and upper bounds on parameter
     #   'limits' lower and upper bound values matching boolean mask in 'limited'
-    parinfo = [{'value':p0[ii], 'fixed':0, 'limited':[1,1], 'limits':[LB[ii],UB[ii]]}
+    parinfo = [{'value':p0[ii], 'fixed':0, 'limited':[1,1], 'limits':[LB[ii],UB[ii]],
+                'mpside':[2]}
                 for ii in range(numfit)]
 
     # Pass data into the solver through keywords
@@ -313,6 +315,7 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     #   m.perror   - formal 1-sigma uncertainty for each parameter (0 if fixed or touching boundary)
     #           .... only meaningful if the fit is weighted.  (errors given)
     #   m.params   - outputs!
+    print(m.statusString())
 
     # Store the optimization information / messages and a boolean indicating success
     info.mpfit = m
@@ -394,6 +397,14 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
         ey = _np.sqrt(ey2)
     # end if
 
+    if plotit:
+        _plt.figure()
+        _plt.errorbar(x, y, yerr=ey, fmt='ko', color='k')
+        _plt.plot(XX, info.prof, 'k-')
+        _plt.fill_between(XX, info.prof-_np.sqrt(info.varprof), info.prof+_np.sqrt(info.varprof),
+                          interpolate=True, color='k', alpha=0.3)
+
+    # end if
     return info
 
 # ========================================================================== #
@@ -987,7 +998,8 @@ class fitNL(fitNL_base):
         #       ex//   [0, 1] -> no lower bound on parameter, but create an upper bound
         #       ex//   [1, 1] -> lower and upper bounds on parameter
         #   'limits' lower and upper bound values matching boolean mask in 'limited'
-        parinfo = [{'value':p0[ii], 'fixed':0, 'limited':[1,1], 'limits':[LB[ii],UB[ii]]}
+        parinfo = [{'value':p0[ii], 'fixed':0, 'limited':[1,1], 'limits':[LB[ii],UB[ii]],
+                    'mpside':[2]}
                     for ii in range(numfit)]
 
         # Pass data into the solver through keywords
@@ -1166,10 +1178,11 @@ def qparabfit(x, y, ey, XX, **kwargs):
     """
     # subfunction kwargs
     nohollow = kwargs.pop("nohollow", False)
-    scale_by_data = kwargs.pop('scale_problem',True)
+#    scale_by_data = kwargs.pop('scale_problem',True)
 
     # solver kwargs
-    kwargs.setdefault('maxiter',600)
+    kwargs.setdefault('scale_problem',True)
+    kwargs.setdefault('maxiter',2000)
     kwargs.setdefault('epsfcn', max((_np.nanmean(_np.diff(x.copy())),1e-2)))
     kwargs.setdefault('factor',100)
     kwargs.setdefault('autoderivative',1)
@@ -1192,6 +1205,10 @@ def qparabfit(x, y, ey, XX, **kwargs):
     fn = kwargs.pop('fontname', _plt.rcParams['font.family'])
 
     fontdict = {'fontsize':fs, 'fontname':fn}
+
+    if len(_np.atleast_1d(agradrho))==1:
+        agradrho = agradrho * _np.ones_like(XX)
+    # end if
     if _np.atleast_1d(agradrho).all() != 1.0 and ylbl2 == r'-$\nabla$ T$_e$/T$_e$':
         ylbl2 = r'a/L$_{Te}$'
     # endif
@@ -1203,34 +1220,34 @@ def qparabfit(x, y, ey, XX, **kwargs):
 
     info = myqparab(None)
     af0 = info.af.copy()
-    if scale_by_data:
-        y, ey2, slope, offset = _ms.rescale_problem(_np.copy(y), _np.copy(ey)**2.0)
-        ey = _np.sqrt(ey2)
-        af0[0] = 1.0
-        af0[1] = 0.0
-    # end if
+#    if scale_by_data:
+#        y, ey2, slope, offset = _ms.rescale_problem(_np.copy(y), _np.copy(ey)**2.0)
+#        ey = _np.sqrt(ey2)
+#        af0[0] = 1.0
+#        af0[1] = 0.0
+#    # end if
 #    af0[0] = y[_np.argmin(x)].copy()
     kwargs.setdefault('af0',af0)
 
     # Call mpfit
     info = fit_mpfit(x, y, ey, XX, myqparab, fkwargs={"nohollow":nohollow}, **kwargs)
-
-    if scale_by_data:
-        # slope = _np.nanmax(pdat)-_np.nanmin(pdat)
-        # offset = _np.nanmin(pdat)
-#        info.prof = _np.copy(prof)
-        info.varp = _np.copy(info.varprof)
-#        info.dprofdx = _np.copy(dprofdx)
-#        info.vardprofdx = _np.copy(vardprofdx)
-#        info.af = _np.copy(af)
-        info.slope = slope
-        info.offset = offset
-        info = _ms.rescale_problem(info=info, nargout=1)
-        info.varprof = info.varp
-        y = y*slope+offset
-        ey2 = ey2*(slope**2.0)
-        ey = _np.sqrt(ey2)
-    # end if
+#    print(info.)
+#    if scale_by_data:
+#        # slope = _np.nanmax(pdat)-_np.nanmin(pdat)
+#        # offset = _np.nanmin(pdat)
+##        info.prof = _np.copy(prof)
+#        info.varp = _np.copy(info.varprof)
+##        info.dprofdx = _np.copy(dprofdx)
+##        info.vardprofdx = _np.copy(vardprofdx)
+##        info.af = _np.copy(af)
+#        info.slope = slope
+#        info.offset = offset
+#        info = _ms.rescale_problem(info=info, nargout=1)
+#        info.varprof = info.varp
+#        y = y*slope+offset
+#        ey2 = ey2*(slope**2.0)
+#        ey = _np.sqrt(ey2)
+#    # end if
     if nohollow:
         # add back in the two parameters after fitting with hollowness
         _, _, info = myqparab(XX, af=info.params, nohollow=False, infoin=info)
@@ -1244,6 +1261,12 @@ def qparabfit(x, y, ey, XX, **kwargs):
     info.aoverL = -1.0*agradrho*info.dprofdx/info.prof
     info.var_aoverL = info.aoverL**2.0
     info.var_aoverL *= ( info.varprof/info.prof**2.0 + info.vardprofdx/info.dprofdx**2.0)
+
+    agr = _ut.interp(XX, agradrho, ei=None, xo=x)
+    dydx_fd, vardydx_fd = _dd.findiff1d(x.copy(), y.copy(), ey.copy()**2.0)
+    info.aoverL_fd = -1.0*agr*dydx_fd/y
+    info.var_aoverL_fd = info.aoverL_fd**2.0
+    info.var_aoverL_fd *= ( (ey/y)**2.0 + vardydx_fd/(dydx_fd**2.0))
 
     if plotit:
         if hfig is None:
@@ -1262,7 +1285,7 @@ def qparabfit(x, y, ey, XX, **kwargs):
         if onesided:
             ax1.errorbar(x[x>0], y[x>0], yerr=ey[x>0], fmt=clr+'o', color=clr )
         else:
-            ax1.errorbar(x[x>0], y[x>0], yerr=ey[x>0], fmt=clr+'o', color=clr )
+            ax1.errorbar(x, y, yerr=ey, fmt=clr+'o', color=clr )
         # end if
         ax1.plot(XX, info.prof, '-', color=clr, lw=2)
 #        ax1.plot(XX, (info.prof+_np.sqrt(info.varprof)), '--', color=clr, lw=1)
@@ -1274,6 +1297,11 @@ def qparabfit(x, y, ey, XX, **kwargs):
 
         # ====== #
         ax2.plot(XX, info.aoverL, '-', color=clr, lw=1)
+        if onesided:
+            ax2.errorbar(x[x>0], info.aoverL_fd[x>0], yerr=_np.sqrt(info.var_aoverL_fd[x>0]), fmt=clr+'o', color=clr )
+        else:
+            ax2.errorbar(x, info.aoverL_fd, yerr=_np.sqrt(info.var_aoverL_fd), fmt=clr+'o', color=clr )
+        # end if
 #        ax2.plot(XX, info.aoverL+_np.sqrt(info.var_aoverL), '--', color=clr, lw=1)
 #        ax2.plot(XX, info.aoverL-_np.sqrt(info.var_aoverL), '--', color=clr, lw=1)
 
