@@ -679,8 +679,8 @@ def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
     options.setdefault('gtol', 1e-14) #
     options.setdefault('nprint', 10) #
     # Consider making epsfcn just 0.5 * nanmean(dx)... the max or min here doesn't make sense in most cases
+#    options.setdefault('epsfcn', None) # 5e-4
     options.setdefault('epsfcn', max((_np.nanmean(_np.diff(rdat.copy())),1e-2))) # 5e-4
-#    options.setdefault('epsfcn', 1e-3) # 5e-4
     options.setdefault('factor',100) # 100
     options.setdefault('maxiter',600)
     NLfit = fitNL(rdat, pdat, vdat, af0, func, LB=LB, UB=UB, **options)
@@ -1689,10 +1689,10 @@ if __name__=="__main__":
     QTBdat['varTH'] = (0.1*QTBdat['Te'])**2.0
 
     nout = fit_TSneprofile(QTBdat, _np.linspace(0, 1.05, num=51), plotit=True,
-                           agradrho=1.20, returnaf=False, bootstrappit=True)
+                           agradrho=1.20, returnaf=False, bootstrappit=False)
 
     Tout = fit_TSteprofile(QTBdat, _np.linspace(0, 1.05, num=51), plotit=True,
-                           agradrho=1.20, returnaf=False, bootstrappit=True)
+                           agradrho=1.20, returnaf=False, bootstrappit=False)
 #    test_linreg()
 #    test_derivatives()
 
