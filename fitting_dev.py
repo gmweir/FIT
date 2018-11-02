@@ -781,6 +781,7 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
     edge = kwargs.get('set_edge',None)
     iuse_ts = kwargs.get('iuse_ts', _np.ones( QTBdat["roa"].shape, dtype=bool))
     loggradient = kwargs.get('loggradient', True)
+    plot_fd = kwargs.get('plot_fd', False)
     plotit = kwargs.get('plotit', False)
     agradrho = kwargs.get('agradrho',1.0)
     returnaf = kwargs.get('returnaf',False)
@@ -814,9 +815,11 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
 
     if fitin is None:
         isort = _np.argsort(roa)
-
+        rin = _ut.cylsym_odd(roa[isort].copy())
+        nin = _ut.cylsym_even(1e-20*ne[isort].copy())
+        vin = _ut.cylsym_even(1e-40*varn[isort].copy())
         nef, varnef, dlnnedrho, vardlnnedrho, af = fit_profile(
-            roa[isort], 1e-20*ne[isort], 1e-40*varn[isort], rvec,
+            rin, nin, vin, rvec,
             arescale=arescale, bootstrappit=bootstrappit, af0=af0)
 
         if rescale_by_linavg:
@@ -860,13 +863,15 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
     # ================== #
 
     if plotit:
-        if len(_np.atleast_1d(agradrho)) ==1:
-            agr = agradrho*_np.ones_like(roa)
-        else:
-            agr = _ut.interp(rvec,agradrho,None,roa)
-        dndx, vdndx = _dd.findiff1d(roa.copy(), ne.copy(), varn.copy())
-        vdndx = agr**2.0 * (dndx / ne)**2.0 * ( vdndx/(dndx**2.0) + varn/(ne**2.0)  )
-        dndx = -1.0*agr*dndx / ne
+        if plot_fd:
+            if len(_np.atleast_1d(agradrho)) ==1:
+                agr = agradrho*_np.ones_like(roa)
+            else:
+                agr = _ut.interp(rvec,agradrho,None,roa)
+            dndx, vdndx = _dd.findiff1d(roa.copy(), ne.copy(), varn.copy())
+            vdndx = agr**2.0 * (dndx / ne)**2.0 * ( vdndx/(dndx**2.0) + varn/(ne**2.0)  )
+            dndx = -1.0*agr*dndx / ne
+        # end if
 
         _plt.figure()
         ax1 = _plt.subplot(2,1,1)
@@ -908,8 +913,9 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
             plotdlnnedrho = -1*(agradrho) * dlnnedrho.copy()
             plotvardlnnedrho = ((agradrho)**2.0) * vardlnnedrho.copy()
          # end if
-        ax3.errorbar(roa, dndx, yerr=_np.sqrt(vdndx), fmt='bo')
-
+        if plot_fd:
+            ax3.errorbar(roa, dndx, yerr=_np.sqrt(vdndx), fmt='bo')
+        # end if
         ax3.plot(rvec, plotdlnnedrho, 'b-', lw=2)
         ax3.fill_between(rvec, plotdlnnedrho-_np.sqrt(plotvardlnnedrho),
                                plotdlnnedrho+_np.sqrt(plotvardlnnedrho),
@@ -932,6 +938,7 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
     edge = kwargs.get('set_edge',None)
     iuse_ts = kwargs.get('iuse_ts', _np.ones( QTBdat["roa"].shape, dtype=bool))
     loggradient = kwargs.get('loggradient', True)
+    plot_fd = kwargs.get('plot_fd', False)
     plotit = kwargs.get('plotit', False)
     agradrho = kwargs.get('agradrho', 1.00)
     returnaf = kwargs.get('returnaf',False)
@@ -960,9 +967,11 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
 
     if fitin is None:
         isort = _np.argsort(roa)
-
+        rin = _ut.cylsym_odd(roa[isort].copy())
+        Tin = _ut.cylsym_even(Te[isort].copy())
+        vin = _ut.cylsym_even(varT[isort].copy())
         Tef, varTef, dlnTedrho, vardlnTedrho, af = fit_profile(
-            roa[isort], Te[isort], varT[isort], rvec,
+            rin, Tin, vin, rvec,
             arescale=arescale, bootstrappit=bootstrappit, af0=af0)
     else:
         Tef = fitin['prof']
@@ -987,13 +996,15 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
     # ================== #
 
     if plotit:
-        if len(_np.atleast_1d(agradrho)) ==1:
-            agr = agradrho*_np.ones_like(roa)
-        else:
-            agr = _ut.interp(rvec,agradrho,None,roa)
-        dTdx, vdTdx = _dd.findiff1d(roa.copy(), Te.copy(), varT.copy())
-        vdTdx = agr**2.0 * (dTdx / Te)**2.0 * ( vdTdx/(dTdx**2.0) + varT/(Te**2.0)  )
-        dTdx = -1.0*agr*dTdx / Te
+        if plot_fd:
+            if len(_np.atleast_1d(agradrho)) ==1:
+                agr = agradrho*_np.ones_like(roa)
+            else:
+                agr = _ut.interp(rvec,agradrho,None,roa)
+            dTdx, vdTdx = _dd.findiff1d(roa.copy(), Te.copy(), varT.copy())
+            vdTdx = agr**2.0 * (dTdx / Te)**2.0 * ( vdTdx/(dTdx**2.0) + varT/(Te**2.0)  )
+            dTdx = -1.0*agr*dTdx / Te
+        # end if
 
         _plt.figure()
         ax1 = _plt.subplot(2,1,1)
@@ -1036,7 +1047,9 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
             plotdlnTedrho = -1*(agradrho) * dlnTedrho.copy()
             plotvardlnTedrho = (agradrho**2.0) * vardlnTedrho.copy()
         # end if
-        ax3.errorbar(roa, dTdx, yerr=_np.sqrt(vdTdx), fmt='ro')
+        if plot_fd:
+            ax3.errorbar(roa, dTdx, yerr=_np.sqrt(vdTdx), fmt='ro')
+        # end if
 
         ax3.plot(rvec, plotdlnTedrho, 'r-', lw=2)
         ax3.fill_between(rvec, plotdlnTedrho-_np.sqrt(plotvardlnTedrho),
