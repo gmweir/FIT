@@ -200,11 +200,11 @@ __metaclass__ = type
 
 # Fitting using the Levenberg-Marquardt algorithm.    #
 def modelfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
-    kwargs.setdefault('xtol', 1e-14)
-    kwargs.setdefault('ftol', 1e-14)
-    kwargs.setdefault('gtol', 1e-14)
+    kwargs.setdefault('xtol', 1e-16)
+    kwargs.setdefault('ftol', 1e-16)
+    kwargs.setdefault('gtol', 1e-16)
     kwargs.setdefault('damp', 0.)
-    kwargs.setdefault('maxiter', 600)
+    kwargs.setdefault('maxiter', 1200)
     kwargs.setdefault('factor', 100)  # 100
     kwargs.setdefault('nprint', 10) # 100
     kwargs.setdefault('iterfunct', 'default')
@@ -214,7 +214,7 @@ def modelfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     kwargs.setdefault('autoderivative', 1)
     kwargs.setdefault('quiet', 0)
     kwargs.setdefault('diag', 0)
-    kwargs.setdefault('epsfcn', max((_np.nanmean(_np.diff(x.copy())),1e-3))) #5e-4) #1e-3
+    kwargs.setdefault('epsfcn', max((_np.nanmean(_np.diff(x.copy())),1e-2))) #5e-4) #1e-3
 #    kwargs.pop('epsfcn')
     kwargs.setdefault('debug', 0)
     return fit_mpfit(x, y, ey, XX, func, fkwargs, **kwargs)

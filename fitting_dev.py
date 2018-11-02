@@ -679,16 +679,16 @@ def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
     vdat = _ut.cylsym_even(vdat[isort].copy())
 
     options = dict()
-#    options.setdefault('xtol', 1e-16) #
-#    options.setdefault('ftol', 1e-16) #
-#    options.setdefault('gtol', 1e-16) #
-#    options.setdefault('nprint', 10) #
-#    # Consider making epsfcn just 0.5 * nanmean(dx)... the max or min here doesn't make sense in most cases
-##    options.setdefault('epsfcn', None) # 5e-4
-#    options.setdefault('epsfcn', max((_np.nanmean(_np.diff(rdat.copy())),1e-3))) # 5e-4
+    options.setdefault('xtol', 1e-16) #
+    options.setdefault('ftol', 1e-16) #
+    options.setdefault('gtol', 1e-16) #
+    options.setdefault('nprint', 10) #
+    # Consider making epsfcn just 0.5 * nanmean(dx)... the max or min here doesn't make sense in most cases
+#    options.setdefault('epsfcn', None) # 5e-4
+    options.setdefault('epsfcn', max((_np.nanmean(_np.diff(rdat.copy())),1e-3))) # 5e-4
 #    options.pop('epsfcn') # 5e-4
-#    options.setdefault('factor',100) # 100
-#    options.setdefault('maxiter',1200)
+    options.setdefault('factor',100) # 100
+    options.setdefault('maxiter',1200)
     NLfit = fitNL(rdat, pdat, vdat, af0, func, LB=LB, UB=UB, **options)
     NLfit.run()
 
@@ -797,18 +797,20 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
     fitin = kwargs.get('fitin', None)
     af0 = kwargs.get('af0', None)
     rescale_by_linavg = kwargs.get('rescale_by_linavg',False)
-
+    maxyy = kwargs.get('maxylim', None)
     QTBdat = QTBdat.copy()
     nkey = 'roa' if 'roan' not in QTBdat else 'roan'
     rvec = _np.copy(rvec)
     roa = _np.copy(QTBdat[nkey])
     QTBdat["roa"] = roa.copy()
+    rmax = kwargs.get('rmax', 1.05)
 
     # set the edge density if necessary, then switch back to the fat grid
     # where r/a<1.0 (mostly) ... also discard channels based on settings in
     # clean_fitdict - used several places
     QTBdat = build_TSfitdict(QTBin=QTBdat, set_edge=edge,
                 iuse_ts=iuse_ts*(~_np.isinf(roa))*(~_np.isnan(roa))*(QTBdat["ne"]>1e10))
+    QTBdat, _ = clean_fitdict(QTBdat, iuse=None, rmax=rmax)
     roa = _np.copy(QTBdat["roa"])  # fat grid!
     ne = _np.copy(QTBdat['ne'])    # [part/m3]
     varNL = _np.copy(QTBdat['varNL'])
@@ -900,7 +902,11 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
                                 interpolate=True, color='b', alpha=0.3)
         ax1.set_xlim((plotlims[0],plotlims[1]))
 #        ax1.set_ylim((0,1.1*ylims[1]))
-        ax1.set_ylim((0.0, 6.0))
+        if maxyy is None:
+#            maxyy = max((1e-20*max(nef+_np.sqrt(varnef)),1.1*ylims[1]))
+            maxyy = min((0.6,max((1e-20*_np.max(nef+_np.sqrt(varnef)),1.1*ylims[1]))))
+        # end if
+        ax1.set_ylim((0.0, maxyy))
         if loggradient:
             idx = _np.where(_np.abs(rvec) < 0.05)
             plotdlnnedrho = dlnnedrho.copy()
@@ -950,6 +956,8 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
     plotlims = kwargs.get('plotlims', None)
     fitin = kwargs.get('fitin', None)
     af0 = kwargs.get('af0', None)
+    maxyy = kwargs.get('maxylim', None)
+    rmax = kwargs.get('rmax', 1.05)
 
     QTBdat = QTBdat.copy()
     rvec = _np.copy(rvec)
@@ -958,6 +966,7 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
     # where r/a<1.0 (mostly) ... also discard channels based on settings in
     # clean_fitdict - used several places
     QTBdat = build_TSfitdict(QTBin=QTBdat, set_edge=edge, iuse_ts=iuse_ts)
+    QTBdat, _ = clean_fitdict(QTBdat, iuse=None, rmax=rmax)
     roa = _np.copy(QTBdat['roa'])
     Te = _np.copy(QTBdat['Te'])
     varTL = _np.copy(QTBdat['varTL'])
@@ -1026,10 +1035,15 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
 
         ax1.plot(rvec, Tef, 'r-', lw=2)
         ylims = ax1.get_ylim();
-        maxyy = min((ylims[1],12)) #min((_np.max(1.05*(Te+_np.sqrt(varTH))),12))
+#        maxyy = min((ylims[1],12)) #min((_np.max(1.05*(Te+_np.sqrt(varTH))),12))
+        maxyy = 6
         ax1.fill_between(rvec, Tef-_np.sqrt(varTef), Tef+_np.sqrt(varTef),
                                     interpolate=True, color='r', alpha=0.3) # TODO!: watch for inf/nan's
         ax1.set_xlim((plotlims[0],plotlims[1]))
+        if maxyy is None:
+            maxyy = min((12,max((_np.max(Tef+_np.sqrt(varTef)),1.1*ylims[1]))))
+        # end if
+        ax1.set_ylim((0.0, maxyy))
 #        ax1.set_ylim((0,maxyy))
 
         if loggradient:
@@ -1056,7 +1070,8 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
                                interpolate=True, color='r', alpha=0.3)
         ax3.set_xlim((plotlims[0],plotlims[1]))
         maxyy = min((_np.nanmax(1.05*(plotdlnTedrho+_np.sqrt(plotvardlnTedrho))),15))
-#        ax3.set_ylim((0,maxyy))
+        maxyy = 10
+        ax3.set_ylim((0,maxyy))
         _plt.tight_layout()
     # end if plotit
 
