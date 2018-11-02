@@ -804,6 +804,7 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
     roa = _np.copy(QTBdat[nkey])
     QTBdat["roa"] = roa.copy()
     rmax = kwargs.get('rmax', 1.05)
+    titl = kwargs.get('title', r'Density Profile Info')
 
     # set the edge density if necessary, then switch back to the fat grid
     # where r/a<1.0 (mostly) ... also discard channels based on settings in
@@ -884,7 +885,7 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
         ax1.grid()
         ax3.grid()
 
-        ax1.set_title(r'Density Profile Info')
+        ax1.set_title(titl)
         ax1.set_ylabel(r'$n_\mathrm{e}\ \mathrm{in}\ 10^{20}\mathrm{m}^{-3}$')
         ax3.set_ylabel(r'$a/L_\mathrm{ne}$')
         ax3.set_xlabel(r'$r/a$')
@@ -958,6 +959,7 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
     af0 = kwargs.get('af0', None)
     maxyy = kwargs.get('maxylim', None)
     rmax = kwargs.get('rmax', 1.05)
+    titl = kwargs.get('title', r'Temperature Profile Info')
 
     QTBdat = QTBdat.copy()
     rvec = _np.copy(rvec)
@@ -1021,7 +1023,7 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
         ax1.grid()
         ax3.grid()
 
-        ax1.set_title(r'Temperature Profile Info')
+        ax1.set_title(titl)
         ax1.set_ylabel(r'T$_e$ in KeV')
         ax3.set_ylabel(r'$a/L_\mathrm{Te}$')
         ax3.set_xlabel(r'$r/a$')
