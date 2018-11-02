@@ -669,8 +669,8 @@ def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
 
     if scale_by_data:
         pdat, vdat, slope, offset = _ms.rescale_problem(pdat, vdat)
-        af0[0] = 1.0
-        af0[1] = 0.0
+#        af0[0] = 1.0
+#        af0[1] = 0.0
     # end if
 
     options = dict()
@@ -706,10 +706,12 @@ def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
     # end if
     prof, gvec, info = modelfunc(_np.abs(rvec), NLfit.af)
     varp = NLfit.properror(_np.abs(rvec), gvec)
+#    varp = _np.abs(varp)
     varp = varp.copy()
 
     dprofdx = info.dprofdx.copy()
     vardprofdx = NLfit.properror(_np.abs(rvec), info.dgdx)
+#    vardprofdx = _np.abs(vardprofdx)
     af = NLfit.af.copy()
 
     if scale_by_data:
@@ -969,7 +971,7 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
         vardlnTedrho = fitin['vardlnpdrho']
         af = fitin['af']
     # end if
-    varlogTe = varTef / Tef**2.0
+    varlogTe = _np.abs(varTef) / Tef**2.0
     logTe = _np.log(Tef)
 
     # ================== #
@@ -1018,7 +1020,7 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
         ax1.fill_between(rvec, Tef-_np.sqrt(varTef), Tef+_np.sqrt(varTef),
                                     interpolate=True, color='r', alpha=0.3) # TODO!: watch for inf/nan's
         ax1.set_xlim((plotlims[0],plotlims[1]))
-        ax1.set_ylim((0,maxyy))
+#        ax1.set_ylim((0,maxyy))
 
         if loggradient:
             idx = _np.where(_np.abs(rvec) < 0.05)
@@ -1042,7 +1044,7 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
                                interpolate=True, color='r', alpha=0.3)
         ax3.set_xlim((plotlims[0],plotlims[1]))
         maxyy = min((_np.nanmax(1.05*(plotdlnTedrho+_np.sqrt(plotvardlnTedrho))),15))
-        ax3.set_ylim((0,maxyy))
+#        ax3.set_ylim((0,maxyy))
         _plt.tight_layout()
     # end if plotit
 

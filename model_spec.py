@@ -70,7 +70,7 @@ def rescale_problem(pdat=0, vdat=0, info=None, nargout=1):
         offset = _np.nanmin(pdat)
 
         pdat = (pdat.copy()-offset)/slope
-        vdat = vdat.copy()/slope**2.0
+        vdat = vdat.copy()/_np.abs(slope)**2.0
 
         return pdat, vdat, slope, offset
     elif info is not None:
