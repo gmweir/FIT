@@ -652,6 +652,11 @@ def model_qparab(XX, af=None, nohollow=False, prune=False, rescale=False, info=N
         return aout
     info.unscaleaf = unscaleaf
     if XX is None:
+        if prune:
+            info.af = info.af[:4]
+            info.Lbounds = info.Lbounds[:4]
+            info.Ubounds = info.Ubounds[:4]
+        # end if
         return info
     # endif
 

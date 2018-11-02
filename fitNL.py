@@ -69,6 +69,7 @@ __metaclass__ = type
 #    kwargs.setdefault('quiet', 1)
 #    kwargs.setdefault('diag', 0)
 #    kwargs.setdefault('epsfcn', max((_np.nanmean(_np.diff(xdat)),1e-2))) #5e-4) #1e-3
+#    kwargs.pop('epsfcn')
 #    kwargs.setdefault('debug', 0)
 #
 #    weightit = kwargs.setdefault('weightit', False)
@@ -214,6 +215,7 @@ def modelfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     kwargs.setdefault('quiet', 0)
     kwargs.setdefault('diag', 0)
     kwargs.setdefault('epsfcn', max((_np.nanmean(_np.diff(x.copy())),1e-3))) #5e-4) #1e-3
+#    kwargs.pop('epsfcn')
     kwargs.setdefault('debug', 0)
     return fit_mpfit(x, y, ey, XX, func, fkwargs, **kwargs)
 
@@ -637,7 +639,7 @@ class fitNL_base(Struct):
         solver_options['ftol'] = kwargs.pop('ftol', 1e-14) # 1e-10
         solver_options['gtol'] = kwargs.pop('gtol', 1e-14) # 1e-10
         solver_options['damp'] = kwargs.pop('damp', 0)
-        solver_options['maxiter'] = kwargs.pop('maxiter', 600) # 200
+        solver_options['maxiter'] = kwargs.pop('maxiter', 1200) # 200
         solver_options['factor'] = kwargs.pop('factor', 100) # 100 without rescale, scales the chi2? or the parameters?
         solver_options['nprint'] = kwargs.pop('nprint', 10)    # debug info
         solver_options['iterfunct'] = kwargs.pop('iterfunct', 'default')
@@ -648,6 +650,7 @@ class fitNL_base(Struct):
         solver_options['quiet'] = kwargs.pop('quiet', 0)
         solver_options['diag'] = kwargs.pop('diag', 0) # with rescale: positive scale factor for variables
         solver_options['epsfcn'] = kwargs.pop('epsfcn', max((_np.nanmean(_np.diff(xdat.copy())),1e-2))) # 0.001
+#        solver_options.pop('epsfcn')
         solver_options['debug'] = kwargs.pop('debug', 0)
 #        if fjac is None:
         if 1:  # the other way doesn't work yet
@@ -928,6 +931,7 @@ class fitNL(fitNL_base):
         self.solver_options.setdefault('quiet', 0)
         self.solver_options.setdefault('diag', 0)
         self.solver_options.setdefault('epsfcn', max((_np.nanmean(_np.diff(self.xdat.copy())),1e-2))) #5e-4) #1e-3
+#        self.solver_options.pop('epsfcn')
         self.solver_options.setdefault('debug', 0)
 #        # default to finite differencing in mpfit for jacobian
 #        self.solver_options.setdefault('autoderivative', 1)
@@ -1184,6 +1188,7 @@ def qparabfit(x, y, ey, XX, **kwargs):
     kwargs.setdefault('scale_problem',True)
     kwargs.setdefault('maxiter',2000)
     kwargs.setdefault('epsfcn', max((_np.nanmean(_np.diff(x.copy())),1e-2)))
+#    kwargs.pop('epsfcn')
     kwargs.setdefault('factor',100)
     kwargs.setdefault('autoderivative',1)
 
@@ -1218,7 +1223,7 @@ def qparabfit(x, y, ey, XX, **kwargs):
         if nohollow:            prune = True        # end if
         return _ms.model_qparab(x, af=af, nohollow=nohollow, prune=prune, info=infoin)
 
-    info = myqparab(None)
+    info = myqparab(None, nohollow=nohollow)
     af0 = info.af.copy()
 #    if scale_by_data:
 #        y, ey2, slope, offset = _ms.rescale_problem(_np.copy(y), _np.copy(ey)**2.0)
@@ -1228,9 +1233,11 @@ def qparabfit(x, y, ey, XX, **kwargs):
 #    # end if
 #    af0[0] = y[_np.argmin(x)].copy()
     kwargs.setdefault('af0',af0)
-
+    xin = _ut.cylsym_odd(x.copy())
+    yin = _ut.cylsym_even(y.copy())
+    eyin = _ut.cylsym_even(ey.copy())
     # Call mpfit
-    info = fit_mpfit(x, y, ey, XX, myqparab, fkwargs={"nohollow":nohollow}, **kwargs)
+    info = fit_mpfit(xin, yin, eyin, XX, myqparab, fkwargs={"nohollow":nohollow}, **kwargs)
 #    print(info.)
 #    if scale_by_data:
 #        # slope = _np.nanmax(pdat)-_np.nanmin(pdat)
@@ -1258,9 +1265,12 @@ def qparabfit(x, y, ey, XX, **kwargs):
 
     # ================================= #
 
-    info.aoverL = -1.0*agradrho*info.dprofdx/info.prof
+    info.dlnprofdx = info.dprofdx/info.prof
+    info.vardlnprofdx = info.dlnprofdx**2.0 * (info.varprof/info.prof**2.0 + info.vardprofdx/info.dprofdx**2.0)
+
+    info.aoverL = -1.0*agradrho*info.dlnprofdx
     info.var_aoverL = info.aoverL**2.0
-    info.var_aoverL *= ( info.varprof/info.prof**2.0 + info.vardprofdx/info.dprofdx**2.0)
+    info.var_aoverL *= info.vardlnprofdx
 
     agr = _ut.interp(XX, agradrho, ei=None, xo=x)
     dydx_fd, vardydx_fd = _dd.findiff1d(x.copy(), y.copy(), ey.copy()**2.0)
@@ -1288,12 +1298,9 @@ def qparabfit(x, y, ey, XX, **kwargs):
             ax1.errorbar(x, y, yerr=ey, fmt=clr+'o', color=clr )
         # end if
         ax1.plot(XX, info.prof, '-', color=clr, lw=2)
-#        ax1.plot(XX, (info.prof+_np.sqrt(info.varprof)), '--', color=clr, lw=1)
-#        ax1.plot(XX, (info.prof-_np.sqrt(info.varprof)), '--', color=clr, lw=1)
-
         ax1.fill_between(XX, info.prof-_np.sqrt(info.varprof),
                               info.prof+_np.sqrt(info.varprof),
-                          interpolate=True, color=clr, alpha=alph)
+                         interpolate=True, color=clr, alpha=alph)
 
         # ====== #
         ax2.plot(XX, info.aoverL, '-', color=clr, lw=1)
@@ -1302,12 +1309,9 @@ def qparabfit(x, y, ey, XX, **kwargs):
         else:
             ax2.errorbar(x, info.aoverL_fd, yerr=_np.sqrt(info.var_aoverL_fd), fmt=clr+'o', color=clr )
         # end if
-#        ax2.plot(XX, info.aoverL+_np.sqrt(info.var_aoverL), '--', color=clr, lw=1)
-#        ax2.plot(XX, info.aoverL-_np.sqrt(info.var_aoverL), '--', color=clr, lw=1)
-
         ax2.fill_between(XX, info.aoverL-_np.sqrt(info.var_aoverL),
                               info.aoverL+_np.sqrt(info.var_aoverL),
-                          interpolate=True, color=clr, alpha=alph)
+                         interpolate=True, color=clr, alpha=alph)
         # endif
         _plt.tight_layout()
 
@@ -1334,9 +1338,11 @@ def test_qparab_fit(nohollow=False):
         aa[5] = 1.0
     # endif
 
-    xdat = _np.linspace(0.05, 0.95, 10)
+#    xdat = _np.linspace(0.05, 0.95, 10)
+    xdat = _np.linspace(0.01, 1.05, 60)
+    xdat += 0.07*_np.random.normal(0.0, 1.0, len(xdat))
     ydat, _, temp = _ms.model_qparab(xdat, aa)
-    yerr = 0.10*ydat
+    yerr = 0.05*ydat
 
     # ============================================== #
 
@@ -1345,7 +1351,7 @@ def test_qparab_fit(nohollow=False):
     solver_options.setdefault('ftol', 1e-14)
     solver_options.setdefault('gtol', 1e-14)
     solver_options.setdefault('damp', 0.)
-    solver_options.setdefault('maxiter', 600)
+    solver_options.setdefault('maxiter', 1200)
     solver_options.setdefault('factor', 100)  # 100
     solver_options.setdefault('nprint', 10)
     solver_options.setdefault('iterfunct', 'default')
@@ -1356,6 +1362,7 @@ def test_qparab_fit(nohollow=False):
     solver_options.setdefault('quiet', 0)
     solver_options.setdefault('diag', 0)
     solver_options.setdefault('epsfcn', max((_np.nanmean(_np.diff(xdat.copy())),1e-2))) #5e-4) #1e-3
+#    solver_options.pop('epsfcn')
     solver_options.setdefault('debug', 0)
     # default to finite differencing in mpfit for jacobian
     # solver_options.setdefault('autoderivative', 1)
@@ -1372,6 +1379,7 @@ def test_qparab_fit(nohollow=False):
 #    assert info.dof==len(xdat)-len(aa)
 
     ydat += yerr*_np.random.normal(0.0, 1.0, len(xdat))
+    ydat += 0.2*ydat*_np.random.normal(0.0, 1.0, len(xdat))
     info = qparabfit(xdat, ydat, yerr, XX, nohollow=False, **solver_options)
 
     _plt.figure()

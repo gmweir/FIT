@@ -673,16 +673,22 @@ def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
 #        af0[1] = 0.0
     # end if
 
+    isort = _np.argsort(_np.abs(rdat))
+    rdat = _ut.cylsym_odd(rdat[isort].copy())
+    pdat = _ut.cylsym_even(pdat[isort].copy())
+    vdat = _ut.cylsym_even(vdat[isort].copy())
+
     options = dict()
-    options.setdefault('xtol', 1e-14) #
-    options.setdefault('ftol', 1e-14) #
-    options.setdefault('gtol', 1e-14) #
-    options.setdefault('nprint', 10) #
-    # Consider making epsfcn just 0.5 * nanmean(dx)... the max or min here doesn't make sense in most cases
-#    options.setdefault('epsfcn', None) # 5e-4
-    options.setdefault('epsfcn', max((_np.nanmean(_np.diff(rdat.copy())),1e-2))) # 5e-4
-    options.setdefault('factor',100) # 100
-    options.setdefault('maxiter',600)
+#    options.setdefault('xtol', 1e-16) #
+#    options.setdefault('ftol', 1e-16) #
+#    options.setdefault('gtol', 1e-16) #
+#    options.setdefault('nprint', 10) #
+#    # Consider making epsfcn just 0.5 * nanmean(dx)... the max or min here doesn't make sense in most cases
+##    options.setdefault('epsfcn', None) # 5e-4
+#    options.setdefault('epsfcn', max((_np.nanmean(_np.diff(rdat.copy())),1e-3))) # 5e-4
+#    options.pop('epsfcn') # 5e-4
+#    options.setdefault('factor',100) # 100
+#    options.setdefault('maxiter',1200)
     NLfit = fitNL(rdat, pdat, vdat, af0, func, LB=LB, UB=UB, **options)
     NLfit.run()
 
@@ -757,7 +763,7 @@ def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
         ax3.set_ylabel(r'$a/L_\mathrm{f}$')
         ax3.set_xlabel(r'$r/a$')
 
-        ax1.errorbar(rdat, pdat, yerr=_np.sqrt(vdat), fmt='ko', color='k' )
+        ax1.errorbar(rdat[rdat>0], pdat[rdat>0], yerr=_np.sqrt(vdat[rdat>0]), fmt='ko', color='k' )
 
         ax1.plot(rvec, prof, 'k-', lw=2)
 #        ax1.plot(rvec, prof+_np.sqrt(varp), 'k--', lw=1)
@@ -814,12 +820,8 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
     varn =  _np.copy(_np.sqrt(varNL*varNH))
 
     if fitin is None:
-        isort = _np.argsort(roa)
-        rin = _ut.cylsym_odd(roa[isort].copy())
-        nin = _ut.cylsym_even(1e-20*ne[isort].copy())
-        vin = _ut.cylsym_even(1e-40*varn[isort].copy())
         nef, varnef, dlnnedrho, vardlnnedrho, af = fit_profile(
-            rin, nin, vin, rvec,
+            roa.copy(), 1e-20*ne.copy(), 1e-40*varn.copy(), rvec,
             arescale=arescale, bootstrappit=bootstrappit, af0=af0)
 
         if rescale_by_linavg:
@@ -897,8 +899,8 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
         ax1.fill_between(rvec, 1e-20*(nef-_np.sqrt(varnef)), 1e-20*(nef+_np.sqrt(varnef)),
                                 interpolate=True, color='b', alpha=0.3)
         ax1.set_xlim((plotlims[0],plotlims[1]))
-        ax1.set_ylim((0,1.1*ylims[1]))
-
+#        ax1.set_ylim((0,1.1*ylims[1]))
+        ax1.set_ylim((0.0, 6.0))
         if loggradient:
             idx = _np.where(_np.abs(rvec) < 0.05)
             plotdlnnedrho = dlnnedrho.copy()
@@ -921,7 +923,8 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
                                plotdlnnedrho+_np.sqrt(plotvardlnnedrho),
                                interpolate=True, color='b', alpha=0.3)
         ax3.set_xlim((plotlims[0],plotlims[1]))
-        maxyy = min((_np.nanmax(1.05*(plotdlnnedrho+_np.sqrt(plotvardlnnedrho))),15))
+#        maxyy = min((_np.nanmax(1.05*(plotdlnnedrho+_np.sqrt(plotvardlnnedrho))),15))
+        maxyy = 10.0
         ax3.set_ylim((0,maxyy))
         _plt.tight_layout()
     # end if plotit
@@ -966,12 +969,8 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
     varT =  _np.copy(_np.sqrt(varTL*varTH))
 
     if fitin is None:
-        isort = _np.argsort(roa)
-        rin = _ut.cylsym_odd(roa[isort].copy())
-        Tin = _ut.cylsym_even(Te[isort].copy())
-        vin = _ut.cylsym_even(varT[isort].copy())
         Tef, varTef, dlnTedrho, vardlnTedrho, af = fit_profile(
-            rin, Tin, vin, rvec,
+            roa.copy(), Te.copy(), varT.copy(), rvec,
             arescale=arescale, bootstrappit=bootstrappit, af0=af0)
     else:
         Tef = fitin['prof']
@@ -1370,7 +1369,7 @@ def clean_fitdict(dictdat, iuse=None, rmax=9.0, Tmin=0.0, Tmax=9.0):
     if iuse is None:
         iuse = _np.ones(_np.shape(dictdat['roa']), dtype=bool)
     # end if
-    iuse = iuse*(~_np.isinf(dictdat['roa']))*(~_np.isnan(dictdat['roa']))*(dictdat['Te']>Tmin)*(_np.abs(dictdat['roa'])<rmax)*(_np.abs(dictdat['Te'])<Tmax)
+    iuse = iuse*(~_np.isinf(dictdat['roa']))*(~_np.isnan(dictdat['roa']))*(dictdat['Te']>Tmin)*(_np.abs(dictdat['roa'])<rmax)*(_np.abs(dictdat['Te'])<Tmax)*(dictdat['roa']!=0.0)
     dictdat['roa'] = dictdat['roa'][iuse]
     dictdat['Te'] = dictdat['Te'][iuse]
     if "TeL" in dictdat:
