@@ -18,7 +18,8 @@ import numpy as _np
 import matplotlib.pyplot as _plt
 #import pybaseutils as _pyut
 from pybaseutils.Struct import Struct
-from pybaseutils.utils import sech, interp_irregularities # analysis:ignore
+from pybaseutils.utils import sech, interp_irregularities
+from pybaseutils.utils import log as utlog
 
 # ========================================================================== #
 # ========================================================================== #
@@ -341,8 +342,9 @@ def partial_edgepower(XX, af):
 
     gvec = _np.zeros((3,_np.size(XX)), dtype=_np.float64)
     gvec[0,:] = 1.0 - _np.power(1-_np.power(XX,c),d)
-    gvec[1,:] = -1.0 * (1.0-b)*d*_np.power(XX,c)*_np.log(XX)*_np.power(1.0-_np.power(XX,c),d-1.0)
-    gvec[2,:] = -1.0*(b-1.0)*_np.power((1-_np.power(XX,c)), d)*_np.log(1.0-_np.power(XX,c))
+    gvec[1,:] = -1.0 * (1.0-b)*d*_np.power(XX,c)*utlog(XX)*_np.power(1.0-_np.power(XX,c),d-1.0)
+#    gvec[2,:] = -1.0*(b-1.0)*_np.power((1-_np.power(XX,c)), d)*_np.log(1.0-_np.power(XX,c))
+    gvec[2,:] = -1.0*(b-1.0)*_np.power((1-_np.power(XX,c)), d)*utlog(-1.0*_np.power(XX,c), a1p=True)
     return gvec
 
 def deriv_edgepower(XX, af):
@@ -367,12 +369,13 @@ def partial_deriv_edgepower(XX, af):
     gvec[0,:] = c*d*_np.power(XX,c-1.0)*_np.power(1.0-_np.power(XX,c),d-1.0)
     gvec[1,:] = (
         -1.0*(1-b)*d*_np.power(XX,c-1.0)*_np.power(1.0-_np.power(XX,c), d-1.0)
-        - (1.0-b)*d*c*_np.power(XX,c-1.0)*_np.log(XX)*_np.power(1.0-_np.power(XX,c),d-1.0)
-        + (1.0-b)*(d-1.0)*d*c*_np.power(XX,2*c-1.0)*_np.log(XX)*_np.power(1.0-_np.power(XX,c),d-2.0)
+        - (1.0-b)*d*c*_np.power(XX,c-1.0)*utlog(XX)*_np.power(1.0-_np.power(XX,c),d-1.0)
+        + (1.0-b)*(d-1.0)*d*c*_np.power(XX,2*c-1.0)*utlog(XX)*_np.power(1.0-_np.power(XX,c),d-2.0)
         )
     gvec[2,:] = (
         -1.0*(1.0-b)*c*_np.power(XX,c-1.0)*_np.power(1.0-_np.power(XX,c),d-1.0)
-        - (1.0-b)*c*d*_np.power(XX,c-1.0)*_np.power(1.0-_np.power(XX,c),d-1.0)*_np.log(1.0-_np.power(XX,c))
+        - (1.0-b)*c*d*_np.power(XX,c-1.0)*_np.power(1.0-_np.power(XX,c),d-1.0)*utlog(-_np.power(XX,c), a1p=True)
+#        - (1.0-b)*c*d*_np.power(XX,c-1.0)*_np.power(1.0-_np.power(XX,c),d-1.0)*_np.log(1.0-_np.power(XX,c))
         )
     return gvec
 
@@ -403,18 +406,20 @@ def partial_deriv2_edgepower(XX, af):
     gvec[1,:] = (
           (b-1.0)*d*(c-1.0)*_np.power(XX,c-2.0)*_np.power(1.0-_np.power(XX,c),d-1.0)
         + (b-1.0)*d*c*_np.power(XX,c-2)*_np.power(1.0-_np.power(XX,c),d-1.0)
-        + (b-1.0)*d*(c-1.0)*c*_np.power(XX,c-2.0)*_np.log(XX)*_np.power(1.0-_np.power(XX,c),d-1.0)
-        + (b-1.0)*(d-2.0)*(d-1.0)*d*_np.power(c,2.0)*_np.power(XX,3*c-2.0)*_np.log(XX)*_np.power(1.0-_np.power(XX,c),d-3.0)
-        - 2.0*(b-1.0)*(d-1.0)*d*_np.power(c,2.0)*_np.power(XX,2*c-2.0)*_np.log(XX)*_np.power(1.0-_np.power(XX,c),d-2.0)
+        + (b-1.0)*d*(c-1.0)*c*_np.power(XX,c-2.0)*utlog(XX)*_np.power(1.0-_np.power(XX,c),d-1.0)
+        + (b-1.0)*(d-2.0)*(d-1.0)*d*_np.power(c,2.0)*_np.power(XX,3*c-2.0)*utlog(XX)*_np.power(1.0-_np.power(XX,c),d-3.0)
+        - 2.0*(b-1.0)*(d-1.0)*d*_np.power(c,2.0)*_np.power(XX,2*c-2.0)*utlog(XX)*_np.power(1.0-_np.power(XX,c),d-2.0)
         - 2.0*(b-1.0)*(d-1.0)*d*c*_np.power(XX,2*c-2.0)*_np.power(1-_np.power(XX,c),d-2.0)
-        - (b-1.0)*(d-1.0)*d*(c-1.0)*c*_np.power(XX,2*c-2.0)*_np.log(XX)*_np.power(1 - _np.power(XX,c),d-2.0)
+        - (b-1.0)*(d-1.0)*d*(c-1.0)*c*_np.power(XX,2*c-2.0)*utlog(XX)*_np.power(1 - _np.power(XX,c),d-2.0)
         )
     gvec[2,:] = (
         -1.0*(b-1.0)*_np.power(c,2.0)*(d-1.0)*_np.power(XX,2*c-2.0)*_np.power(1.0-_np.power(XX,c),d-2.0)
         - (b-1.0)*_np.power(c,2.0)*d*_np.power(XX,2*c-2.0)*_np.power(1.0-_np.power(XX,2),d-2.0)
-        - (b-1.0)*_np.power(c,2.0)*(d-1.0)*d*_np.power(XX,2*c-2.0)*_np.power(1.0-_np.power(XX,c),d-2.0)*_np.log(1.0-_np.power(XX,c))
+        - (b-1.0)*_np.power(c,2.0)*(d-1.0)*d*_np.power(XX,2*c-2.0)*_np.power(1.0-_np.power(XX,c),d-2.0)*utlog(-_np.power(XX,c), a1p=True)
+#        - (b-1.0)*_np.power(c,2.0)*(d-1.0)*d*_np.power(XX,2*c-2.0)*_np.power(1.0-_np.power(XX,c),d-2.0)*_np.log(1.0-_np.power(XX,c))
         + (b-1.0)*(c-1.0)*c*_np.power(XX,c-2.0)*_np.power(1.0-_np.power(XX,c),d-1.0)
-        + (b-1.0)*(c-1.0)*c*d*_np.power(XX,c-2.0)*_np.power(1.0-_np.power(XX,c),d-1.0)*_np.log(1-_np.power(XX,c))
+        + (b-1.0)*(c-1.0)*c*d*_np.power(XX,c-2.0)*_np.power(1.0-_np.power(XX,c),d-1.0)*utlog(-_np.power(XX,c), a1p=True)
+#        + (b-1.0)*(c-1.0)*c*d*_np.power(XX,c-2.0)*_np.power(1.0-_np.power(XX,c),d-1.0)*_np.log(1-_np.power(XX,c))
         )
     return gvec
 
@@ -511,10 +516,11 @@ def partial_twopower(XX, af):
     gvec = _np.zeros((3,_np.size(XX)), dtype=_np.float64)
     gvec[0,:] = _np.power(1.0-_np.power(XX,b),c)
     gvec[1,:] = (
-        -1.0*a*c*_np.power(XX,b)*_np.log(XX)*_np.power(1.0-_np.power(XX,b),c-1.0)
+        -1.0*a*c*_np.power(XX,b)*utlog(XX)*_np.power(1.0-_np.power(XX,b),c-1.0)
         )
     gvec[2,:] = (
-        a*_np.power(1.0-_np.power(XX,b),c)*_np.log(1.0-_np.power(XX,b))
+        a*_np.power(1.0-_np.power(XX,b),c)*utlog(-_np.power(XX,b), a1p=True)
+#        a*_np.power(1.0-_np.power(XX,b),c)*_np.log(1.0-_np.power(XX,b))
         )
     return gvec
 
@@ -533,11 +539,12 @@ def partial_deriv_twopower(XX, af):
     gvec[0,:] = -1.0*b*c*_np.power(XX,b-1.0)*_np.power(1.0-_np.power(XX,b), c-1.0)
     gvec[1,:] = (
         -1.0*a*c*_np.power(XX,b-1.0)*_np.power(1.0-_np.power(XX,b),c-1.0)
-        - a*c*b*_np.power(XX,b-1.0)*_np.log(XX)*_np.power(1.0-_np.power(XX,b),c-1.0)
-        + a*(c-1.0)*c*b*_np.power(XX,2*b-1.0)*_np.log(XX)*_np.power(1.0-_np.power(XX,b),c-2.0)
+        - a*c*b*_np.power(XX,b-1.0)*utlog(XX)*_np.power(1.0-_np.power(XX,b),c-1.0)
+        + a*(c-1.0)*c*b*_np.power(XX,2*b-1.0)*utlog(XX)*_np.power(1.0-_np.power(XX,b),c-2.0)
         )
     gvec[2,:] = (
-        -1.0*a*b*_np.power(XX,b-1.0)*_np.power(1.0-_np.power(XX,b),c-1.0)*(c*_np.log(1.0-_np.power(XX,b))+1.0)
+        -1.0*a*b*_np.power(XX,b-1.0)*_np.power(1.0-_np.power(XX,b),c-1.0)*(c*utlog(-_np.power(XX,b), a1p=True)+1.0)
+#        -1.0*a*b*_np.power(XX,b-1.0)*_np.power(1.0-_np.power(XX,b),c-1.0)*(c*_np.log(1.0-_np.power(XX,b))+1.0)
         )
     return gvec
 
@@ -742,9 +749,19 @@ def qparab(XX, *aa, **kwargs):
         aa[4] = 0.0
         aa[5] = 1.0
     # endif
+
+    if aa[2] == -1.0:
+        aa[2] += 1e-100
+    if aa[3] == 1.0 or aa[3] == 2.0:
+        aa[3] += 1e-100
+    if aa[5] == 0.0:
+        aa[5] += 1e-100
+    # end if
+
     prof = aa[0]*( aa[1]-aa[4]
                    + (1.0-aa[1]+aa[4])*_np.abs(1.0-XX**aa[2])**aa[3]
-                   + aa[4]*(1.0-_np.exp(-XX**2.0/aa[5]**2.0)) )
+                   + aa[4]*-1.0*_np.expm1(-XX**2.0/aa[5]**2.0) )
+#                   + aa[4]*(1.0-_np.exp(-XX**2.0/aa[5]**2.0)) )
     return prof
 # end def qparab
 
@@ -768,6 +785,14 @@ def deriv_qparab(XX, aa=[0.30, 0.002, 2.0, 0.7, -0.24, 0.30], nohollow=False):
         aa[4] = 0.0
         aa[5] = 1.0
     # endif
+
+    if aa[2] == -1.0:
+        aa[2] += 1e-100
+    if aa[3] == 1.0 or aa[3] == 2.0:
+        aa[3] += 1e-100
+    if aa[5] == 0.0:
+        aa[5] += 1e-100
+    # end if
 
     dpdx = aa[0]*( (1.0-aa[1]+aa[4])*(-1.0*aa[2]*XX**(aa[2]-1.0))*aa[3]*(1.0-XX**aa[2])**(aa[3]-1.0)
                    - aa[4]*(-2.0*XX/aa[5]**2.0)*_np.exp(-XX**2.0/aa[5]**2.0) )
@@ -795,6 +820,15 @@ def deriv2_qparab(XX, aa=[0.30, 0.002, 2.0, 0.7, -0.24, 0.30], nohollow=False):
         aa[4] = 0.0
         aa[5] = 1.0
     # endif
+
+    if aa[2] == -1.0:
+        aa[2] += 1e-100
+    if aa[3] == 1.0 or aa[3] == 2.0:
+        aa[3] += 1e-100
+    if aa[5] == 0.0:
+        aa[5] += 1e-100
+    # end if
+
     d2pdx2 = aa[3]*(aa[2]**2.0)*(aa[3]-1.0)*(1.0+aa[4]-aa[1])*(XX**(2.*aa[2]-2.0))*(1-XX**aa[2])**(aa[3]-2.0)
     d2pdx2 -= (aa[2]-1.0)*aa[2]*aa[3]*(1.0+aa[4]-aa[1])*(XX**(aa[2]-2.0))*(1-XX**aa[2])**(aa[3]-1.0)
     d2pdx2 += (2.0*aa[4]*_np.exp(-XX**2.0/(aa[5]**2.0)))/(aa[5]**2.0)
@@ -832,11 +866,20 @@ def partial_qparab(XX,aa=[0.30, 0.002, 2.0, 0.7, -0.24, 0.30], nohollow=False):
     h = aa[4]
     w = aa[5]
 
+    if p == -1.0:
+        p += 1e-100
+    if q == 1.0 or q == 2.0:
+        q += 1e-100
+    if w == 0:
+        w += 1e-100
+    # end if
+
     gvec = _np.zeros( (6,_np.size(XX)), dtype=_np.float64)
     gvec[0,:] = g-h+(1.0-g+h)*_np.abs(1.0-XX**p)**q + h*(1.0-_np.exp(-XX**2.0/w**2.0))
     gvec[1,:] = Y0*( 1.0-_np.abs(1.0-XX**p)**q )    # aa[0]
-    gvec[2,:] = -1.0*Y0*q*(g-h-1.0)*(XX**p)*_np.log(XX)*(_np.abs(1-XX**p)**q)/(XX**p-1.0)
-    gvec[3,:] = Y0*(-g+h+1.0)*(_np.abs(1-XX**p)**q)*_np.log(1.0-XX**p)
+    gvec[2,:] = -1.0*Y0*q*(g-h-1.0)*(XX**p)*utlog(XX)*(_np.abs(1-XX**p)**q)/(XX**p-1.0)
+    gvec[3,:] = Y0*(-g+h+1.0)*(_np.abs(1-XX**p)**q)*utlog(-XX**p, a1p=True)
+#    gvec[3,:] = Y0*(-g+h+1.0)*(_np.abs(1-XX**p)**q)*_np.log(1.0-XX**p)
     gvec[4,:] = Y0*(_np.abs(1.0-XX**p)**q) - Y0*_np.exp(-(XX/w)**2.0)
     gvec[5,:] = -2.0*h*(XX**2.0)*Y0*_np.exp(-(XX/w)**2.0) / w**3.0
 
@@ -875,15 +918,24 @@ def partial_deriv_qparab(XX, aa=[0.30, 0.002, 2.0, 0.7, -0.24, 0.30], nohollow=F
     h = aa[4]
     w = aa[5]
 
+    if p == -1.0:
+        p += 1e-100
+    if q == 1.0 or q == 2.0:
+        q += 1e-100
+    if w == 0:
+        w += 1e-100
+    # end if
+
     gvec = _np.zeros( (6,_np.size(XX)), dtype=_np.float64)
     gvec[0,:] = 2.0*h*XX*_np.exp(-(XX/w)**2.0)/(w**2.0) - p*q*(-g+h+1.0)*(XX**(p-1.0))*((1.0-XX**p)**(q-1.0))
     gvec[1,:] = p*q*Y0*(XX**(p-1.0))*((1-XX**p)**(q-1.0))
 
     gvec[2,:] = q*Y0*(-1.0*(g-h-1.0))*((1.0-XX**p)**(q-2.0))
-    gvec[2,:] *= p*_np.log(XX)*((q-1.0)*(XX**(2.0*p-1.0))
+    gvec[2,:] *= p*utlog(XX)*((q-1.0)*(XX**(2.0*p-1.0))
                     - (XX**(p-1.0))*(1.0-XX**p))+(XX**p-1.0)*XX**(p-1.0)
 
-    gvec[3,:] = p*Y0*(g-h-1.0)*(XX**(p-1.0))*((1.0-XX**p)**(q-1.0))*(q*_np.log(1.0-XX**p)+1.0)
+    gvec[3,:] = p*Y0*(g-h-1.0)*(XX**(p-1.0))*((1.0-XX**p)**(q-1.0))*(q*utlog(-XX**p, a1p=True)+1.0)
+#    gvec[3,:] = p*Y0*(g-h-1.0)*(XX**(p-1.0))*((1.0-XX**p)**(q-1.0))*(q*_np.log(1.0-XX**p)+1.0)
     gvec[4,:] = (2.0*XX*Y0*_np.exp(-1.0*(XX/w)**2.0))/(w**2.0) - p*q*Y0*(XX**(p-1.0))*((1.0-XX**p)**(q-1.0))
 
     gvec[5,:] = h*Y0*_np.exp(-1.0*(XX/w)**2.0)*((4.0*(XX**3.0))/(w**5.0)-(4.0*XX)/(w**3.0))
@@ -922,13 +974,22 @@ def partial_deriv2_qparab(XX, aa=[0.30, 0.002, 2.0, 0.7, -0.24, 0.30], nohollow=
     h = aa[4]
     w = aa[5]
 
+    if p == -1.0:
+        p += 1e-100
+    if q == 1.0 or q == 2.0:
+        q += 1e-100
+    if w == 0:
+        w += 1e-100
+    # end if
+
     gvec = _np.zeros( (6,_np.size(XX)), dtype=_np.float64)
     gvec[0,:] = deriv2_qparab(XX, aa, nohollow) / Y0
     gvec[1,:] = -p*q*Y0*(XX**(p-2.0))*(1.0-XX**p)**(q-2.0)*(p*(q*(XX**p)-1.0)-XX**p+1.0)
-    gvec[2,:] = p*_np.log(XX)*(p*((q**2.0)*(XX**(2.0*p))-3.0*q*(XX**p)+XX**p+1.0)-(XX**p-1.0)*(q*XX**p-1.0))
+    gvec[2,:] = p*utlog(XX)*(p*((q**2.0)*(XX**(2.0*p))-3.0*q*(XX**p)+XX**p+1.0)-(XX**p-1.0)*(q*XX**p-1.0))
     gvec[2,:] += (XX**p-1.0)*(2.0*p*(q*(XX**p)-1.0)-XX**p+1.0)
     gvec[2,:] *= q*Y0*(g-h-1.0)*(XX**(p-2.0))*((1.0-XX**p)**(q-3.0))
-    gvec[3,:] = p*Y0*(-(g-h-1.0))*(XX**(p-2.0))*((1.0-XX**p)**(q-2.0))*(p*(2.0*q*XX**p-1.0)+q*(p*(q*XX**p-1.0)-XX**p+1.0)*_np.log(1.0-XX**p)-XX**p+1.0)
+    gvec[3,:] = p*Y0*(-(g-h-1.0))*(XX**(p-2.0))*((1.0-XX**p)**(q-2.0))*(p*(2.0*q*XX**p-1.0)+q*(p*(q*XX**p-1.0)-XX**p+1.0)*utlog(-XX**p, a1p=True)-XX**p+1.0)
+#    gvec[3,:] = p*Y0*(-(g-h-1.0))*(XX**(p-2.0))*((1.0-XX**p)**(q-2.0))*(p*(2.0*q*XX**p-1.0)+q*(p*(q*XX**p-1.0)-XX**p+1.0)*_np.log(1.0-XX**p)-XX**p+1.0)
     gvec[4,:] = Y0*(p*q*(XX**(p-2.0))*((1.0-XX**p)**(q-2.0))*(p*(q*XX**p-1.0)-XX**p+1.0)+(2.0*_np.exp(-XX**2.0/w**2.0)*(w**2.0-2.0*XX**2.0))/w**4.0)
     gvec[5,:] = -(4.0*h*Y0*_np.exp(-XX**2.0/w**2.0)*(w**4.0-5*w**2.0*XX**2.0+2.0*XX**4.0))/w**7.0
 
@@ -1225,7 +1286,7 @@ def model_PowerLaw(XX, af=None, npoly=4):
     dpolys = dcoeffs(XX)
     dcoeffs = dcoeffs.coeffs
 
-    info.dprofdx = polys/XX + _np.log(XX)*dpolys
+    info.dprofdx = polys/XX + utlog(XX)*dpolys
     info.dprofdx *= prof
 
     # The g-vector contains the partial derivatives used for error propagation
@@ -1234,7 +1295,7 @@ def model_PowerLaw(XX, af=None, npoly=4):
     # dfda_n = dfc/da_n * (f/fc)
     # dfda_n+1 = XX*f
     # dfda_n+2 = f/a_n+2
-    # gvec(0,1:nx) = XX**(n+1)*_np.log(XX);
+    # gvec(0,1:nx) = XX**(n+1)*utlog(XX);
     # gvec(1,1:nx) = XX   ;
     # gvec(2,1:nx) = 1;
     # ...
@@ -1244,7 +1305,7 @@ def model_PowerLaw(XX, af=None, npoly=4):
     gvec = _np.zeros((num_fit, nx), dtype=_np.float64)
     for ii in range(npoly+1):  # ii=1:num_fit
         kk = npoly+1 - (ii + 1)
-        gvec[ii, :] = prof*_np.log(XX)*XX**kk
+        gvec[ii, :] = prof*utlog(XX)*XX**kk
     # endfor
     gvec[num_fit-1,:] = prof/af[num_fit-1]
     gvec[num_fit-1, :] = prof*XX     # TODO: CHECK THIS
@@ -1255,12 +1316,12 @@ def model_PowerLaw(XX, af=None, npoly=4):
     dgdx = _np.zeros((num_fit, nx), dtype=_np.float64)
     for ii in range(npoly+1):  # ii=1:(npoly-1)
         kk = npoly+1 - (ii + 1)
-        dgdx[ii, :] = info.dprofdx*_np.log(XX)*(XX**kk)
-#        dgdx[ii, :] += prof*af[num_fit]*_np.log(XX)*(XX**kk)
-        dgdx[ii, :] += prof*af[num_fit-1]*_np.log(XX)*(XX**kk)  # TODO: check this
+        dgdx[ii, :] = info.dprofdx*utlog(XX)*(XX**kk)
+#        dgdx[ii, :] += prof*af[num_fit]*utlog(XX)*(XX**kk)
+        dgdx[ii, :] += prof*af[num_fit-1]*utlog(XX)*(XX**kk)  # TODO: check this
 
         if ii<npoly:
-            dgdx[ii, :] += prof*(XX**(kk-1))*(1.0 + kk*_np.log(XX))     # 3 = dcoeffs / af[:npoly+1]
+            dgdx[ii, :] += prof*(XX**(kk-1))*(1.0 + kk*utlog(XX))     # 3 = dcoeffs / af[:npoly+1]
         else:
             dgdx[ii, :] += prof*(XX**(kk-1))
         # endif
@@ -1326,14 +1387,14 @@ def model_Exponential(XX, af=None, npoly=None):
     gvec = _np.zeros( (num_fit,nx), dtype=float)
     gvec[0, :] = prof/af[0]
     gvec[1, :] = prof1*(XX**af[2])
-    gvec[2, :] = prof1*af[1]*_np.log(XX)*(XX**af[2])
-    gvec[3, :] = af[0]*_np.log(XX)*(XX**af[3])
+    gvec[2, :] = prof1*af[1]*utlog(XX)*(XX**af[2])
+    gvec[3, :] = af[0]*utlog(XX)*(XX**af[3])
 
     dgdx = _np.zeros( (num_fit,nx), dtype=float)
     dgdx[0, :] = info.dprofdx / af[0]
     dgdx[1, :] = dprof1dx*(XX**af[2]) + dprof1dx/af[1]
-    dgdx[2, :] = dprof1dx*(af[1]*_np.log(XX)*(XX**af[2]) + _np.log(XX) + 1.0/af[2] )
-    dgdx[3, :] = dprof2dx*_np.log(XX) + af[0]*XX**(af[3]-1.0)
+    dgdx[2, :] = dprof1dx*(af[1]*utlog(XX)*(XX**af[2]) + utlog(XX) + 1.0/af[2] )
+    dgdx[3, :] = dprof2dx*utlog(XX) + af[0]*XX**(af[3]-1.0)
 
     # gvec = _np.zeros( (num_fit,nx), dtype=float)
     # dgdx = _np.zeros( (num_fit,nx), dtype=float)
@@ -1417,7 +1478,7 @@ def model_flattop(XX, af):
     gvec = _np.zeros((3, nx), dtype=_np.float64)
     gvec[0, :] = prof / af[0]
     gvec[1, :] = af[0]*af[2]*temp / (af[1]*(1.0+temp)**2.0)
-    gvec[2, :] = af[0]*temp*_np.log(XX/af[1]) / (1.0+temp)**2.0
+    gvec[2, :] = af[0]*temp*utlog(XX/af[1]) / (1.0+temp)**2.0
     info.gvec = gvec
 
     info.dprofdx = -1.0*af[0]*af[2]*temp/(XX*(1.0+temp)**2.0)
@@ -1426,8 +1487,8 @@ def model_flattop(XX, af):
     dgdx[0, :] = info.dprofddx / af[0]
     dgdx[1, :] = prof * info.dprofdx * (XX/temp) * (af[2]/af[0]) * (temp-1.0) / (af[1]*af[1])
     dgdx[2, :] = info.dprofdx/af[2]
-    dgdx[2, :] += info.dprofdx*_np.log(XX/af[1])
-    dgdx[2, :] -= 2.0*(info.dprofdx**2.0)*(_np.log(XX/af[1])/prof)
+    dgdx[2, :] += info.dprofdx*utlog(XX/af[1])
+    dgdx[2, :] -= 2.0*(info.dprofdx**2.0)*(utlog(XX/af[1])/prof)
     info.dgdx = dgdx
     return prof, gvec, info
 
@@ -1569,8 +1630,9 @@ def model_2power(XX, af=None):
     gvec[0, :] = (prof-af[1])/(af[0]-af[1])
     gvec[1, :] = 1.0-gvec[0, :].copy()
     gvec[2, :] = -1.0*af[3]*(af[0]-af[1])*(1.0-XX**af[2])**(af[3]-1.0)
-    gvec[2, :] *= XX**(af[2])*_np.log(XX)
-    gvec[3, :] = (af[0]-af[1])*_np.log(1.0-XX**af[2])
+    gvec[2, :] *= XX**(af[2])*utlog(XX)
+    gvec[3, :] = (af[0]-af[1])*utlog(-XX**af[2], a1p=True)
+#    gvec[3, :] = (af[0]-af[1])*_np.log(1.0-XX**af[2])
     gvec[3, :] *= (1.0-XX**af[2])**af[3]
     info.gvec = gvec
 
@@ -1578,10 +1640,11 @@ def model_2power(XX, af=None):
     dgdx[0, :] = -af[2]*af[3]*(XX**(af[2]-1.0))*(1.0-XX**af[2])**(af[3]-1.0)
     dgdx[1, :] = -1.0*dgdx[0, :].copy()
     dgdx[2, :] = af[3]*(af[0]-af[1])*XX**(af[2]-1.0)*(1.0-XX**af[2])**af[3]
-    dgdx[2, :] *= af[2]*af[3]*XX**af[2]+_np.log(XX)+XX**af[2]-af[2]*_np.log(XX)-1.0
+    dgdx[2, :] *= af[2]*af[3]*XX**af[2]+utlog(XX)+XX**af[2]-af[2]*utlog(XX)-1.0
     dgdx[2, :] /= (XX**af[2] - 1.0)**2.0
     dgdx[3, :] = info.dprofdx / af[3]
-    dgdx[3, :] *= 1.0 + af[3]*_np.log(1.0-XX**af[2])
+    dgdx[3, :] *= 1.0 + af[3]*utlog(-XX**af[2], a1p=True)
+#    dgdx[3, :] *= 1.0 + af[3]*_np.log(1.0-XX**af[2])
     info.dgdx = dgdx
 
     return prof, gvec, info
@@ -1704,7 +1767,7 @@ def model_StepSeries(XX, af=None, npoly=4):
     npoly = _np.size(af)-1
     num_fit = _np.size(af)  # Number of fitting parameters
     nx = _np.size(XX)
-    zz = 50
+    zz = 1e3 # 50
 
     info = Struct()
     info.Lbounds = _np.hstack(
@@ -1742,11 +1805,11 @@ def model_StepSeries(XX, af=None, npoly=4):
         # info.dprofdx = info.dprofdx+0.5*af[ii]*zz*sech(zz*(XX-bb**af[ii]))**2
 
         gvec[ii, :] = (0.5*(1 + temp)
-                       - 0.5*zz*_np.log(bb)*(bb**af[ii])*(1 - temp**2))
+                       - 0.5*zz*utlog(bb)*(bb**af[ii])*(1 - temp**2))
 
 #        #indice of transitions
 #        bx = _np.floor(1+bb/(XX[2]-XX[1]))
-#        gvec[num_fit-1,ba-1:bx-1] = (zz*_np.log(bb)*(-bb)**af[num_fit-1]
+#        gvec[num_fit-1,ba-1:bx-1] = (zz*utlog(bb)*(-bb)**af[num_fit-1]
 #                            * sech(zz*(XX[ba-1:bx-1]-bb**af[num_fit-1]))**2
 #        ba = _np.floor(1+bb/(XX(2)-XX(1)))
     # endfor
@@ -2095,8 +2158,8 @@ def _derivative_inputcondition(xvar):
 if __name__ == '__main__':
 
     XX = _np.linspace(0, 1, 200)
-    npoly = 10
-    model_number = 7
+    npoly = 5
+    model_number = 6
 #    af = [0.1,0.1,0.1]
     af = None
 #    af = [2.0,0.1,0.1,0.5]

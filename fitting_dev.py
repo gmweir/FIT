@@ -214,6 +214,13 @@ def weightedPolyfit(xvar, yvar, xo, vary=None, deg=1, nargout=2):
     def _func(xvec, af, **fkwargs):
         return _ms.model_poly(xvec, af, npoly=deg)
 
+    if nargout != 0:
+        xsl = (_np.nanmax(xvar)-_np.nanmin(xvar))
+        xof = _np.nanmin(xvar)
+        xvar = (xvar.copy()-xof)/xsl
+        xo = (xo.copy()-xof)/xsl
+    # end if
+
     fitter = modelfit(xvar, yvar, ey=_np.sqrt(vary), XX=xo, func=_func)
 
     if nargout == 0:
@@ -223,6 +230,8 @@ def weightedPolyfit(xvar, yvar, xo, vary=None, deg=1, nargout=2):
     elif nargout == 2:
         return fitter.prof, fitter.varprof
     elif nargout == 4:
+        fitter.dprofdx /= xsl
+        fitter.vardprofdx /= (xsl)**2.0
         return fitter.prof, fitter.varprof, fitter.dprofdx, fitter.vardprofdx
 # end def weightedPolyfit
 
@@ -905,7 +914,7 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
 #        ax1.set_ylim((0,1.1*ylims[1]))
         if maxyy is None:
 #            maxyy = max((1e-20*max(nef+_np.sqrt(varnef)),1.1*ylims[1]))
-            maxyy = min((0.6,max((1e-20*_np.max(nef+_np.sqrt(varnef)),1.1*ylims[1]))))
+            maxyy = min((1.2,max((1e-20*_np.max(nef+_np.sqrt(varnef)),1.1*ylims[1]))))
         # end if
         ax1.set_ylim((0.0, maxyy))
         if loggradient:
@@ -1038,12 +1047,12 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
         ax1.plot(rvec, Tef, 'r-', lw=2)
         ylims = ax1.get_ylim();
 #        maxyy = min((ylims[1],12)) #min((_np.max(1.05*(Te+_np.sqrt(varTH))),12))
-        maxyy = 6
+        maxyy = 8
         ax1.fill_between(rvec, Tef-_np.sqrt(varTef), Tef+_np.sqrt(varTef),
                                     interpolate=True, color='r', alpha=0.3) # TODO!: watch for inf/nan's
         ax1.set_xlim((plotlims[0],plotlims[1]))
         if maxyy is None:
-            maxyy = min((12,max((_np.max(Tef+_np.sqrt(varTef)),1.1*ylims[1]))))
+            maxyy = min((8,max((_np.max(Tef+_np.sqrt(varTef)),1.1*ylims[1]))))
         # end if
         ax1.set_ylim((0.0, maxyy))
 #        ax1.set_ylim((0,maxyy))
@@ -1088,13 +1097,13 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
 
 
 def extrap_TS(QTBdat, plotit=False):
+
+    # Major radial coordinate of each Thomson channel
+    rr = _np.sqrt( QTBdat['xyz'][:,0]**2.0 + QTBdat['xyz'][:,1]**2.0 )
+    QTBdat['R'] = rr.copy()
+
     # Extrapolate along the line of sight of the Thomson to get edge channels
     if (QTBdat["roa"]>1.0).any() or _np.isnan(QTBdat["roa"]).any() or _np.isinf(QTBdat["roa"]).any():
-
-        # Major radial coordinate of each Thomson channel
-        rr = _np.sqrt( QTBdat['xyz'][:,0]**2.0 + QTBdat['xyz'][:,1]**2.0 )
-        QTBdat['R'] = rr.copy()
-
         # get line-of-sight (by minimum and maximum channel, not by view coord)
         # cartesian coordinate / "length" along line-of-sight
         [rr, ll] = _ut.endpnts2vectors( QTBdat['xyz'][_np.argmax(rr),:],

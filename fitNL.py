@@ -200,19 +200,19 @@ __metaclass__ = type
 
 # Fitting using the Levenberg-Marquardt algorithm.    #
 def modelfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
-    kwargs.setdefault('xtol', 1e-16)
+    kwargs.setdefault('xtol', 1e-16)  # 1e-16
     kwargs.setdefault('ftol', 1e-16)
     kwargs.setdefault('gtol', 1e-16)
     kwargs.setdefault('damp', 0.)
     kwargs.setdefault('maxiter', 1200)
     kwargs.setdefault('factor', 100)  # 100
-    kwargs.setdefault('nprint', 10) # 100
+    kwargs.setdefault('nprint', 100) # 100
     kwargs.setdefault('iterfunct', 'default')
     kwargs.setdefault('iterkw', {})
     kwargs.setdefault('nocovar', 0)
     kwargs.setdefault('rescale', 0)
     kwargs.setdefault('autoderivative', 1)
-    kwargs.setdefault('quiet', 0)
+    kwargs.setdefault('quiet', 1)
     kwargs.setdefault('diag', 0)
     kwargs.setdefault('epsfcn', max((_np.nanmean(_np.diff(x.copy())),1e-2))) #5e-4) #1e-3
 #    kwargs.pop('epsfcn')
@@ -310,7 +310,7 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     #   m.status   - there are more than 12 return codes (see mpfit documentation)
     #   m.errmsg   - a string error or warning message
     #   m.fnorm    - value of final summed squared residuals
-    #   m.covar    - covaraince matrix
+    #   m.covar    - covariance matrix
     #           set to None if terminated abnormally
     #   m.nfev     - number of calls to fitting function
     #   m.niter    - number if iterations completed
@@ -364,7 +364,14 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     info.cormat = info.covmat * 0.0
     for ii in range(numfit):
         for jj in range(numfit):
-            info.cormat[ii,jj] = info.covmat[ii,jj]/_np.sqrt(info.covmat[ii,ii]*info.covmat[jj,jj])
+#            if info.covmat[ii,ii] == 0:
+#                info.cormat[ii,jj] = 0.0
+#            elif info.covmat[jj,jj] == 0:
+#                info.cormat[ii,jj] == 0.0
+#            else:
+            if 1:
+                info.cormat[ii,jj] = info.covmat[ii,jj]/_np.sqrt(info.covmat[ii,ii]*info.covmat[jj,jj]) # TODO!: invalid value encountered in double_scalars
+            # end if
         # end for
     # end for
 
@@ -1186,11 +1193,23 @@ def qparabfit(x, y, ey, XX, **kwargs):
 
     # solver kwargs
     kwargs.setdefault('scale_problem',True)
-    kwargs.setdefault('maxiter',2000)
-    kwargs.setdefault('epsfcn', max((_np.nanmean(_np.diff(x.copy())),1e-2)))
-#    kwargs.pop('epsfcn')
-    kwargs.setdefault('factor',100)
-    kwargs.setdefault('autoderivative',1)
+#    kwargs.setdefault('maxiter',2000)
+#    kwargs.setdefault('xtol',1e-16)
+#    kwargs.setdefault('ftol',1e-16)
+#    kwargs.setdefault('gtol',1e-16)
+#    kwargs.setdefault('nprint',100)
+#    kwargs.setdefault('damp',0)
+#    kwargs.setdefault('iterfunct','default')
+#    kwargs.setdefault('iterkw',{})
+#    kwargs.setdefault('nocovar',0)
+#    kwargs.setdefault('rescale',0)
+#    kwargs.setdefault('quiet',1)
+#    kwargs.setdefault('diag',0)
+#    kwargs.setdefault('debug',0)
+#    kwargs.setdefault('epsfcn', max((_np.nanmean(_np.diff(x.copy())),1e-2)))
+##    kwargs.pop('epsfcn')
+#    kwargs.setdefault('factor',100)
+#    kwargs.setdefault('autoderivative',1)
 
     # plotting kwargs
     onesided = kwargs.pop('onesided', True)
@@ -1233,11 +1252,27 @@ def qparabfit(x, y, ey, XX, **kwargs):
 #    # end if
 #    af0[0] = y[_np.argmin(x)].copy()
     kwargs.setdefault('af0',af0)
-    xin = _ut.cylsym_odd(x.copy())
-    yin = _ut.cylsym_even(y.copy())
-    eyin = _ut.cylsym_even(ey.copy())
+    xin = x.copy()
+    yin = y.copy()
+    eyin = ey.copy()
+    if _np.min(xin) != 0:
+        xin = _np.insert(xin,0,0.0)
+        yin = _np.insert(yin,0,yin[0])
+        eyin = _np.insert(eyin,0,eyin[0])
+    # end if
+    isort = _np.argsort(_np.abs(xin))
+    xin = xin[isort]
+    yin = yin[isort]
+    eyin = eyin[isort]
+
+    if xin[0] != -1*xin[-1] and xin[1] != -1*xin[-2]:
+        xin = _ut.cylsym_odd(xin)
+        yin = _ut.cylsym_even(yin)
+        eyin = _ut.cylsym_even(eyin)
+
     # Call mpfit
-    info = fit_mpfit(xin, yin, eyin, XX, myqparab, fkwargs={"nohollow":nohollow}, **kwargs)
+#    info = fit_mpfit(xin, yin, eyin, XX, myqparab, fkwargs={"nohollow":nohollow}, **kwargs)
+    info = modelfit(xin, yin, eyin, XX, myqparab, fkwargs={"nohollow":nohollow}, **kwargs)
 #    print(info.)
 #    if scale_by_data:
 #        # slope = _np.nanmax(pdat)-_np.nanmin(pdat)
