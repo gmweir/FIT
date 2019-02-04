@@ -248,28 +248,62 @@ def expdecay(tt, Y0, t0, tau):
 
 # ========================================================================== #
 
-def gaussian(xx, AA, x0, ss):
+def gaussian(xx, af, noshift=False):
+    if noshift or len(af)==2:
+        noshift = True
+        x0 = 0.0
+        AA, ss = tuple(af)
+    else:
+        AA, x0, ss = tuple(af)
+    # end if
     return AA*_np.exp(-(xx-x0)**2/(2.0*ss**2))
 
-def partial_gaussian(xx, AA, x0, ss):
+def partial_gaussian(xx, af, noshift=False):
+    if noshift or len(af)==2:
+        noshift = True
+        x0 = 0.0
+        AA, ss = tuple(af)
+    else:
+        AA, x0, ss = tuple(af)
+    # end if
     gvec = _np.zeros( (3,len(xx)), dtype=_np.float64)
     gvec[0,:] = _np.exp(-(xx-x0)**2/(2.0*ss**2))
     gvec[1,:] = AA*(xx-x0)*_np.exp((-0.5*(xx-x0)**2.0)/(ss**2.0))/(ss**2.0)
     gvec[2,:] = AA*((xx-x0)**2.0) *_np.exp((-0.5*(xx-x0)**2.0)/(ss**2.0))/(ss**3.0)
+    if noshift:
+        gvec = _np.delete(gvec, (1), axis=0)
+    # end if
     return gvec
 
-def deriv_gaussian(xx, AA, x0, ss):
+def deriv_gaussian(xx, af, noshift=False):
+    if noshift or len(af)==2:
+        noshift = True
+        x0 = 0.0
+        AA, ss = tuple(af)
+    else:
+        AA, x0, ss = tuple(af)
+    # end if
     return -1.0*AA*(xx-x0)*_np.exp((-0.5*(xx-x0)**2.0)/(ss**2.0))/(ss**2.0)
 
-def partial_deriv_gaussian(xx, AA, x0, ss):
+def partial_deriv_gaussian(xx, af, noshift=False):
+    if noshift or len(af)==2:
+        noshift = True
+        x0 = 0.0
+        AA, ss = tuple(af)
+    else:
+        AA, x0, ss = tuple(af)
+    # end if
     gvec = _np.zeros( (3,len(xx)), dtype=_np.float64)
 
     gvec[0,:] = -1.0*(xx-x0)*_np.exp(-0.5*(xx-x0)**2/(ss**2))/(ss**2.0)
     gvec[1,:] = AA*_np.exp(-0.5*(xx-x0)**2/(ss**2))*(ss*2.0-xx*2.0+2*xx*x0-x0**2.0)/(ss**4.0)
     gvec[2,:] = AA*_np.exp(-0.5*(xx-x0)**2/(ss**2))*(-1.0*xx*3.0+3.0*(xx**2.0)*x0-3.0*xx*(x0**2.0) + 2.0*xx*(ss**2.0) + x0**3.0 - 2.0*x0*(ss**2.0))/(ss**5.0)
+    if noshift:
+        gvec = _np.delete(gvec, (1), axis=0)
+    # end if
     return gvec
 
-def model_gaussian(XX, af=None):
+def model_gaussian(XX, af=None, noshift=False):
     """
     A gaussian with three free parameters:
         xx - x - independent variable
@@ -287,6 +321,15 @@ def model_gaussian(XX, af=None):
 
     if af is None:
         af = 0.7*_np.ones((3,), dtype=_np.float64)
+        if noshift:
+            af = _np.delete(af, (1), axis=0)
+        # end if
+    # endif
+
+    if len(af) == 2:
+        noshift = True
+#        af = _np.atleast_1d(af)
+#        af = _np.insert(af,1,0.0, axis=0)
     # endif
 
     info = Struct()
@@ -298,17 +341,138 @@ def model_gaussian(XX, af=None):
         aout = _np.copy(ain)
         aout[0] = slope*aout[0]
         return aout
+
+    if noshift:
+#        info.af = _np.delete(info.af, (1), axis=0)
+        info.Lbounds = _np.delete(info.Lbounds, (1), axis=0)
+        info.Ubounds = _np.delete(info.Ubounds, (1), axis=0)
+    # end if
     info.unscaleaf = unscaleaf
     if XX is None:
         return info
 
-    prof = gaussian(XX, af[0], af[1], af[2])
-    gvec = partial_gaussian(XX, af[0], af[1], af[2])
+    prof = gaussian(XX, af, noshift=noshift)
+    gvec = partial_gaussian(XX, af, noshift=noshift)
 
     info.prof = prof
     info.gvec = gvec
-    info.dprofdx = deriv_gaussian(XX, af[0], af[1], af[2])
-    info.dgdx = partial_deriv_gaussian(XX, af[0], af[1], af[2])
+    info.dprofdx = deriv_gaussian(XX, af, noshift=noshift)
+    info.dgdx = partial_deriv_gaussian(XX, af, noshift=noshift)
+    return prof, gvec, info
+
+# ========================================================================== #
+
+def lorentzian(xx, af, noshift=False):
+    """
+    Lorentzian normalization such that integration equals AA (af[0])
+    """
+    if noshift or len(af)==2:
+        noshift = True
+        x0 = 0.0
+        AA, ss = tuple(af)
+    else:
+        AA, x0, ss = tuple(af)
+    # end if
+    return AA*0.5*ss/((xx-x0)*(xx-x0)+0.25*ss*ss)/_np.pi
+
+def partial_lorentzian(xx, af, noshift=False):
+    if noshift or len(af)==2:
+        noshift = True
+        x0 = 0.0
+        AA, ss = tuple(af)
+    else:
+        AA, x0, ss = tuple(af)
+    # end if
+
+    gvec = _np.zeros( (3,len(xx)), dtype=_np.float64)
+    gvec[0,:] = 0.5*ss/((xx-x0)*(xx-x0)+0.25*ss*ss)/_np.pi
+    gvec[1,:] = AA*ss*(xx-x0)/( ((xx-x0)*(xx-x0)+0.25*ss*ss)**2.0 )/_np.pi
+    gvec[2,:] = AA*(-0.125*ss*ss+0.5*xx*xx-xx*x0+0.5*x0*x0)/((0.25*ss*ss+(xx-x0)*(xx-x0))**2.0)/_np.pi
+    if noshift:
+        gvec = _np.delete(gvec, (1), axis=0)
+    # end if
+    return gvec
+
+def deriv_lorentzian(xx, af, noshift=False):
+    if noshift or len(af)==2:
+        noshift = True
+        x0 = 0.0
+        AA, ss = tuple(af)
+    else:
+        AA, x0, ss = tuple(af)
+    # end if
+    return -1.0*AA*16.0*(xx-x0)*ss/(_np.pi*(4.0*(xx-x0)*(xx-x0)+ss*ss)**2.0)
+
+def partial_deriv_lorentzian(xx, af, noshift=False):
+    if noshift or len(af)==2:
+        noshift = True
+        x0 = 0.0
+        AA, ss = tuple(af)
+    else:
+        AA, x0, ss = tuple(af)
+    # end if
+    gvec = _np.zeros( (3,len(xx)), dtype=_np.float64)
+    gvec[0,:] = -1.0*16.0*(xx-x0)*ss/(_np.pi*(4.0*(xx-x0)*(xx-x0)+ss*ss)**2.0)
+    gvec[1,:] = 16.0*AA*ss*(-12.0*x0*x0+24.0*x0*xx+ss*ss-12.0*xx*xx)/(_np.pi*(4.0*x0*x0-8.0*x0*xx+ss*ss+4.0*xx*xx)**3.0)
+    gvec[2,:] = 16.0*AA*(xx-x0)*(3.0*ss*ss-4.0(xx*xx-2.0*xx*x0+x0*x0))/(_np.pi*(ss*ss+4.0(xx*xx-2.0*xx*x0+x0*x0))**3.0)
+
+    if noshift:
+        gvec = _np.delete(gvec, (1), axis=0)
+    # end if
+    return gvec
+
+def model_lorentzian(XX, af=None, noshift=False):
+    """
+    A lorentzian with three free parameters:
+        xx - x - independent variable
+        af - magnitude, shift, width
+
+    If fitting with scaling, then the algebra necessary to unscale the problem
+    to original units is:
+        af[0] = slope*af[0]
+        offset = 0.0  (in practice, this is necessary for this fit)
+
+    found in the info Structure
+    """
+
+    if af is None:
+        af = 0.7*_np.ones((3,), dtype=_np.float64)
+        if noshift:
+            af = _np.delete(af, (1), axis=0)
+        # end if
+    # end if
+
+    if len(af) == 2:
+        noshift = True
+#        af = _np.atleast_1d(af)
+#        af = _np.insert(af,1,0.0, axis=0)
+    # endif
+
+    info = Struct()
+    info.Lbounds = _np.array([-_np.inf, -_np.inf, -_np.inf], dtype=_np.float64)
+    info.Ubounds = _np.array([_np.inf, _np.inf, _np.inf], dtype=_np.float64)
+    info.af = af
+
+    def unscaleaf(ain, slope, offset=0.0):  # check this ... leaving noshift to user
+        aout = _np.copy(ain)
+        aout[0] = slope*aout[0]
+        return aout
+
+    if noshift:
+#        info.af = _np.delete(info.af, (1), axis=0)
+        info.Lbounds = _np.delete(info.Lbounds, (1), axis=0)
+        info.Ubounds = _np.delete(info.Ubounds, (1), axis=0)
+    # end if
+    info.unscaleaf = unscaleaf
+    if XX is None:
+        return info
+
+    prof = lorentzian(XX, af, noshift=noshift)
+    gvec = partial_lorentzian(XX, af, noshift=noshift)
+    info.prof = prof
+    info.gvec = gvec
+    info.dprofdx = deriv_lorentzian(XX, af, noshift=noshift)
+    info.dgdx = partial_deriv_lorentzian(XX, af, noshift=noshift)
     return prof, gvec, info
 
 # ========================================================================== #
