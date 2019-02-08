@@ -18,93 +18,42 @@ import numpy as _np
 import matplotlib.pyplot as _plt
 #import pybaseutils as _pyut
 from pybaseutils.Struct import Struct
-from pybaseutils.utils import sech, interp_irregularities # analysis:ignore
+from pybaseutils.utils import sech, interp_irregularities, interp # analysis:ignore
 
 # ========================================================================== #
 # ========================================================================== #
 
-def randomize_initial_conditions(LB, UB):
-    LB, UB = LB.copy(), UB.copy()
-    if _np.isinf(LB).any():
-        LB[_np.isinf(LB)] = -1e3
-    if _np.isinf(UB).any():
-        UB[_np.isinf(UB)] = 1e3
-
-    af = _np.zeros_like(LB)
-    for ii in range(len(LB)):
-        af[ii] = _np.random.uniform(low=LB[ii], high=UB[ii], size=None)
-    # end for
-    return af
-
-def rescale_xlims(XX, forward=True, ascl=None):
-    if ascl is None:
-        ascl = max(_np.max(XX), 1.0)
-    # end if
-    if forward:
-        return XX/ascl
-    else:
-        return XX*ascl
-
-def rescale_problem(pdat=0, vdat=0, info=None, nargout=1):
+def clean_XX(XX):
     """
-    When fitting this problem it is convenient to scale it to order 1:
-        slope = _np.nanmax(pdat)-_np.nanmin(pdat)
-        offset = _np.nanmin(pdat)
+    It is debateable whether this is beneficial.
+    ex //
+        ln(x) is only defined for x>0    (ln(0) = -inf)
+        ln(-x) is only defined for x<0
+        exp(+x) != exp(-x)
 
-        pdat = (pdat-offset)/slope
-        vdat = vdat/slope**2.0
+    For profiles you might think, hey no problem, we want even functions!
+    but then the derivatives of even functions are odd
+    and this matters for error propagation!
 
-    After fitting, then the algebra necessary to unscale the problem to original
-    units is:
-        prof = slope*prof+offset
-        varp = varp*slope**2.0
+    Pitfall:     y = a*ln(x) == ln(abs(x))
+                 dy/dx = a/x != a/abs(x)
+                 dy/da = a*ln(x) == a*ln(abs(x))
+                 d^2y/dxda = 1/x != 1/abs(x)
+    absolute value signs can mess up error propagation (especially on derivatives)
+             implemented solultion is to code in abs value signs: y = a*ln( abs(x) )
+                                   ... not sure if correctly done everywhere
 
-        dprofdx = (slope*dprofdx)
-        vardprofdx = slope**2.0 * vardprofdx
+    In practice, the user needs to define limits through
+        Upper / Lower bounds options while fitting
+        abs(x) when appropriate
 
-    Note that when scaling the problem, it is best to propagate errors from
-    covariance / gvec / dgdx before rescaling
     """
-    if info is None:
-        slope = _np.nanmax(pdat)-_np.nanmin(pdat)
-        offset = _np.nanmin(pdat)
-
-        pdat = (pdat.copy()-offset)/slope
-        vdat = vdat.copy()/_np.abs(slope)**2.0
-
-        return pdat, vdat, slope, offset
-    elif info is not None:
-        slope = info.slope
-        offset = info.offset
-
-        if hasattr(info,'pdat'):
-            info.pdat = info.pdat*slope+offset
-            info.vdat = info.vdat * (slope**2.0)
-        # end if
-        if hasattr(info,'dprofdx'):
-            info.dprofdx = slope*info.dprofdx
-            info.vardprofdx = (slope**2.0)*info.vardprofdx
-        # end if
-
-        if hasattr(info,'prof'):
-            info.prof = slope*info.prof+offset
-            info.varp = (slope**2.0)*info.varp
-        # end if
-
-        info.af = info.unscaleaf(info.af, info.slope, info.offset)
-        if nargout == 1:
-            return info
-        else:
-            return info.prof, info.varp, info.dprofdx, info.vardprofdx, info.af
-    else:
-#        print('for a backward unscaling: you must provide the info Struct from the fit!')
-        raise ValueError('for a backward unscaling: you must provide the info Struct from the fit!')
-    # end if
-# end def rescale problem
-
-# ========================================================================== #
-# ========================================================================== #
-
+    XX = _np.copy(XX)
+#    XX = _np.abs(XX)
+#    if len([XX])>1 and (XX==0).any():
+#        XX[_np.where(XX==0)] = 0.111e-2
+#    # end if
+    return XX
 
 def line(XX, a):
     y = a[0]*XX+a[1]
@@ -126,7 +75,7 @@ def partial_deriv_line(XX, a):
     dgdx[1,:] = _np.zeros_like(XX) # aa[1]
     return dgdx
 
-def model_line(XX, af=None):
+def model_line(XX, af=None, **kwargs):
     """
      y = a * x + b
 
@@ -138,20 +87,33 @@ def model_line(XX, af=None):
          y = slope* a' * x + slope * b' + offset
          a = slope*a'
          b = slope*b' + offset
+
+    with x-scaling:  x=x/xs
+         y' = m'*x'+b'
+         y-yo = ys * a' * x' + ys * b'
+         y = ys * a' * x' + ys * b' + yo
+         a = ys*a'/xs
+         b = ys*b' + yo
+
+    with x-offset:  x=(x-xo)/xs
+         y = ys*a'*x/xs - ys*a'*xo/xs + ys*b' + yo
+         a = ys*a'/xs
+         b = ys*(b'-xo*a'/xs) + yo
     """
-    if af is None:
-        af = _np.asarray([2.0,1.0], dtype=_np.float64)
-    # endif
+    if af is None:        af = _np.asarray([2.0,1.0], dtype=_np.float64)    # endif
 
     info = Struct()
     info.Lbounds = _np.array([-_np.inf, -_np.inf], dtype=_np.float64)
     info.Ubounds = _np.array([_np.inf, _np.inf], dtype=_np.float64)
+    info.fixed = _np.zeros( _np.shape(info.Lbounds), dtype=int)
     info.af = af
+    info.kwargs = kwargs
 
-    def unscaleaf(ain, slope, offset=0.0):
+    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
         aout = _np.copy(ain)
-        aout[0] = slope*aout[0]
-        aout[1] = slope*aout[1] + offset
+#        aout[1] = slope*(aout[1]-xoffset*aout[0]/xslope) + offset
+#        aout[0] = slope*aout[0]/xslope
+# #        aout[1] = slope*aout[1] + offset
         return aout
     info.unscaleaf = unscaleaf
     if XX is None:
@@ -164,323 +126,386 @@ def model_line(XX, af=None):
     info.gvec = gvec
     info.dprofdx = deriv_line(XX, af)
     info.dgdx = partial_deriv_line(XX, af)
+
+    info.func = lambda _x, _a: line(_x, _a)
+    info.dfunc = lambda _x, _a: deriv_line(_x, _a)
+    info.gfunc = lambda _x, _a: line_gvec(_x, _a)
+    info.dgfunc = lambda _x, _a: partial_deriv_line(_x, _a)
     return prof, gvec, info
 
 # ========================================================================== #
 
-def polyeval(a, x):
-    """
-    p(x) = polyeval(a, x)
-         = a[0] + a[1]x + a[2]x^2 +...+ a[n-1]x^{n-1} + a[n]x^n
-         = a[0] + x(a[1] + x(a[2] +...+ x(a[n-1] + a[n]x)...)
-    """
-    p = 0
-    for coef in a[::-1]:
-        p = p * x + coef
-    return p
-# end def polyeval
 
-
-def polyderiv(a):
-    """
-    p'(x) = polyderiv(a)
-          = b[0] + b[1]x + b[2]x^2 +...+ b[n-2]x^{n-2} + b[n-1]x^{n-1}
-    where
-        b[i] = (i+1)a[i+1]
-    """
-    b = [i * x for i,x in enumerate(a)][1:]
-    return b
-# end def polyderiv
-
-def polyreduce(a, root):
-    """
-    Given x = r is a root of n'th degree polynomial p(x) = (x-r)q(x),
-    divide p(x) by linear factor (x-r) using the same algorithm as
-    polynomial evaluation.  Then, return the (n-1)'th degree quotient
-    q(x) = polyreduce(a, r)
-         = c[0] + c[1]x + c[2]x^2 +...+ c[n-2]x^{n-2} + c[n-1]x^{n-1}
-    """
-    c, p = [], 0
-    a.reverse()
-    for coef in a:
-        p = p * root + coef
-        c.append(p)
-    a.reverse()
-    c.reverse()
-    return c[1:]
-# end def polyreduce
-
-
-# ======================================================================== #
-
-def piecewise_2line(x, x0, y0, k1, k2):
-    """
-    function y = piecewise_2line(x, x0, y0, k1, k2)
-
-    Model for a piecewise linear function with one break
-
-    Inputs:
-        x - model independent variable
-        x0 - position of the break in slope
-        y0 - offset at the break in slope
-        k1 - slope of first line (dydx[x<x0])
-        k2 - slope of second line (dydx[x>x0])
-
-    Outputs:
-        y(x) - model at the input positions specified by x
-    """
-    return _np.piecewise(x, [x < x0],
-                         [lambda x:k1*x + y0-k1*x0, lambda x:k2*x + y0-k2*x0])
-# end def piecewise_2line
-
-# def piecewise_linear(x, x0, y0, k1, k2):
-#
-#   yy = _np.piecewise(x, [x < x0],
-#                       [lambda x:k1*x + y0-k1*x0, lambda x:k2*x + y0-k2*x0])
-#   return yy
-# # end def piecewise_linear
-
-# ========================================================================== #
-
-
-def expdecay(tt, Y0, t0, tau):
-    return Y0*_np.exp(-(tt-t0)/tau)
-
-# ========================================================================== #
-
-def gaussian(xx, af, noshift=False):
+def _parse_gaussian_inputs(af, **kwargs):
+    noshift = kwargs.setdefault('noshift',False)
     if noshift or len(af)==2:
         noshift = True
         x0 = 0.0
+        if len(af) == 3:
+            af = _np.delete(_np.copy(af), (1), axis=0)
         AA, ss = tuple(af)
     else:
         AA, x0, ss = tuple(af)
     # end if
-    return AA*_np.exp(-(xx-x0)**2/(2.0*ss**2))
+    return af
 
-def partial_gaussian(xx, af, noshift=False):
-    if noshift or len(af)==2:
-        noshift = True
-        x0 = 0.0
-        AA, ss = tuple(af)
-    else:
-        AA, x0, ss = tuple(af)
-    # end if
-    gvec = _np.zeros( (3,len(xx)), dtype=_np.float64)
-    gvec[0,:] = _np.exp(-(xx-x0)**2/(2.0*ss**2))
-    gvec[1,:] = AA*(xx-x0)*_np.exp((-0.5*(xx-x0)**2.0)/(ss**2.0))/(ss**2.0)
-    gvec[2,:] = AA*((xx-x0)**2.0) *_np.exp((-0.5*(xx-x0)**2.0)/(ss**2.0))/(ss**3.0)
-    if noshift:
-        gvec = _np.delete(gvec, (1), axis=0)
-    # end if
+def gaussian(XX, af):
+    AA, x0, ss = tuple(af)
+    return AA*_np.exp(-(XX-x0)**2/(2.0*ss**2))
+
+def partial_gaussian(XX, af):
+    AA, x0, ss = tuple(af)
+    gvec = _np.zeros( (3,len(XX)), dtype=_np.float64)
+    gvec[0,:] = _np.exp(-(XX-x0)**2/(2.0*ss**2))
+    gvec[1,:] = AA*(XX-x0)*_np.exp((-0.5*(XX-x0)**2.0)/(ss**2.0))/(ss**2.0)
+    gvec[2,:] = AA*((XX-x0)**2.0) *_np.exp((-0.5*(XX-x0)**2.0)/(ss**2.0))/(ss**3.0)
     return gvec
 
-def deriv_gaussian(xx, af, noshift=False):
-    if noshift or len(af)==2:
-        noshift = True
-        x0 = 0.0
-        AA, ss = tuple(af)
-    else:
-        AA, x0, ss = tuple(af)
-    # end if
-    return -1.0*AA*(xx-x0)*_np.exp((-0.5*(xx-x0)**2.0)/(ss**2.0))/(ss**2.0)
+def deriv_gaussian(XX, af):
+    AA, x0, ss = tuple(af)
+    return -1.0*AA*(XX-x0)*_np.exp((-0.5*(XX-x0)**2.0)/(ss**2.0))/(ss**2.0)
 
-def partial_deriv_gaussian(xx, af, noshift=False):
-    if noshift or len(af)==2:
-        noshift = True
-        x0 = 0.0
-        AA, ss = tuple(af)
-    else:
-        AA, x0, ss = tuple(af)
-    # end if
-    gvec = _np.zeros( (3,len(xx)), dtype=_np.float64)
-
-    gvec[0,:] = -1.0*(xx-x0)*_np.exp(-0.5*(xx-x0)**2/(ss**2))/(ss**2.0)
-    gvec[1,:] = AA*_np.exp(-0.5*(xx-x0)**2/(ss**2))*(ss*2.0-xx*2.0+2*xx*x0-x0**2.0)/(ss**4.0)
-    gvec[2,:] = AA*_np.exp(-0.5*(xx-x0)**2/(ss**2))*(-1.0*xx*3.0+3.0*(xx**2.0)*x0-3.0*xx*(x0**2.0) + 2.0*xx*(ss**2.0) + x0**3.0 - 2.0*x0*(ss**2.0))/(ss**5.0)
-    if noshift:
-        gvec = _np.delete(gvec, (1), axis=0)
-    # end if
+def partial_deriv_gaussian(XX, af):
+    AA, x0, ss = tuple(af)
+    gvec = _np.zeros( (3,len(XX)), dtype=_np.float64)
+    gvec[0,:] = -1.0*(XX-x0)*_np.exp(-0.5*(XX-x0)**2/(ss**2))/(ss**2.0)
+    gvec[1,:] = AA*_np.exp(-0.5*(XX-x0)**2/(ss**2))*(ss*2.0-XX*2.0+2*XX*x0-x0**2.0)/(ss**4.0)
+    gvec[2,:] = AA*_np.exp(-0.5*(XX-x0)**2/(ss**2))*(-1.0*XX*3.0+3.0*(XX**2.0)*x0-3.0*XX*(x0**2.0) + 2.0*XX*(ss**2.0) + x0**3.0 - 2.0*x0*(ss**2.0))/(ss**5.0)
     return gvec
 
-def model_gaussian(XX, af=None, noshift=False):
+def model_gaussian(XX, af=None, **kwargs):
     """
     A gaussian with three free parameters:
-        xx - x - independent variable
+        XX - x - independent variable
         af - magnitude, shift, width
 
-        af[0]*_np.exp(-(xx-af[1])**2/(2.0*af[2]**2))
+        af[0]*_np.exp(-(XX-af[1])**2/(2.0*af[2]**2))
 
     If fitting with scaling, then the algebra necessary to unscale the problem
     to original units is:
-        af[0] = slope*af[0]
-        offset = 0.0  (in practice, this is necessary for this fit)
+        #    wrong af[0] = slope*af[0]
+        #    wrong offset = 0.0  (in practice, this is not included in this filt)
 
-    found in the info Structure
+        y-scaling:  y' = (y-yo)/ys
+         (y-miny)/(maxy-miny) = (y-yo)/ys
+         (y-yo)/ys = a' exp(-1*(x-b')^2/(2*c'^2))
+
+         y-yo = ys * a' * exp(-1*(x-b')^2/(2*c'^2))
+         a = ys*a'
+             not possible to shift and maintain constant coefficients unless yo=0.0
+
+        x-scaling: x' = (x-xo)/xs
+         y(x') - yo = a'*exp(-1*(x'-b')^2.0/(2*c'^2))
+                    = a'*exp(-1*(x/xs-xo/xs-b')^2.0/(2*c'^2))
+                    = a'*exp(-1*(x-xo-xs*b')^2.0/(2*c'^2*xs^2))
+         here:
+             a = a'*ys
+             b = b'*xs + xo
+             c = c'*xs
+        only works if yo = 0.0
+     found in the info Structure
     """
-
-    if af is None:
-        af = 0.7*_np.ones((3,), dtype=_np.float64)
-        if noshift:
-            af = _np.delete(af, (1), axis=0)
-        # end if
-    # endif
-
-    if len(af) == 2:
-        noshift = True
-#        af = _np.atleast_1d(af)
-#        af = _np.insert(af,1,0.0, axis=0)
-    # endif
+    if af is None:        af = _np.asarray([1.0e-1/0.05, -0.3, 0.1], dtype=_np.float64)    # end if
 
     info = Struct()
     info.Lbounds = _np.array([-_np.inf, -_np.inf, -_np.inf], dtype=_np.float64)
     info.Ubounds = _np.array([_np.inf, _np.inf, _np.inf], dtype=_np.float64)
-    info.af = af
+    info.fixed = _np.zeros( _np.shape(info.Lbounds), dtype=int)
+    info.af = _np.copy(af)
+    info.kwargs = kwargs
 
-    def unscaleaf(ain, slope, offset=0.0):
+    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
         aout = _np.copy(ain)
-        aout[0] = slope*aout[0]
+#        aout[0] = slope*aout[0]
+#        aout[1] = xslope*aout[1]+xoffset
+#        aout[2] = xslope*aout[2]
         return aout
-
-    if noshift:
-#        info.af = _np.delete(info.af, (1), axis=0)
-        info.Lbounds = _np.delete(info.Lbounds, (1), axis=0)
-        info.Ubounds = _np.delete(info.Ubounds, (1), axis=0)
-    # end if
     info.unscaleaf = unscaleaf
+
     if XX is None:
         return info
-
-    prof = gaussian(XX, af, noshift=noshift)
-    gvec = partial_gaussian(XX, af, noshift=noshift)
+    # end if
+    prof = gaussian(XX, af)
+    gvec = partial_gaussian(XX, af)
 
     info.prof = prof
     info.gvec = gvec
-    info.dprofdx = deriv_gaussian(XX, af, noshift=noshift)
-    info.dgdx = partial_deriv_gaussian(XX, af, noshift=noshift)
+    info.dprofdx = deriv_gaussian(XX, af)
+    info.dgdx = partial_deriv_gaussian(XX, af)
+
+    info.func = lambda _x, _a: gaussian(_x, _a)
+    info.dfunc = lambda _x, _a: deriv_gaussian(_x, _a)
+    info.gfunc = lambda _x, _a: partial_gaussian(_x, _a)
+    info.dgfunc = lambda _x, _a: partial_deriv_gaussian(_x, _a)
     return prof, gvec, info
 
 # ========================================================================== #
+# ========================================================================== #
 
-def lorentzian(xx, af, noshift=False):
+
+def lorentzian(XX, af):
     """
     Lorentzian normalization such that integration equals AA (af[0])
     """
-    if noshift or len(af)==2:
-        noshift = True
-        x0 = 0.0
-        AA, ss = tuple(af)
-    else:
-        AA, x0, ss = tuple(af)
-    # end if
-    return AA*0.5*ss/((xx-x0)*(xx-x0)+0.25*ss*ss)/_np.pi
+    AA, x0, ss = tuple(af)
+    return AA*0.5*ss/((XX-x0)*(XX-x0)+0.25*ss*ss)/_np.pi
 
-def partial_lorentzian(xx, af, noshift=False):
-    if noshift or len(af)==2:
-        noshift = True
-        x0 = 0.0
-        AA, ss = tuple(af)
-    else:
-        AA, x0, ss = tuple(af)
-    # end if
+def deriv_lorentzian(XX, af):
+    AA, x0, ss = tuple(af)
+    return -1.0*AA*16.0*(XX-x0)*ss/(_np.pi*(4.0*(XX-x0)*(XX-x0)+ss*ss)**2.0)
 
-    gvec = _np.zeros( (3,len(xx)), dtype=_np.float64)
-    gvec[0,:] = 0.5*ss/((xx-x0)*(xx-x0)+0.25*ss*ss)/_np.pi
-    gvec[1,:] = AA*ss*(xx-x0)/( ((xx-x0)*(xx-x0)+0.25*ss*ss)**2.0 )/_np.pi
-    gvec[2,:] = AA*(-0.125*ss*ss+0.5*xx*xx-xx*x0+0.5*x0*x0)/((0.25*ss*ss+(xx-x0)*(xx-x0))**2.0)/_np.pi
-    if noshift:
-        gvec = _np.delete(gvec, (1), axis=0)
-    # end if
+def partial_lorentzian(XX, af):
+    AA, x0, ss = tuple(af)
+
+    gvec = _np.zeros( (3,len(XX)), dtype=_np.float64)
+    gvec[0,:] = 0.5*ss/((XX-x0)*(XX-x0)+0.25*ss*ss)/_np.pi
+    gvec[1,:] = AA*ss*(XX-x0)/( ((XX-x0)*(XX-x0)+0.25*ss*ss)**2.0 )/_np.pi
+    gvec[2,:] = AA*(-0.125*ss*ss+0.5*XX*XX-XX*x0+0.5*x0*x0)/((0.25*ss*ss+(XX-x0)*(XX-x0))**2.0)/_np.pi
     return gvec
 
-def deriv_lorentzian(xx, af, noshift=False):
-    if noshift or len(af)==2:
-        noshift = True
-        x0 = 0.0
-        AA, ss = tuple(af)
-    else:
-        AA, x0, ss = tuple(af)
-    # end if
-    return -1.0*AA*16.0*(xx-x0)*ss/(_np.pi*(4.0*(xx-x0)*(xx-x0)+ss*ss)**2.0)
+def partial_deriv_lorentzian(XX, af):
+    AA, x0, ss = tuple(af)
 
-def partial_deriv_lorentzian(xx, af, noshift=False):
-    if noshift or len(af)==2:
-        noshift = True
-        x0 = 0.0
-        AA, ss = tuple(af)
-    else:
-        AA, x0, ss = tuple(af)
-    # end if
-    gvec = _np.zeros( (3,len(xx)), dtype=_np.float64)
-    gvec[0,:] = -1.0*16.0*(xx-x0)*ss/(_np.pi*(4.0*(xx-x0)*(xx-x0)+ss*ss)**2.0)
-    gvec[1,:] = 16.0*AA*ss*(-12.0*x0*x0+24.0*x0*xx+ss*ss-12.0*xx*xx)/(_np.pi*(4.0*x0*x0-8.0*x0*xx+ss*ss+4.0*xx*xx)**3.0)
-    gvec[2,:] = 16.0*AA*(xx-x0)*(3.0*ss*ss-4.0(xx*xx-2.0*xx*x0+x0*x0))/(_np.pi*(ss*ss+4.0(xx*xx-2.0*xx*x0+x0*x0))**3.0)
-
-    if noshift:
-        gvec = _np.delete(gvec, (1), axis=0)
-    # end if
+    gvec = _np.zeros( (3,len(XX)), dtype=_np.float64)
+    gvec[0,:] = -1.0*16.0*(XX-x0)*ss/(_np.pi*(4.0*(XX-x0)*(XX-x0)+ss*ss)**2.0)
+    gvec[1,:] = 16.0*AA*ss*(-12.0*x0*x0+24.0*x0*XX+ss*ss-12.0*XX*XX)/(_np.pi*(4.0*x0*x0-8.0*x0*XX+ss*ss+4.0*XX*XX)**3.0)
+    gvec[2,:] = 16.0*AA*(XX-x0)*(3.0*ss*ss-4.0*(XX*XX-2.0*XX*x0+x0*x0))/(_np.pi*(ss*ss+4.0*(XX*XX-2.0*XX*x0+x0*x0))**3.0)
     return gvec
 
-def model_lorentzian(XX, af=None, noshift=False):
+def model_lorentzian(XX, af=None, **kwargs):
     """
     A lorentzian with three free parameters:
-        xx - x - independent variable
+        XX - x - independent variable
         af - magnitude, shift, width
+
+        AA*0.5*ss/((XX-x0)^2+0.25*ss^2)/_np.pi
 
     If fitting with scaling, then the algebra necessary to unscale the problem
     to original units is:
         af[0] = slope*af[0]
         offset = 0.0  (in practice, this is necessary for this fit)
 
+       y-scaling: y' = (y-yo)/ys
+        (y-yo) / ys = 0.5*a'*c' / ( (x-b')^2 + 0.25*c'^2 ) / pi
+
+        y-yo = 0.5*ys*a'*c' / ( (x-b')^2 + 0.25*c'^2 ) / pi
+        a = ys*a'
+
+       x-scaling: x' = (x-xo)/xs
+        y-yo = 0.5*ys*a'*c' / ( (x-xo-xs*b')^2/xs^2 + 0.25*c'^2 ) / pi
+             = 0.5 * ys*xs*a'*xs*c' /( (x-xo-xs*b')^2 + 0.25*xs^2*c'^2 )/pi
+        a = ys*xs*a'
+        b = xs*b'+xo
+        c = xs*c'
+
     found in the info Structure
     """
-
-    if af is None:
-        af = 0.7*_np.ones((3,), dtype=_np.float64)
-        if noshift:
-            af = _np.delete(af, (1), axis=0)
-        # end if
-    # end if
-
-    if len(af) == 2:
-        noshift = True
-#        af = _np.atleast_1d(af)
-#        af = _np.insert(af,1,0.0, axis=0)
-    # endif
+    if af is None:        af = _np.asarray([1.0, 0.4, 0.05], dtype=_np.float64)    # end if
 
     info = Struct()
     info.Lbounds = _np.array([-_np.inf, -_np.inf, -_np.inf], dtype=_np.float64)
     info.Ubounds = _np.array([_np.inf, _np.inf, _np.inf], dtype=_np.float64)
-    info.af = af
+    info.fixed = _np.zeros( _np.shape(info.Lbounds), dtype=int)
+    info.af = _np.copy(af)
+    info.kwargs = kwargs
 
-    def unscaleaf(ain, slope, offset=0.0):  # check this ... leaving noshift to user
+    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):  # check this ... leaving noshift to user
         aout = _np.copy(ain)
-        aout[0] = slope*aout[0]
+#        aout[0] = slope*xslope*aout[0]
+#        aout[1] = xslope*aout[1]+xoffset
+#        aout[2] = xslope*aout[2]
         return aout
-
-    if noshift:
-#        info.af = _np.delete(info.af, (1), axis=0)
-        info.Lbounds = _np.delete(info.Lbounds, (1), axis=0)
-        info.Ubounds = _np.delete(info.Ubounds, (1), axis=0)
-    # end if
     info.unscaleaf = unscaleaf
+
     if XX is None:
         return info
+    # end if
+    prof = lorentzian(XX, af)
+    gvec = partial_lorentzian(XX, af)
 
-    prof = lorentzian(XX, af, noshift=noshift)
-    gvec = partial_lorentzian(XX, af, noshift=noshift)
     info.prof = prof
     info.gvec = gvec
-    info.dprofdx = deriv_lorentzian(XX, af, noshift=noshift)
-    info.dgdx = partial_deriv_lorentzian(XX, af, noshift=noshift)
+    info.dprofdx = deriv_lorentzian(XX, af)
+    info.dgdx = partial_deriv_lorentzian(XX, af)
+
+    info.func = lambda _x, _a: lorentzian(_x, _a)
+    info.dfunc = lambda _x, _a: deriv_lorentzian(_x, _a)
+    info.gfunc = lambda _x, _a: partial_lorentzian(_x, _a)
+    info.dgfunc = lambda _x, _a: partial_deriv_lorentzian(_x, _a)
     return prof, gvec, info
 
 # ========================================================================== #
+# ========================================================================== #
+
+def _parse_noshift(ain, model_order=2):
+    if model_order>1:
+        return ain[0:3], ain[3:6], ain[6:]
+    elif model_order>0:
+        return ain[0:3], ain[3:6], []
+    else:
+        return ain[0:3], [], []
+    # end if
+# end def
+
+def doppler(xdat, ain, model_order=2):
+    a0, a1, a2 = _parse_noshift(ain, model_order=model_order)
+    prof = gaussian(xdat,af=a0)
+    if model_order>0:
+        prof += lorentzian(xdat, af=a1)
+    if model_order>1:
+        prof += gaussian(xdat,af=a2)
+    return prof
+
+def deriv_doppler(xdat, ain, model_order=2):
+    a0, a1, a2 = _parse_noshift(ain, model_order=model_order)
+    prof = deriv_gaussian(xdat,af=a0)
+    if model_order>0:
+        prof += deriv_lorentzian(xdat, af=a1)
+    if model_order>1:
+        prof += deriv_gaussian(xdat,af=a2)
+    return prof
+#    return ( deriv_gaussian(xdat, af=a0)
+#            + deriv_lorentzian(xdat, af=a1)
+#            + deriv_gaussian(xdat, af=a2) )
+
+def partial_doppler(xdat, ain, model_order=2):
+    a0, a1, a2 = _parse_noshift(ain, model_order=model_order)
+    gvec = partial_gaussian(xdat, af=a0)
+    if model_order>0:
+        gvec = _np.append(gvec, partial_lorentzian(xdat, af=a1), axis=0)
+    if model_order>1:
+        gvec = _np.append(gvec, partial_gaussian(xdat, af=a2), axis=0)
+    return gvec
+
+def partial_deriv_doppler(xdat, ain, model_order=2):
+    a0, a1, a2 = _parse_noshift(ain, model_order=model_order)
+    gvec = partial_deriv_gaussian(xdat, af=a0)
+    if model_order>0:
+        gvec = _np.append(gvec, partial_deriv_lorentzian(xdat, af=a1), axis=0)
+    if model_order>1:
+        gvec = _np.append(gvec, partial_deriv_gaussian(xdat, af=a2), axis=0)
+    return gvec
+
+# fit model to the data
+def model_doppler(XX, af=None, **kwargs):
+    """
+         simple shifted gaussian - one doppler peak
+         3 parameter fit
+            modelspec.gaussian AA*_np.exp(-(XX-x0)**2/(2.0*ss**2))
+         shifted gaussian and centered lorentzian - one doppler peak and reflection
+         6 parameter fit
+       +    modelspec.lorentzian AA*0.5*ss/((XX-x0)*(XX-x0)+0.25*ss*ss)/_np.pi
+         two shifted gaussians and centered lorentzian - one doppler peak and reflection
+         9 parameter fit
+       +    modelspec.gaussian ... initialized with opposite shifts
+    """
+    model_order = kwargs.setdefault('model_order', 0)
+    Fs = kwargs.setdefault('Fs', None)  # default to normalized frequencies
+    noshift = kwargs.setdefault('noshift', True)
+    if af is None:
+        af = _np.ones((9,), dtype=_np.float64)
+        # frequencies are normalized to sampling frequency
+        af[0] = 1e-6       # amplitude of gaussian
+        af[1] = -0.04       # doppler shift of gaussian,
+        af[2] = 0.005       # doppler width of peak
+        af[3] = 1.0         # integrated value of lorentzian
+        af[4] = 0.0         # shift of lorentzian
+        af[5] = 0.01        # width of lorentzian peak
+        af[6] = 0.5*_np.copy(af[0])   # amplitude of second gaussian
+        af[7] =-0.75*_np.copy(af[1])  # doppler shift of second gaussian
+        af[8] = 2.0*_np.copy(af[2])   # width of doppler peak of second gaussian
+
+        if Fs is not None:
+            af[1] *= Fs;            af[2] *= Fs
+            af[4] *= Fs;            af[5] *= Fs
+            af[7] *= Fs;            af[8] *= Fs
+        # end if
+
+        if model_order<2:
+            af = af[:6]
+        elif model_order<1:
+            af = af[:3]
+        # end if
+    # end if
+    if Fs is None:                  Fs = 1.0            # end if
+    a0, a1, a2 = _parse_noshift(af, model_order=model_order)
+#    af = _np.asarray(a0.tolist()+a1.tolist()+a2.tolist(), dtype=_np.float64)
+
+    i0 = model_gaussian(None, a0)
+    info = Struct()
+    info.af = _np.copy(i0.af)
+    info.Lbounds = _np.array([0.0,-Fs/2, -Fs/2], dtype=_np.float64)
+    info.Ubounds = _np.array([1.0, Fs/2, Fs/2], dtype=_np.float64)  # update this based on experience
+#    info.Lbounds = _np.copy(i0.Lbounds)
+#    info.Ubounds = _np.copy(i0.Ubounds)
+    info.fixed = _np.zeros( _np.shape(info.Lbounds), dtype=int)
+
+    if model_order>0:
+        i1 = model_lorentzian(None, a1)
+        if noshift:
+            i1.fixed[1] = int(1)
+            i1.af[1] = 0.0
+        # end if
+        info.af = _np.append(info.af, i1.af, axis=0)
+        i1.Lbounds = _np.array([0.0,-Fs/2.0, -Fs/2.0], dtype=_np.float64)
+        i1.Ubounds = _np.array([10.0, Fs/2.0, Fs/2.0], dtype=_np.float64)
+#        i1.Lbounds = _np.array([    0.0,-Fs/2.0, -Fs/10.0], dtype=_np.float64)
+#        i1.Ubounds = _np.array([_np.inf, Fs/2.0, Fs/10.0], dtype=_np.float64)
+        info.Lbounds = _np.append(info.Lbounds, i1.Lbounds, axis=0)
+        info.Ubounds = _np.append(info.Ubounds, i1.Ubounds, axis=0)
+        info.fixed = _np.append(info.fixed, i1.fixed, axis=0)
+    # end if
+
+    if model_order>1:
+        i2 = model_gaussian(None, a2)
+        info.af = _np.append(info.af, i2.af, axis=0)
+        i2.Lbounds = _np.array([0.0,-Fs/2.0, -Fs/2.0], dtype=_np.float64)
+        i2.Ubounds = _np.array([1.0, Fs/2.0, Fs/2.0], dtype=_np.float64)
+        info.Lbounds = _np.append(info.Lbounds, i2.Lbounds, axis=0)
+        info.Ubounds = _np.append(info.Ubounds, i2.Ubounds, axis=0)
+        info.fixed = _np.append(info.fixed, i2.fixed, axis=0)
+
+    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
+        a0, a1, a2 = _parse_noshift(ain, model_order=model_order)
+        aout = _np.copy(ain)
+        aout = i0.unscaleaf(a0, slope, offset, xslope, xoffset)
+        if model_order>0:
+            aout = _np.append(aout, i1.unscaleaf(a1, slope, offset, xslope, xoffset), axis=0)
+        if model_order>1:
+            aout = _np.append(aout, i2.unscaleaf(a2, slope, offset, xslope, xoffset), axis=0)
+        return aout
+    info.unscaleaf = unscaleaf
+
+    if XX is None:
+        return info
+    # end if
+
+    # ===== #
+
+    model = doppler(XX, af, model_order=model_order)
+    gvec = partial_doppler(XX, af, model_order=model_order)
+
+    info.prof = model
+    info.gvec = gvec
+    info.dprofdx = deriv_doppler(XX, af, model_order=model_order)
+    info.dgdx = partial_deriv_doppler(XX, af, model_order=model_order)
+
+    info.func = lambda _x, _a: doppler(_x, _a, model_order=model_order)
+    info.dfunc = lambda _x, _a: deriv_doppler(_x, _a, model_order=model_order)
+    info.gfunc = lambda _x, _a: partial_doppler(_x, _a, model_order=model_order)
+    info.dgfunc = lambda _x, _a: partial_deriv_doppler(_x, _a, model_order=model_order)
+    return model, gvec, info
+# end def
+
+# =========================================================================== #
+
 
 def edgepower(XX, af):
     """
     model a two-power fit
         b+(1-b)*(1-XX^c)^d
+    {x element R: (d>0 and c=0 and x>0) or (d>0 and x=1)
+            or (c>0 and 0<=x<1) or (c<0 and x>1) }
         first-half of a quasi-parabolic (hole depth, no width or decaying edge)
 
         y = edge/core + (1-edge/core)
@@ -489,40 +514,72 @@ def edgepower(XX, af):
         c = power scaling factor 1
         d = power scaling factor 2
     """
+    XX = clean_XX(XX)
+    XI = _np.copy(XX)
+    XX = XX[_np.abs(XX)<1]
     b = af[0]
     c = af[1]
     d = af[2]
-    return b+(1-b)*_np.power((1-_np.power(XX,c)), d)
+    prof = b+(1-b)*_np.power((1-_np.power(XX,c)), d)
+    if (XI>=1.0).any():
+        # Linearly interpolate to along current trajectory from last valid point
+        prof = interp(XX, prof, None, XI )
+    # endif
+    return prof
 
 def partial_edgepower(XX, af):
     """
     This subfunction calculates the jacobian of a two-power edge fit
     (partial derivatives of the fit)
     """
+    XX = clean_XX(XX)
+    XI = _np.copy(XX)
+    XX = XX[_np.abs(XX)<1]
     b = af[0]
     c = af[1]
     d = af[2]
 
     gvec = _np.zeros((3,_np.size(XX)), dtype=_np.float64)
     gvec[0,:] = 1.0 - _np.power(1-_np.power(XX,c),d)
-    gvec[1,:] = -1.0 * (1.0-b)*d*_np.power(XX,c)*_np.log(XX)*_np.power(1.0-_np.power(XX,c),d-1.0)
-    gvec[2,:] = -1.0*(b-1.0)*_np.power((1-_np.power(XX,c)), d)*_np.log(1.0-_np.power(XX,c))
+    gvec[1,:] = -1.0 * (1.0-b)*d*_np.power(XX,c)*_np.log(_np.abs(XX))*_np.power(1.0-_np.power(XX,c),d-1.0)
+    gvec[2,:] = -1.0*(b-1.0)*_np.power((1-_np.power(XX,c)), d)*_np.log(_np.abs(1.0-_np.power(XX,c)))
+
+    if (XI>=1).any():
+#        # Linearly interpolate to along current trajectory from last valid point
+#        gvec = interp(XX, gvec, None, XI )
+
+        # Assume constant at edge
+        gvec = _np.append(gvec, _np.atleast_2d(gvec[:,-1]).T*_np.ones((1,len(XI)-len(XX)), dtype=_np.float64), axis=1)
+
+        # NaN at edge
+#        gvec = _np.append(gvec, _np.nan*_np.atleast_2d(gvec[:,-1]).T*_np.ones((1,len(XI)-len(XX)), dtype=_np.float64), axis=1)
+    # endif
     return gvec
 
 def deriv_edgepower(XX, af):
     """"
     This subfunction calculates the first derivative of a two-power edge fit
     """
+    XX = clean_XX(XX)
+    XI = _np.copy(XX)
+    XX = XX[_np.abs(XX)<1]
     b = af[0]
     c = af[1]
     d = af[2]
-    return -1.0*(1-b)*c*d*_np.power(XX,c-1)*_np.power((1-_np.power(XX,c)), d-1)
+    dpdx = -1.0*(1-b)*c*d*_np.power(XX,c-1)*_np.power((1-_np.power(XX,c)), d-1)
+    if (XI>=1).any():
+        dpdx = interp(XX, dpdx, None, XI )
+    # endif
+    return dpdx
 
 def partial_deriv_edgepower(XX, af):
     """"
     This subfunction calculates the jacobian of the second derivative of a
     two-power edge fit (partial derivatives of the second derivative of a fit)
     """
+    XX = clean_XX(XX)
+    XI = _np.copy(XX)
+    XX = XX[_np.abs(XX)<1]
     b = af[0]
     c = af[1]
     d = af[2]
@@ -531,30 +588,49 @@ def partial_deriv_edgepower(XX, af):
     gvec[0,:] = c*d*_np.power(XX,c-1.0)*_np.power(1.0-_np.power(XX,c),d-1.0)
     gvec[1,:] = (
         -1.0*(1-b)*d*_np.power(XX,c-1.0)*_np.power(1.0-_np.power(XX,c), d-1.0)
-        - (1.0-b)*d*c*_np.power(XX,c-1.0)*_np.log(XX)*_np.power(1.0-_np.power(XX,c),d-1.0)
-        + (1.0-b)*(d-1.0)*d*c*_np.power(XX,2*c-1.0)*_np.log(XX)*_np.power(1.0-_np.power(XX,c),d-2.0)
+        - (1.0-b)*d*c*_np.power(XX,c-1.0)*_np.log(_np.abs(XX))*_np.power(1.0-_np.power(XX,c),d-1.0)
+        + (1.0-b)*(d-1.0)*d*c*_np.power(XX,2*c-1.0)*_np.log(_np.abs(XX))*_np.power(1.0-_np.power(XX,c),d-2.0)
         )
     gvec[2,:] = (
         -1.0*(1.0-b)*c*_np.power(XX,c-1.0)*_np.power(1.0-_np.power(XX,c),d-1.0)
-        - (1.0-b)*c*d*_np.power(XX,c-1.0)*_np.power(1.0-_np.power(XX,c),d-1.0)*_np.log(1.0-_np.power(XX,c))
+        - (1.0-b)*c*d*_np.power(XX,c-1.0)*_np.power(1.0-_np.power(XX,c),d-1.0)*_np.log(_np.abs(1.0-_np.power(XX,c)))
         )
+    if (XI>=1).any():
+#        gvec = interp(XX, gvec, None, XI )
+        # Assume constant at edge
+        gvec = _np.append(gvec, _np.atleast_2d(gvec[:,-1]).T*_np.ones((1,len(XI)-len(XX)), dtype=_np.float64), axis=1)
+
+        # NaN at edge
+#        gvec = _np.append(gvec, _np.nan*_np.atleast_2d(gvec[:,-1]).T*_np.ones((1,len(XI)-len(XX)), dtype=_np.float64), axis=1)
+    # endif
     return gvec
 
 def deriv2_edgepower(XX, af):
     """"
     This subfunction calculates the second derivative of a two-power edge fit
     """
+    XX = clean_XX(XX)
+    XI = _np.copy(XX)
+    XX = XX[_np.abs(XX)<1]
     b = af[0]
     c = af[1]
     d = af[2]
-    return ((b-1)*(c-1)*c*d*_np.power(XX,c-2)*_np.power(1.0-_np.power(XX,c),d-1.0)
+    deriv = ((b-1)*(c-1)*c*d*_np.power(XX,c-2)*_np.power(1.0-_np.power(XX,c),d-1.0)
      - (b-1.0)*_np.power(c,2.0)*(d-1.0)*d*_np.power(XX,2*c-2.0)*_np.power(1.0-_np.power(XX,c),d-2.0))
+    if (XI>=1).any():
+        # Linearly interpolate derivative along its current trajectory from last valid point
+        deriv = interp(XX, deriv, None, XI )
+    # endif
+    return deriv
 
 def partial_deriv2_edgepower(XX, af):
     """"
     This subfunction calculates the jacobian of the second derivative of a
     two-power edge fit (partial derivatives of the second derivative of a fit)
     """
+    XX = clean_XX(XX)
+    XI = _np.copy(XX)
+    XX = XX[_np.abs(XX)<1]
     b = af[0]
     c = af[1]
     d = af[2]
@@ -567,28 +643,39 @@ def partial_deriv2_edgepower(XX, af):
     gvec[1,:] = (
           (b-1.0)*d*(c-1.0)*_np.power(XX,c-2.0)*_np.power(1.0-_np.power(XX,c),d-1.0)
         + (b-1.0)*d*c*_np.power(XX,c-2)*_np.power(1.0-_np.power(XX,c),d-1.0)
-        + (b-1.0)*d*(c-1.0)*c*_np.power(XX,c-2.0)*_np.log(XX)*_np.power(1.0-_np.power(XX,c),d-1.0)
-        + (b-1.0)*(d-2.0)*(d-1.0)*d*_np.power(c,2.0)*_np.power(XX,3*c-2.0)*_np.log(XX)*_np.power(1.0-_np.power(XX,c),d-3.0)
-        - 2.0*(b-1.0)*(d-1.0)*d*_np.power(c,2.0)*_np.power(XX,2*c-2.0)*_np.log(XX)*_np.power(1.0-_np.power(XX,c),d-2.0)
+        + (b-1.0)*d*(c-1.0)*c*_np.power(XX,c-2.0)*_np.log(_np.abs(XX))*_np.power(1.0-_np.power(XX,c),d-1.0)
+        + (b-1.0)*(d-2.0)*(d-1.0)*d*_np.power(c,2.0)*_np.power(XX,3*c-2.0)*_np.log(_np.abs(XX))*_np.power(1.0-_np.power(XX,c),d-3.0)
+        - 2.0*(b-1.0)*(d-1.0)*d*_np.power(c,2.0)*_np.power(XX,2*c-2.0)*_np.log(_np.abs(XX))*_np.power(1.0-_np.power(XX,c),d-2.0)
         - 2.0*(b-1.0)*(d-1.0)*d*c*_np.power(XX,2*c-2.0)*_np.power(1-_np.power(XX,c),d-2.0)
-        - (b-1.0)*(d-1.0)*d*(c-1.0)*c*_np.power(XX,2*c-2.0)*_np.log(XX)*_np.power(1 - _np.power(XX,c),d-2.0)
+        - (b-1.0)*(d-1.0)*d*(c-1.0)*c*_np.power(XX,2*c-2.0)*_np.log(_np.abs(XX))*_np.power(1 - _np.power(XX,c),d-2.0)
         )
     gvec[2,:] = (
         -1.0*(b-1.0)*_np.power(c,2.0)*(d-1.0)*_np.power(XX,2*c-2.0)*_np.power(1.0-_np.power(XX,c),d-2.0)
         - (b-1.0)*_np.power(c,2.0)*d*_np.power(XX,2*c-2.0)*_np.power(1.0-_np.power(XX,2),d-2.0)
-        - (b-1.0)*_np.power(c,2.0)*(d-1.0)*d*_np.power(XX,2*c-2.0)*_np.power(1.0-_np.power(XX,c),d-2.0)*_np.log(1.0-_np.power(XX,c))
+        - (b-1.0)*_np.power(c,2.0)*(d-1.0)*d*_np.power(XX,2*c-2.0)*_np.power(1.0-_np.power(XX,c),d-2.0)*_np.log(_np.abs(1.0-_np.power(XX,c)))
         + (b-1.0)*(c-1.0)*c*_np.power(XX,c-2.0)*_np.power(1.0-_np.power(XX,c),d-1.0)
-        + (b-1.0)*(c-1.0)*c*d*_np.power(XX,c-2.0)*_np.power(1.0-_np.power(XX,c),d-1.0)*_np.log(1-_np.power(XX,c))
+        + (b-1.0)*(c-1.0)*c*d*_np.power(XX,c-2.0)*_np.power(1.0-_np.power(XX,c),d-1.0)*_np.log(_np.abs(1-_np.power(XX,c)))
         )
+    if (XI>=1).any():
+#        gvec = interp(XX, gvec, None, XI )
+        # Assume constant at edge
+        gvec = _np.append(gvec, _np.atleast_2d(gvec[:,-1]).T*_np.ones((1,len(XI)-len(XX)), dtype=_np.float64), axis=1)
+
+        # NaN at edge
+#        gvec = _np.append(gvec, _np.nan*_np.atleast_2d(gvec[:,-1]).T*_np.ones((1,len(XI)-len(XX)), dtype=_np.float64), axis=1)
+    # endif
     return gvec
 
-def model_edgepower(XX, af=None):
+
+def model_edgepower(XX, af=None, **kwargs):
     """
 ... this is identical to model_2power and model_twopower, just different formulations
-
+        that formulation:          a*(b+(1-b)*(1-XX^c)^d)
     model a two-power fit
-        a*(b+(1-b)*(1-XX^c)^d)
+        b+(1-b)*(1-XX^c)^d
+
         first-half of a quasi-parabolic (hole depth, no width or decaying edge)
+        the fit implies that it has already been scaled and shifted
 
         y/a = edge/core + (1-edge/core)
         af[0] = a = amplitude of core
@@ -596,12 +683,9 @@ def model_edgepower(XX, af=None):
         af[1] = c = power scaling factor 1
         af[2] = d = power scaling factor 2
 
-        xx - x - independent variable
+        XX - x - independent variable
 
     It is kind of dumb to try and scale / unscale this fit.  It is already scaled mostly.
-
-    If fitting with scaling, then the algebra necessary to unscale the problem
-    to original units is:
         a = core
         b = edge/core;   b = offset/(slope+offset)
 
@@ -609,29 +693,31 @@ def model_edgepower(XX, af=None):
         y = edge + (core-edge)*(1-x^c)^d
         prof = offset + slope*(1-x^c)^d
 
-        # Edge = offset
-        # Core - Edge = slope;  Core = slope+offset;
-        # b = edge/core = offset/(slope+offset)
+            found in the info Structure
 
-        af[0] = edge/core = offset/(slope+offset)
+    x-shift and scaling: x = (x-xo)/xs, canot be compensated with simple constant coefficients
+        prof = offset+slope*(1-xs^-c'(x-xo)^c')^d'
 
-        (y/a -b)/(1-b) = (1-x^c)^d
-
-    found in the info Structure
+    x-scaling: x = x/xs, canot be compensated with simple constant coefficients
+        prof = offset+slope*(1-(x/xs)^c')^d'
+             (1-(x/xs)^c')^d' = (1-x^c)^d
+             d = d'*ln(1-(x/xs)^c')/ln(1-x^c)
+                 at x=0, independent of d' indeterminant
+                 at x=1, independent of d' divide by zero
+                 at x=xs, independent of d' negative infinity
+            therefore, d has to equal d' and x/xs == x, so xs=1 is only functional case
     """
-
-    if af is None:
-        af = 0.1*_np.ones((3,), dtype=_np.float64)
-    # endif
+    if af is None:        af = 0.1*_np.ones((3,), dtype=_np.float64)    # endif
 
     info = Struct()
     info.Lbounds = _np.array([0.0, -20.0, -20.0], dtype=_np.float64)
     info.Ubounds = _np.array([_np.inf, 20.0, 20.0], dtype=_np.float64)
-    info.af = af
+    info.fixed = _np.zeros( _np.shape(info.Lbounds), dtype=int)
+    info.af = _np.copy(af)
+    info.kwargs = kwargs
 
-    def unscaleaf(ain, slope, offset=0.0):
+    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
         aout = _np.copy(ain)
-        aout[0] = slope*aout[0]
         return aout
     info.unscaleaf = unscaleaf
     if XX is None:
@@ -639,16 +725,35 @@ def model_edgepower(XX, af=None):
 
     prof = edgepower(XX, af)
     gvec = partial_edgepower(XX, af)
-
-    info.prof = prof
-    info.gvec = gvec
     info.dprofdx = deriv_edgepower(XX, af)
     info.dgdx = partial_deriv_edgepower(XX, af)
     info.d2profdx2 = deriv2_edgepower(XX,af)
     info.d2gdx2 = partial_deriv2_edgepower(XX,af)
+
+#    XX = _np.copy(XX)
+##    XX = _np.abs(XX)
+#    XI = _np.copy(XX)
+#    XX = XX[_np.abs(XX)<1]
+#    if (XI>=1).any():
+#        # Linearly interpolate derivative to zero from last valid point
+#        prof = interp(XX[XX<1], prof, None, XX )
+#        gvec = interp(XX[XX<1], gvec, None, XX )
+#        info.dprofdx = interp(XX[XX<1], info.dprofdx, None, XX )
+#        info.dgdx = interp(XX[XX<1], info.dgdx, None, XX )
+#        info.d2profdx2 = interp(XX[XX<1], info.d2profdx2, None, XX )
+#        info.d2gdx2 = interp(XX[XX<1], info.d2gdx2, None, XX )
+#    # endif
+    info.prof = prof
+    info.gvec = gvec
+
+    info.func = lambda _x, _a: edgepower(_x, _a)
+    info.dfunc = lambda _x, _a: deriv_edgepower(_x, _a)
+    info.gfunc = lambda _x, _a: partial_edgepower(_x, _a)
+    info.dgfunc = lambda _x, _a: partial_deriv_edgepower(_x, _a)
     return prof, gvec, info
 
 # ========================================================================== #
+
 
 def twopower(XX, af):
     """
@@ -657,38 +762,49 @@ def twopower(XX, af):
                 .... dumb: reproduced everywhere: y-offset = slope*(1-x^b)^c
         y = a*(1.0 - x**b)**c
 
-        y = edge/core + (1-edge/core)
         a = amplitude of core
         b = power scaling factor 1
         c = power scaling factor 2
     """
+    XX = clean_XX(XX)
+#    XI = _np.copy(XX)
+#    XX = XX[_np.abs(XX)<1]
     a = af[0]
     b = af[1]
     c = af[2]
     return a*_np.power((1.0-_np.power(XX,b)), c)
 
+def deriv_twopower(XX, af):
+    XX = clean_XX(XX)
+#    XI = _np.copy(XX)
+#    XX = XX[_np.abs(XX)<1]
+    a = af[0]
+    b = af[1]
+    c = af[2]
+    return -1.0*a*b*c*_np.power(XX,b-1)*_np.power((1.0-_np.power(XX,b)), c-1.0)
+
 def partial_twopower(XX, af):
+    XX = clean_XX(XX)
+#    XI = _np.copy(XX)
+#    XX = XX[_np.abs(XX)<1]
     a = af[0]
     b = af[1]
     c = af[2]
 
     gvec = _np.zeros((3,_np.size(XX)), dtype=_np.float64)
-    gvec[0,:] = _np.power(1.0-_np.power(XX,b),c)
+    gvec[0,:] = _np.power(1.0-_np.power(XX, b), c)
     gvec[1,:] = (
-        -1.0*a*c*_np.power(XX,b)*_np.log(XX)*_np.power(1.0-_np.power(XX,b),c-1.0)
+        -1.0*a*c*_np.power(XX, b)*_np.log(_np.abs(XX))*_np.power(1.0-_np.power(XX, b), c-1.0)
         )
     gvec[2,:] = (
-        a*_np.power(1.0-_np.power(XX,b),c)*_np.log(1.0-_np.power(XX,b))
+        a*_np.power(1.0-_np.power(XX, b), c)*_np.log(_np.abs(1.0-_np.power(XX, b)))
         )
     return gvec
 
-def deriv_twopower(XX, af):
-    a = af[0]
-    b = af[1]
-    c = af[2]
-    return -1.0*a*b*c*_np.power(XX,b-1)*_np.power((1-_np.power(XX,b)), c-1)
-
 def partial_deriv_twopower(XX, af):
+    XX = clean_XX(XX)
+#    XI = _np.copy(XX)
+#    XX = XX[_np.abs(XX)<1]
     a = af[0]
     b = af[1]
     c = af[2]
@@ -696,16 +812,16 @@ def partial_deriv_twopower(XX, af):
     gvec = _np.zeros((3,_np.size(XX)), dtype=_np.float64)
     gvec[0,:] = -1.0*b*c*_np.power(XX,b-1.0)*_np.power(1.0-_np.power(XX,b), c-1.0)
     gvec[1,:] = (
-        -1.0*a*c*_np.power(XX,b-1.0)*_np.power(1.0-_np.power(XX,b),c-1.0)
-        - a*c*b*_np.power(XX,b-1.0)*_np.log(XX)*_np.power(1.0-_np.power(XX,b),c-1.0)
-        + a*(c-1.0)*c*b*_np.power(XX,2*b-1.0)*_np.log(XX)*_np.power(1.0-_np.power(XX,b),c-2.0)
+        -1.0*a*c*_np.power(XX, b-1.0)*_np.power(1.0-_np.power(XX,b), c-1.0)
+        - a*c*b*_np.power(XX, b-1.0)*_np.log(_np.abs(XX))*_np.power(1.0-_np.power(XX,b), c-1.0)
+        + a*(c-1.0)*c*b*_np.power(XX, 2*b-1.0)*_np.log(_np.abs(XX))*_np.power(1.0-_np.power(XX, b), c-2.0)
         )
     gvec[2,:] = (
-        -1.0*a*b*_np.power(XX,b-1.0)*_np.power(1.0-_np.power(XX,b),c-1.0)*(c*_np.log(1.0-_np.power(XX,b))+1.0)
+        -1.0*a*b*_np.power(XX, b-1.0)*_np.power(1.0-_np.power(XX, b), c-1.0)*(c*_np.log(_np.abs(1.0-_np.power(XX, b)))+1.0)
         )
     return gvec
 
-def model_twopower(XX, af=None):
+def model_twopower(XX, af=None, **kwargs):
     """
     model a two-power fit
         first-half of a quasi-parabolic (no hole depth width or decaying edge)
@@ -721,22 +837,44 @@ def model_twopower(XX, af=None):
             prof = slope*(1-x^b)^c+offset
             slope = (a-b) ~ core-edge
             offset = b = edge
-    """
 
-    info = Struct()
-    info.Lbounds = _np.array([0.0, -20.0, -20.0], dtype=_np.float64)
-    info.Ubounds = _np.array([20, 20.0, 20.0], dtype=_np.float64)
+        y-scaling: y'= y/ys
+             a = ys*a'
+             b = b'
+             c= c'
+
+        y-shift and scaling: y'= (y-yo)/ys
+            y = yo+ys*a'*(1-x^b')^c'
+              = a*(1-x^b)^c
+              a = yo*(1-x^b')^-c' + ys*a'
+              at x=0, a = yo^-c'+ys*a'
+              at x=1, a = ys*a'
+                  so yo must equal 0 cannot compensate yo with constant coefficients
+
+        x-scaling:  x' = x/xs
+            y = a'*(1-x^b'/xs^b')^c'
+            x^b'/xs^b' = x^b
+                b/b' = (ln(x)-ln(xs))/ln(x) = 1-ln(xs)/ln(x)
+        so we cannot compensate xs with constant coefficients and xs==1 and b=b'
+    """
     if af is None:
         af = _np.array([1.0, 12.0, 3.0], dtype=_np.float64)
 #        af *= 0.1*_np.random.normal(0.0, 1.0, 1)
     # endif
-    info.af = af
 
-    def unscaleaf(ain, slope, offset=0.0):
+    info = Struct()
+    info.Lbounds = _np.array([0.0, -20.0, -20.0], dtype=_np.float64)
+    info.Ubounds = _np.array([20, 20.0, 20.0], dtype=_np.float64)
+    info.fixed = _np.zeros( _np.shape(info.Lbounds), dtype=int)
+    info.af = af
+    info.kwargs = kwargs
+
+    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
         aout = _np.copy(ain)
-        aout[0] = slope
+#        aout[0] = slope*aout[0]
         return aout
     info.unscaleaf = unscaleaf
+
     if XX is None:
         return info
 
@@ -747,218 +885,206 @@ def model_twopower(XX, af=None):
     info.gvec = gvec
     info.dprofdx = deriv_twopower(XX, af)
     info.dgdx = partial_deriv_twopower(XX, af)
+
+    info.func = lambda _x, _a: twopower(_x, _a)
+    info.dfunc = lambda _x, _a: deriv_twopower(_x, _a)
+    info.gfunc = lambda _x, _a: partial_twopower(_x, _a)
+    info.dgfunc = lambda _x, _a: partial_deriv_twopower(_x, _a)
     return prof, gvec, info
 
 # ========================================================================== #
 
+
 def expedge(XX, af):
     """
     model an exponential edge
+        y = e*(1-exp(-x^2/h^2))
         second-half of a quasi-parabolic (no edge, or power factors)
-        a = amplitude of core
         e = hole width
         h = hole depth
     """
+    XX = clean_XX(XX)
+#    XI = _np.copy(XX)
+#    XX = XX[_np.abs(XX)<1]
     e = af[0]
     h = af[1]
-    return e*(1-_np.exp(-_np.square(XX)/h))
+    prof = e*(1.0-_np.exp(-_np.square(XX)/_np.square(h)))
+    return prof
 
-# ========= Quasi-parabolic model ========== #
+def partial_expedge(XX, af):
+    XX = clean_XX(XX)
+#    XI = _np.copy(XX)
+#    XX = XX[_np.abs(XX)<1]
+    e = af[0]
+    h = af[1]
+    gvec = _np.zeros((2,len(XX)), dtype=_np.float64)
+    gvec[0,:] =  1.0 - _np.exp(-_np.square(XX)/_np.square(h))
+    gvec[1,:] = -2.0*_np.square(XX)*e*_np.exp(-_np.square(XX)/_np.square(h))/_np.power(h,3)
+    return gvec
 
-def model_qparab(XX, af=None, nohollow=False, prune=False, rescale=False, info=None):
+def deriv_expedge(XX, af):
+    XX = clean_XX(XX)
+#    XI = _np.copy(XX)
+#    XX = XX[_np.abs(XX)<1]
+    e = af[0]
+    h = af[1]
+    return 2.0*XX*e*_np.exp(-_np.square(XX)/_np.square(h))/_np.square(h)
+
+def partial_deriv_expedge(XX, af):
+    XX = clean_XX(XX)
+#    XI = _np.copy(XX)
+#    XX = XX[_np.abs(XX)<1]
+    e = af[0]
+    h = af[1]
+    gvec = _np.zeros((2,len(XX)), dtype=_np.float64)
+    gvec[0,:] = 2.0*XX*_np.exp(-_np.square(XX)/_np.square(h))/_np.square(h)
+    gvec[1,:] = 4.0*XX*e*_np.exp(-_np.square(XX)/_np.square(h)) * (_np.square(XX)-_np.square(h))/_np.power(h,5)
+    return gvec
+
+def model_expedge(XX, af, **kwargs):
     """
-    ex// ne_parms = [0.30, 0.002, 2.0, 0.7, -0.24, 0.30]
-    This function calculates the quasi-parabolic fit
-    Y/Y0 = af[1]-af[4]+(1-af[1]+af[4])*(1-xx^af[2])^af[3]
-                + af[4]*(1-exp(-xx^2/af[5]^2))
-    xx - r/a
-    af[0] - Y0 - function value on-axis
-    af[1] - gg - Y1/Y0 - function value at edge over core
-    af[2],af[3]-  pp, qq - power scaling parameters
-    af[4],af[5]-  hh, ww - hole depth and width
+    model an exponential edge
+        y = e*(1-exp(-x^2/h^2))
+        second-half of a quasi-parabolic (no edge, or power factors)
+        e = hole width
+        h = hole depth
 
-    If fitting with scaling, then the algebra necessary to unscale the problem
-    to original units is:
-            af[0] is Y0, af[1] if Y1/Y0; Y1 = af[1]*af[0]
+        y-scaling: y' = y/ys
+        y' = y/ys = e'*(1-exp(-x^2/h'^2))
+            e = e'*ys
+            h = h'
+            possible with constant coefficients
 
-        af[1] = (slope*af[1]*af[0]+offset)/(slope*af[0]+offset)
-        af[0] = slope*af[0]+offset
-    found in the info Structure
+      y-shifting: y' = (y-yo)/ys
+        y' = (y-yo)/ys = e'*(1-exp(-x^2/h'^2))
 
+        y = yo + ys*e' * (1-exp(-x^2/h'^2))
+          = (yo-yo*exp(-x^2/h'^2) + ys*e')*(1-exp(-x^2/h'^2))
+               at x=0,   e = ys*e'
+               at x=inf, e = yo+ys*e'
+           not possible with this fit and constant coefficients (unless yo=0)
+
+      x-scaling:  x' = x/xs
+        y' = y/ys = e'*(1-exp(-x^2/(xs*h')^2))
+            e = e'*ys
+            h = h'*xs
+      x-shifting not possible with constant coefficients
     """
-    if info is None:
-        info = Struct()  # Custom class that makes working with dictionaries easier
-#    info.Lbounds = _np.array([    0.0, 0.0,-_np.inf,-_np.inf,-_np.inf,-_np.inf], dtype=_np.float64)
-#    info.Ubounds = _np.array([_np.inf, _np.inf, _np.inf, _np.inf, _np.inf, _np.inf], dtype=_np.float64)
-#    info.Lbounds = _np.array([  0.0, 0.0,-20,-20,-1,-1], dtype=_np.float64)
-#    info.Ubounds = _np.array([ 20.0, 1.0, 20, 20, 1, 1], dtype=_np.float64)
-    info.Lbounds = _np.array([  0.0, 0.0,-10,-10,-1,-1], dtype=_np.float64)
-    info.Ubounds = _np.array([ 20.0, 1.0, 10, 10, 1, 1], dtype=_np.float64)
-
     if af is None:
-        af = _np.array([1.0, 0.002, 2.0, 0.7, -0.24, 0.30], dtype=_np.float64)
-#        af = randomize_initial_conditions(info.Lbounds, info.Ubounds)
-        if nohollow:
-            af[4] = 0.0
-            af[5] = 1.0
-        # endif
-    if len(af) == 4:
-        nohollow = True
-        af = _np.hstack((af,0.0))
-        af = _np.hstack((af,1.0))
+        af = _np.asarray([2.0,1.0], dtype=_np.float64)
     # endif
-    info.af = _np.copy(af)
 
-    def unscaleaf(ain, slope, offset):
+    info = Struct()
+    info.Lbounds = _np.array([-_np.inf,-_np.inf], dtype=_np.float64)
+    info.Ubounds = _np.array([ _np.inf, _np.inf], dtype=_np.float64)
+    info.fixed = _np.zeros( _np.shape(info.Lbounds), dtype=int)
+    info.af = af
+    info.kwargs = kwargs
+
+    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
         aout = _np.copy(ain)
-        aout[1] = (slope*ain[1]*ain[0]+offset)/(slope*ain[0]+offset)
-        aout[0] = slope*ain[0]+offset
+#        aout[0] = slope*aout[0]
+#        aout[1] = xslope*aout[1]
         return aout
     info.unscaleaf = unscaleaf
+
     if XX is None:
-        if prune:
-            info.af = info.af[:4]
-            info.Lbounds = info.Lbounds[:4]
-            info.Ubounds = info.Ubounds[:4]
-        # end if
         return info
-    # endif
 
-    # ========= #
-    XX = _np.abs(XX)
-    if rescale:
-        XX = rescale_xlims(XX, forward=True, ascl=rescale)
-    else:
-        rescale = 1.0
-    # end if
+    prof = expedge(XX, af)
+    gvec = partial_expedge(XX, af)
 
-    # ========= #
+    info.prof = prof
+    info.gvec = gvec
+    info.dprofdx = deriv_expedge(XX, af)
+    info.dgdx = partial_deriv_expedge(XX, af)
 
-    af = af.reshape((len(af),))
-    if _np.isfinite(af).any() == 0:
-        print("checkit! No finite values in fit coefficients! (from model_spec: model_qparab)")
-#    print(_np.shape(af))
-
-    try:
-        prof = qparab(XX, af, nohollow)
-#        prof = interp_irregularities(prof, corezero=False)
-        info.prof = prof
-
-        gvec = partial_qparab(XX*rescale, af, nohollow)
-#        gvec = interp_irregularities(gvec, corezero=False)  # invalid slice
-        info.gvec = gvec
-
-        info.dprofdx = deriv_qparab(XX, af, nohollow)
-#        info.dprofdx = interp_irregularities(info.dprofdx, corezero=True)
-
-        info.dgdx = partial_deriv_qparab(XX*rescale, af, nohollow)
-#        info.dgdx = interp_irregularities(info.dgdx, corezero=False)
-    except:
-        pass
-        raise
-
-    if prune:
-        af = af[:4]
-        info.Lbounds = info.Lbounds[:4]
-        info.Ubounds = info.Ubounds[:4]
-
-        gvec = gvec[:4, :]
-        info.dgdx = info.dgdx[:4, :]
-    # endif
-    info.af = af
-
+    info.func = lambda _x, _a: expedge(_x, _a)
+    info.dfunc = lambda _x, _a: deriv_expedge(_x, _a)
+    info.gfunc = lambda _x, _a: partial_expedge(_x, _a)
+    info.dgfunc = lambda _x, _a: partial_deriv_expedge(_x, _a)
     return prof, gvec, info
-# end def model_qparab
 
-# ========= Subfunctions of the quasi-parabolic model ========== #
+# ========================================================================== #
+# ========================================================================== #
 
-
-# Set the plasma density, temperature, and Zeff profiles (TRAVIS INPUTS)
-def qparab(XX, *aa, **kwargs):
-    """
-    ex// ne_parms = [0.30, 0.002, 2.0, 0.7, -0.24, 0.30]
-    This subfunction calculates the quasi-parabolic fit
-    Y/Y0 = aa[1]-aa[4]+(1-aa[1]+aa[4])*(1-xx^aa[2])^aa[3]+aa[4]*(1-exp(-xx^2/aa[5]^2))
-        xx - r/a
-    aa[0] - Y0 - function value on-axis
-    aa[1] - gg - Y1/Y0 - function value at edge over core
-    aa[2],aa[3]-  pp, qq - power scaling parameters
-    aa[4],aa[5]-  hh, ww - hole depth and width
-    """
-    options = {}
-    options.update(kwargs)
-    nohollow = options.get('nohollow', False)
-    aedge = options.get('aedge', 1.0)
-    if len(aa)>6:
-        nohollow = aa.pop(6)
-    XX = _np.abs(XX)/aedge
-    if (type(aa) is tuple) and (len(aa) == 2):
-        nohollow = aa[1]
-        aa = aa[0]
-    elif (type(aa) is tuple) and (len(aa) == 1):
-        aa = aa[0]
-    # endif
-    aa = _np.asarray(aa, dtype=_np.float64)
-    if nohollow and (_np.size(aa)==4):
-        aa = _np.vstack((aa,_np.atleast_1d(0.0)))
-        aa = _np.vstack((aa,_np.atleast_1d(1.0)))
-    elif nohollow:
-        aa[4] = 0.0
-        aa[5] = 1.0
-    # endif
-    prof = aa[0]*( aa[1]-aa[4]
-                   + (1.0-aa[1]+aa[4])*_np.abs(1.0-XX**aa[2])**aa[3]
-                   + aa[4]*(1.0-_np.exp(-XX**2.0/aa[5]**2.0)) )
+def qparab(XX, af, **kwargs):
+    XX = clean_XX(XX)
+#    XI = _np.copy(XX)
+#    XX = XX[_np.abs(XX)<1]
+    a = af[0]
+    b = af[1]
+    c = af[2]
+    d = af[3]
+    e = af[4]
+    f = af[5]
+    prof = a*( edgepower(XX, [b-e, c, d]) + expedge(XX, [e, f]) )
     return prof
-# end def qparab
 
-def deriv_qparab(XX, aa=[0.30, 0.002, 2.0, 0.7, -0.24, 0.30], nohollow=False):
-    """
-    ex// ne_parms = [0.30, 0.002 2.0 0.7 -0.24 0.30]
-    This subfunction calculates the derivative of a quasi-parabolic fit
-    Y/Y0 = aa[1]-aa[4]+(1-aa[1]+aa[4])*(1-xx^aa[2])^aa[3]+aa[4]*(1-exp(-xx^2/aa[5]^2))
-        xx - r/a
-    aa[0] - Y0 - function value on-axis
-    aa[1] - gg - Y1/Y0 - function value at edge over core
-    aa[2],aa[3]-  pp, qq - power scaling parameters
-    aa[4],aa[5]-  hh, ww - hole depth and width
-    """
-    XX = _np.abs(XX)
-    aa = _np.asarray(aa,dtype=_np.float64)
-    if nohollow and (_np.size(aa)==4):
-        aa = _np.vstack((aa,_np.atleast_1d(0.0)))
-        aa = _np.vstack((aa,_np.atleast_1d(1.0)))
-    elif nohollow:
-        aa[4] = 0.0
-        aa[5] = 1.0
-    # endif
+def deriv_qparab(XX, af, **kwargs):
+    XX = clean_XX(XX)
+#    XI = _np.copy(XX)
+#    XX = XX[_np.abs(XX)<1]
+    a = af[0]
+    b = af[1]
+    c = af[2]
+    d = af[3]
+    e = af[4]
+    f = af[5]
+    return a*( deriv_edgepower(XX, [b-e, c, d]) + deriv_expedge(XX, [e, f]) )
 
-    dpdx = aa[0]*( (1.0-aa[1]+aa[4])*(-1.0*aa[2]*XX**(aa[2]-1.0))*aa[3]*(1.0-XX**aa[2])**(aa[3]-1.0)
-                   - aa[4]*(-2.0*XX/aa[5]**2.0)*_np.exp(-XX**2.0/aa[5]**2.0) )
+def partial_qparab(XX, af, **kwargs):
+    XX = clean_XX(XX)
+#    XI = _np.copy(XX)
+#    XX = XX[_np.abs(XX)<1]
+    a = af[0]
+    b = af[1]
+    c = af[2]
+    d = af[3]
+    e = af[4]
+    f = af[5]
+    gvec = _np.zeros((6,len(XX)), dtype=_np.float64)
+    gvec[0, :] = qparab(XX, af)/a
+    gvec[1:4,:] = a*partial_edgepower(XX, [b-e, c, d])
+    gvec[4:, :] = a*partial_expedge(XX, [e, f])
+#    gvec = _np.append(gvec, a*partial_edgepower(XX, [b-e, c, d]), axis=0)
+#    gvec = _np.append(gvec, a*partial_expedge(XX, [e, f]), axis=0)
+    return gvec
 
-    return dpdx
-# end def derive_qparab
+def partial_deriv_qparab(XX, af, **kwargs):
+    XX = clean_XX(XX)
+#    XI = _np.copy(XX)
+#    XX = XX[_np.abs(XX)<1]
+    a = af[0]
+    b = af[1]
+    c = af[2]
+    d = af[3]
+    e = af[4]
+    f = af[5]
+    gvec = _np.zeros((6,len(XX)), dtype=_np.float64)
+    gvec[0, :] = deriv_qparab(XX, af)/a
+    gvec[1:4,:] = a*partial_deriv_edgepower(XX, [b-e, c, d])
+    gvec[4:,:] = a*partial_deriv_expedge(XX, [e, f])
+#    gvec = _np.append(gvec, a*partial_deriv_edgepower(XX, [b-e, c, d]), axis=0)
+#    gvec = _np.append(gvec, a*partial_deriv_expedge(XX, [e, f]), axis=0)
+    return gvec
 
-def deriv2_qparab(XX, aa=[0.30, 0.002, 2.0, 0.7, -0.24, 0.30], nohollow=False):
+def deriv2_qparab(XX, aa):
     """
     ex// ne_parms = [0.30, 0.002 2.0 0.7 -0.24 0.30]
     This subfunction calculates the second derivative of a quasi-parabolic fit
-    Y/Y0 = aa[1]-aa[4]+(1-aa[1]+aa[4])*(1-xx^aa[2])^aa[3]+aa[4]*(1-exp(-xx^2/aa[5]^2))
-        xx - r/a
+    Y/Y0 = aa[1]-aa[4]+(1-aa[1]+aa[4])*(1-XX^aa[2])^aa[3]+aa[4]*(1-exp(-XX^2/aa[5]^2))
+        XX - r/a
     aa[0] - Y0 - function value on-axis
     aa[1] - gg - Y1/Y0 - function value at edge over core
     aa[2],aa[3]-  pp, qq - power scaling parameters
     aa[4],aa[5]-  hh, ww - hole depth and width
     """
-    XX = _np.abs(XX)
+    XX = clean_XX(XX)
+#    XI = _np.copy(XX)
+#    XX = XX[_np.abs(XX)<1]
     aa = _np.asarray(aa,dtype=_np.float64)
-    if nohollow and (_np.size(aa)==4):
-        aa = _np.vstack((aa,_np.atleast_1d(0.0)))
-        aa = _np.vstack((aa,_np.atleast_1d(1.0)))
-    elif nohollow:
-        aa[4] = 0.0
-        aa[5] = 1.0
-    # endif
+
     d2pdx2 = aa[3]*(aa[2]**2.0)*(aa[3]-1.0)*(1.0+aa[4]-aa[1])*(XX**(2.*aa[2]-2.0))*(1-XX**aa[2])**(aa[3]-2.0)
     d2pdx2 -= (aa[2]-1.0)*aa[2]*aa[3]*(1.0+aa[4]-aa[1])*(XX**(aa[2]-2.0))*(1-XX**aa[2])**(aa[3]-1.0)
     d2pdx2 += (2.0*aa[4]*_np.exp(-XX**2.0/(aa[5]**2.0)))/(aa[5]**2.0)
@@ -967,118 +1093,25 @@ def deriv2_qparab(XX, aa=[0.30, 0.002, 2.0, 0.7, -0.24, 0.30], nohollow=False):
     return d2pdx2
 # end def derive_qparab
 
-def partial_qparab(XX,aa=[0.30, 0.002, 2.0, 0.7, -0.24, 0.30], nohollow=False):
-    """
-    ex// ne_parms = [0.30, 0.002 2.0, 0.7 -0.24 0.30]
-    This subfunction calculates the jacobian of a quasi-parabolic fit
-
-    quasi-parabolic fit:
-    Y/Y0 = aa[1]-aa[4]+(1-aa[1]+aa[4])*(1-xx^aa[2])^aa[3]+aa[4]*(1-exp(-xx^2/aa[5]^2))
-        xx - r/a
-    aa[0] - Y0 - function value on-axis
-    aa[1] - gg - Y1/Y0 - function value at edge over core
-    aa[2],aa[3]-  pp, qq - power scaling parameters
-    aa[4],aa[5]-  hh, ww - hole depth and width
-    """
-    XX = _np.abs(XX)
-    aa = _np.asarray(aa,dtype=_np.float64)
-    if nohollow and (_np.size(aa)==4):
-        aa = _np.vstack((aa,_np.atleast_1d(0.0)))
-        aa = _np.vstack((aa,_np.atleast_1d(1.0)))
-    elif nohollow:
-        aa[4] = 0.0
-        aa[5] = 1.0
-    # endif
-    Y0 = aa[0]
-    g = aa[1]
-    p = aa[2]
-    q = aa[3]
-    h = aa[4]
-    w = aa[5]
-
-    gvec = _np.zeros( (6,_np.size(XX)), dtype=_np.float64)
-    gvec[0,:] = g-h+(1.0-g+h)*_np.abs(1.0-XX**p)**q + h*(1.0-_np.exp(-XX**2.0/w**2.0))
-    gvec[1,:] = Y0*( 1.0-_np.abs(1.0-XX**p)**q )    # aa[0]
-    gvec[2,:] = -1.0*Y0*q*(g-h-1.0)*(XX**p)*_np.log(XX)*(_np.abs(1-XX**p)**q)/(XX**p-1.0)
-    gvec[3,:] = Y0*(-g+h+1.0)*(_np.abs(1-XX**p)**q)*_np.log(1.0-XX**p)
-    gvec[4,:] = Y0*(_np.abs(1.0-XX**p)**q) - Y0*_np.exp(-(XX/w)**2.0)
-    gvec[5,:] = -2.0*h*(XX**2.0)*Y0*_np.exp(-(XX/w)**2.0) / w**3.0
-
-    return gvec
-# end def partial_qparab
-
-
-def partial_deriv_qparab(XX, aa=[0.30, 0.002, 2.0, 0.7, -0.24, 0.30], nohollow=False):
-    """
-    ex// ne_parms = [0.30, 0.002 2.0 0.7 -0.24 0.30]
-    This subfunction calculates the jacobian of the derivative of a
-    quasi-parabolic fit (partial derivatives of the derivative of a quasi-parabolic fit)
-
-    quasi-parabolic fit:
-    Y/Y0 = aa[1]-aa[4]+(1-aa[1]+aa[4])*(1-xx^aa[2])^aa[3]+aa[4]*(1-exp(-xx^2/aa[5]^2))
-        xx - r/a
-
-    aa[0] - Y0 - function value on-axis
-    aa[1] - gg - Y1/Y0 - function value at edge over core
-    aa[2],aa[3]-  pp, qq - power scaling parameters
-    aa[4],aa[5]-  hh, ww - hole depth and width
-    """
-    XX = _np.abs(XX)
-    aa = _np.asarray(aa,dtype=_np.float64)
-    if nohollow and (_np.size(aa)==4):
-        aa = _np.vstack((aa,_np.atleast_1d(0.0)))
-        aa = _np.vstack((aa,_np.atleast_1d(1.0)))
-    elif nohollow:
-        aa[4] = 0.0
-        aa[5] = 1.0
-    # endif
-    Y0 = aa[0]
-    g = aa[1]
-    p = aa[2]
-    q = aa[3]
-    h = aa[4]
-    w = aa[5]
-
-    gvec = _np.zeros( (6,_np.size(XX)), dtype=_np.float64)
-    gvec[0,:] = 2.0*h*XX*_np.exp(-(XX/w)**2.0)/(w**2.0) - p*q*(-g+h+1.0)*(XX**(p-1.0))*((1.0-XX**p)**(q-1.0))
-    gvec[1,:] = p*q*Y0*(XX**(p-1.0))*((1-XX**p)**(q-1.0))
-
-    gvec[2,:] = q*Y0*(-1.0*(g-h-1.0))*((1.0-XX**p)**(q-2.0))
-    gvec[2,:] *= p*_np.log(XX)*((q-1.0)*(XX**(2.0*p-1.0))
-                    - (XX**(p-1.0))*(1.0-XX**p))+(XX**p-1.0)*XX**(p-1.0)
-
-    gvec[3,:] = p*Y0*(g-h-1.0)*(XX**(p-1.0))*((1.0-XX**p)**(q-1.0))*(q*_np.log(1.0-XX**p)+1.0)
-    gvec[4,:] = (2.0*XX*Y0*_np.exp(-1.0*(XX/w)**2.0))/(w**2.0) - p*q*Y0*(XX**(p-1.0))*((1.0-XX**p)**(q-1.0))
-
-    gvec[5,:] = h*Y0*_np.exp(-1.0*(XX/w)**2.0)*((4.0*(XX**3.0))/(w**5.0)-(4.0*XX)/(w**3.0))
-
-    return gvec
-# end def partial_deriv_qparab
-
-def partial_deriv2_qparab(XX, aa=[0.30, 0.002, 2.0, 0.7, -0.24, 0.30], nohollow=False):
+def partial_deriv2_qparab(XX, aa):
     """
     ex// ne_parms = [0.30, 0.002 2.0 0.7 -0.24 0.30]
     This subfunction calculates the jacobian of the second derivative of a
     quasi-parabolic fit (partial derivatives of the second derivative of a quasi-parabolic fit)
 
     quasi-parabolic fit:
-    Y/Y0 = aa[1]-aa[4]+(1-aa[1]+aa[4])*(1-xx^aa[2])^aa[3]+aa[4]*(1-exp(-xx^2/aa[5]^2))
-        xx - r/a
+    Y/Y0 = aa[1]-aa[4]+(1-aa[1]+aa[4])*(1-XX^aa[2])^aa[3]+aa[4]*(1-exp(-XX^2/aa[5]^2))
+        XX - r/a
 
     aa[0] - Y0 - function value on-axis
     aa[1] - gg - Y1/Y0 - function value at edge over core
     aa[2],aa[3]-  pp, qq - power scaling parameters
     aa[4],aa[5]-  hh, ww - hole depth and width
     """
-    XX = _np.abs(XX)
+    XX = clean_XX(XX)
+#    XI = _np.copy(XX)
+#    XX = XX[_np.abs(XX)<1]
     aa = _np.asarray(aa,dtype=_np.float64)
-    if nohollow and (_np.size(aa)==4):
-        aa = _np.vstack((aa,_np.atleast_1d(0.0)))
-        aa = _np.vstack((aa,_np.atleast_1d(1.0)))
-    elif nohollow:
-        aa[4] = 0.0
-        aa[5] = 1.0
-    # endif
     Y0 = aa[0]
     g = aa[1]
     p = aa[2]
@@ -1087,176 +1120,200 @@ def partial_deriv2_qparab(XX, aa=[0.30, 0.002, 2.0, 0.7, -0.24, 0.30], nohollow=
     w = aa[5]
 
     gvec = _np.zeros( (6,_np.size(XX)), dtype=_np.float64)
-    gvec[0,:] = deriv2_qparab(XX, aa, nohollow) / Y0
+    gvec[0,:] = deriv2_qparab(XX, aa) / Y0
     gvec[1,:] = -p*q*Y0*(XX**(p-2.0))*(1.0-XX**p)**(q-2.0)*(p*(q*(XX**p)-1.0)-XX**p+1.0)
-    gvec[2,:] = p*_np.log(XX)*(p*((q**2.0)*(XX**(2.0*p))-3.0*q*(XX**p)+XX**p+1.0)-(XX**p-1.0)*(q*XX**p-1.0))
+    gvec[2,:] = p*_np.log(_np.abs(XX))*(p*((q**2.0)*(XX**(2.0*p))-3.0*q*(XX**p)+XX**p+1.0)-(XX**p-1.0)*(q*XX**p-1.0))
     gvec[2,:] += (XX**p-1.0)*(2.0*p*(q*(XX**p)-1.0)-XX**p+1.0)
     gvec[2,:] *= q*Y0*(g-h-1.0)*(XX**(p-2.0))*((1.0-XX**p)**(q-3.0))
-    gvec[3,:] = p*Y0*(-(g-h-1.0))*(XX**(p-2.0))*((1.0-XX**p)**(q-2.0))*(p*(2.0*q*XX**p-1.0)+q*(p*(q*XX**p-1.0)-XX**p+1.0)*_np.log(1.0-XX**p)-XX**p+1.0)
+    gvec[3,:] = p*Y0*(-(g-h-1.0))*(XX**(p-2.0))*((1.0-XX**p)**(q-2.0))*(p*(2.0*q*XX**p-1.0)+q*(p*(q*XX**p-1.0)-XX**p+1.0)*_np.log(_np.abs(1.0-XX**p))-XX**p+1.0)
     gvec[4,:] = Y0*(p*q*(XX**(p-2.0))*((1.0-XX**p)**(q-2.0))*(p*(q*XX**p-1.0)-XX**p+1.0)+(2.0*_np.exp(-XX**2.0/w**2.0)*(w**2.0-2.0*XX**2.0))/w**4.0)
     gvec[5,:] = -(4.0*h*Y0*_np.exp(-XX**2.0/w**2.0)*(w**4.0-5*w**2.0*XX**2.0+2.0*XX**4.0))/w**7.0
 
     return gvec
 # end def partial_deriv2_qparab
 
-# ========================================================================== #
-# ========================================================================== #
 
-
-def model_ProdExp(XX, af=None, npoly=4):
+def model_qparab(XX, af=None, **kwargs):
     """
-    --- Product of Exponentials ---
-    Model - chi ~ prod(af(ii)*XX^(polyorder-ii))
-    af    - estimate of fitting parameters
-    XX    - independent variable
-        npoly is overruled by the shape of af.  It is only used if af is None
+        b+(1-b)*(1-XX^c)^d
+    {x element R: (d>0 and c=0 and x>0) or (d>0 and x=1)
+            or (c>0 and 0<=x<1) or (c<0 and x>1) }
+        nohollow = True
+        af = _np.hstack((af,0.0))
+        af = _np.hstack((af,1.0))
     """
-    info = Struct()
-    info.Lbounds = -_np.inf*_np.ones((npoly+1,), dtype=_np.float64)
-    info.Ubounds = _np.inf*_np.ones((npoly+1,), dtype=_np.float64)
+    info = kwargs.setdefault('info', Struct())
+    nohollow = kwargs.pop('nohollow', False)
 
+    if info is None:
+        info = Struct()  # Custom class that makes working with dictionaries easier
+    # end if
+    info.Lbounds = _np.array([  0.0, 0.0,  0,-10,-1, 0], dtype=_np.float64)
+    info.Ubounds = _np.array([ 20.0, 1.0, 10, 10, 1, 1], dtype=_np.float64)
+    info.fixed = _np.zeros( _np.shape(info.Lbounds), dtype=int)
     if af is None:
-        af = 0.9*_np.ones((npoly+1,), dtype=_np.float64)
-#        af *= _np.random.normal(0.0, 1.0, npoly+1.0)
+        af = _np.array([1.0, 0.002, 2.0, 0.7, -0.24, 0.30], dtype=_np.float64)
 #        af = randomize_initial_conditions(info.Lbounds, info.Ubounds)
+        if nohollow:
+            # rely on user to set this in initial conditions
+            af[4] = 0.0
+            af[5] = 1.0
+        # end if
     # endif
-    npoly = _np.size(af)-1
-    info.Lbounds = -_np.inf*_np.ones((npoly+1,), dtype=_np.float64)
-    info.Ubounds = _np.inf*_np.ones((npoly+1,), dtype=_np.float64)
-    info.af = af
+    if nohollow:
+        info.fixed[4] = 1.0
+        info.fixed[5] = 1.0
+    # end if
+    info.af = _np.copy(af)
+    info.kwargs = kwargs
 
-    nx = _np.size(XX)
-    num_fit = _np.size(af)  # Number of fitting parameters
-
-    # Polynomial of order num_fit
-    pp = _np.poly1d(af)
-    prof = pp(XX)
-
-    # Could be just an exponential fit
-    # prof=af[-1]*_np.exp(prof)
-    prof = _np.exp(prof)
-
-    #The derivative of chi with respect to rho is analytic as well:
-    # f = exp(a1x^n+a2x^(n-1)+...a(n+1))
-    # f = exp(a1x^n)exp(a2x^(n-1))...exp(a(n+1)));
-    # dfdx = (n*a1*x^(n-1)+(n-1)*a2*x^(n-2)+...a(n))*f
-    ad = pp.deriv()
-    info.dprofdx = ad(XX)
-    info.dprofdx = prof*info.dprofdx
-
-    # The g-vector contains the partial derivatives used for error propagation
-    # f = exp(a1*x^2+a2*x+a3)
-    # dfda1 = x^2*f;
-    # dfda2 = x  *f;
-    # dfda3 = f;
-    # gvec(0,1:nx) = XX**2.*prof;
-    # gvec(1,1:nx) = XX   .*prof;
-    # gvec(2,1:nx) =        prof;
-    gvec = _np.zeros((num_fit, nx), dtype=_np.float64)
-    for ii in range(num_fit):  # 1:num_fit
-        # Formulated this way, there is an analytic jacobian:
-        kk = num_fit - (ii + 1)
-        gvec[ii, :] = (XX**kk)*prof
-    # endif
-    info.gvec = gvec
-
-    # The g-vector (jacobian) for the derivative
-    # dfdx = (...+2*a1*x + a2)*exp(...+a1*x^2+a2*x+a3)
-    #
-    # Product rule:  partial derivatives of the exponential term times the leading derivative polynomial
-    dgdx = gvec.copy() * (_np.ones((num_fit,1), dtype=float) * _np.atleast_2d(ad(XX)))
-
-    # Product rule:  exponential term times the partial derivatives of the derivative polynomial
-    for ii in range(num_fit-1):  # 1:num_fit
-        # Formulated this way, there is an analytic jacobian:
-        kk = num_fit-1 - (ii + 1)
-        dgdx[ii, :] += (kk+1)*(XX**kk)*prof
-    # endif
-    info.dgdx = dgdx
-
-    return prof, gvec, info
-# end def model_ProdExp()
-# ========================================================================== #
-# ========================================================================== #
-
-
-def model_poly(XX, af=None, npoly=4):
-    """
-    --- Straight Polynomial ---
-    Model - chi ~ sum( af(ii)*XX^(polyorder-ii))
-    af    - estimate of fitting parameters
-    XX    - independent variable
-
-     if the data is scaled, then unscaling it goes like this:
-         (y-miny)/(maxy-miny) = (y-offset)/slope
-         (y-offset)/slope = sum_i(a_i'*x^i)
-
-         y = slope* sum_i(a_i'*x^i) + offset
-         a_i = slope*a'
-    """
-    info = Struct()
-    info.Lbounds = -_np.inf*_np.ones((npoly+1,), dtype=_np.float64)
-    info.Ubounds = _np.inf*_np.ones((npoly+1,), dtype=_np.float64)
-
-    if af is None:
-#        af = randomize_initial_conditions(info.Lbounds, info.Ubounds)
-        af = 0.1*_np.ones((npoly+1,), dtype=_np.float64)
-#        af *= _np.random.normal(0.0, 1.0, npoly+1.0)
-    # endif
-    npoly = _np.size(af)-1
-    info.Lbounds = -_np.inf*_np.ones((npoly+1,), dtype=_np.float64)
-    info.Ubounds = _np.inf*_np.ones((npoly+1,), dtype=_np.float64)
-    info.af = af
-
-    def unscaleaf(ain, slope, offset=0.0):
+    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
         aout = _np.copy(ain)
-        aout = ain*slope
         return aout
     info.unscaleaf = unscaleaf
 
+    if XX is None:
+        return info
+
+    prof = qparab(XX, af)
+    gvec = partial_qparab(XX, af)
+    info.dprofdx = deriv_qparab(XX, af)
+    info.dgdx = partial_deriv_qparab(XX, af)
+
+#    XX = _np.abs(XX)
+#    XI = _np.copy(XX)
+#    if (XI>=1).any():
+#        # Linearly interpolate derivative to zero from last valid point
+#        prof = interp(XX[XX<1], prof, None, XX )
+#        gvec = interp(XX[XX<1], gvec, None, XX )
+#        info.dprofdx = interp(XX[XX<1], info.dprofdx, None, XX )
+#        info.dgdx = interp(XX[XX<1], info.dgdx, None, XX )
+#    # endif
+    info.prof = prof
+    info.gvec = gvec
+
+    info.func = lambda _x, _a: qparab(_x, _a)
+    info.dfunc = lambda _x, _a: deriv_qparab(_x, _a)
+    info.gfunc = lambda _x, _a: partial_qparab(_x, _a)
+    info.dgfunc = lambda _x, _a: partial_deriv_qparab(_x, _a)
+    return prof, gvec, info
+# end def model_qparab
+
+# ========================================================================== #
+# ========================================================================== #
+
+
+def poly(XX, af):
+    pp = _np.poly1d(af)
+    return pp(XX)
+#    return polyeval(af, XX)
+
+def partial_poly(XX, af):
+    """
+     The g-vector contains the partial derivatives used for error propagation
+     f = a1*x^2+a2*x+a3
+     dfda1 = x^2;
+     dfda2 = x;
+     dfda3 = 1;
+     gvec(0,1:nx) = XX**2;
+     gvec(1,1:nx) = XX   ;
+     gvec(2,1:nx) = 1;
+    """
     num_fit = _np.size(af)  # Number of fitting parameters
     nx = _np.size(XX)
-
-    # Polynomial of order num_fit
-    pp = _np.poly1d(af)
-    prof = pp(XX)
-    info.prof = prof
-
-    ad = pp.deriv()
-    info.dprofdx = ad(XX)
-
-    # The g-vector contains the partial derivatives used for error propagation
-    # f = a1*x^2+a2*x+a3
-    # dfda1 = x^2;
-    # dfda2 = x;
-    # dfda3 = 1;
-    # gvec(0,1:nx) = XX**2;
-    # gvec(1,1:nx) = XX   ;
-    # gvec(2,1:nx) = 1;
 
     gvec = _np.zeros((num_fit, nx), dtype=_np.float64)
     for ii in range(num_fit):  # ii=1:num_fit
         kk = num_fit - (ii + 1)
         gvec[ii, :] = XX**kk
     # endfor
-    info.gvec = gvec
+    return gvec
 
-    # The jacobian for the derivative
-    # f = a1*x^2+a2*x+a3
-    # dfdx = 2*a1*x+a2
-    # dfda1 = 2*x;
-    # dfda2 = 1;
-    # dfda3 = 0;
-    # dgdx(1,1:nx) = 2*XX;
-    # dgdx(2,1:nx) = 1.0;
-    # dgdx(3,1:nx) = 0.0;
+def deriv_poly(XX, af):
+    pp = _np.poly1d(af).deriv()
+    return pp(XX)
+
+def partial_deriv_poly(XX, af):
+    """
+     The jacobian for the derivative
+     f = a1*x^2+a2*x+a3
+     dfdx = 2*a1*x+a2
+     dfda1 = 2*x;
+     dfda2 = 1;
+     dfda3 = 0;
+     dgdx(1,1:nx) = 2*XX;
+     dgdx(2,1:nx) = 1.0;
+     dgdx(3,1:nx) = 0.0;
+    """
+    num_fit = _np.size(af)  # Number of fitting parameters
+    nx = _np.size(XX)
+
     dgdx = _np.zeros((num_fit, nx), dtype=_np.float64)
     for ii in range(num_fit-1):
-        kk = num_fit-1 - (ii + 1)
+        kk = (num_fit-1) - (ii + 1)
         dgdx[ii,:] = (kk+1)*(XX**kk)
     # end for
-    info.dgdx = dgdx
+    return dgdx
 
+def model_poly(XX, af=None, **kwargs):
+    """
+    --- Straight Polynomial ---
+    Model - chi ~ sum( af(ii)*XX^(polyorder-ii))
+    af    - estimate of fitting parameters
+    XX    - independent variable
+
+    if the data is scaled, then unscaling it goes like this:
+    y-scaling: y' = y/ys
+        y'= y/ys = sum( a_i'*x^i )
+            a_i = ys*a_i'
+    y-shifting: y' = (y-yo)/ys
+        y'= (y-yo)/ys = sum( a_i'*x^i )
+            a_o = ys*a_i'+yo
+            a_i = ys*a_i'
+    x-scaling: x' = x/xs
+        y'= (y-yo)/ys = sum( a_i'*(x/xs)^i )
+            a_o = ys*a_i'+yo
+            a_i = ys*a_i' / xs^i
+    x-shifting: x' = (x-xo)/xs
+        possible but complicated ... requires binomial / multinomial theorem
+    """
+    npoly = kwargs.setdefault('npoly', 4)
+
+    if af is None:
+        af = 0.1*_np.ones((npoly+1,), dtype=_np.float64)
+#        af = randomize_initial_conditions(info.Lbounds, info.Ubounds)
+    # endif
+    npoly = _np.size(af)-1
+
+    info = Struct()
+    info.Lbounds = -_np.inf*_np.ones((npoly+1,), dtype=_np.float64)
+    info.Ubounds = _np.inf*_np.ones((npoly+1,), dtype=_np.float64)
+    info.fixed = _np.zeros( _np.shape(info.Lbounds), dtype=int)
+    info.af = af
+    info.kwargs = kwargs
+
+    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
+        aout = _np.copy(ain)
+#        aout = aout*slope
+#        aout[0] += offset
+        return aout
+    info.unscaleaf = unscaleaf
+    if XX is None:
+        return info
+
+    # Polynomial of order num_fit
+    prof = poly(XX, af)
+    gvec = partial_poly(XX, af)
+
+    info.prof = prof
+    info.gvec = gvec
+    info.dprofdx = deriv_poly(XX, af)
+    info.dgdx = partial_deriv_poly(XX, af)
+
+    info.func = lambda _x, _a: poly(_x, _a)
+    info.dfunc = lambda _x, _a: deriv_poly(_x, _a)
+    info.gfunc = lambda _x, _a: partial_poly(_x, _a)
+    info.dgfunc = lambda _x, _a: partial_deriv_poly(_x, _a)
     return prof, gvec, info
 # end def model_poly()
 
@@ -1264,49 +1321,169 @@ def model_poly(XX, af=None, npoly=4):
 # ========================================================================== #
 
 
-def model_evenpoly(XX, af=None, npoly=4):
+def prodexp(XX, af):
     """
-    --- Polynomial with only even powers ---
-    Model - chi ~ sum( af(ii)*XX^2*(numfit-ii))
-    af    - estimate of fitting parameters (npoly=4, numfit=3, poly= a0*x^4+a1*x^2+a3)
-    XX    - independent variable
+    Product of exponentials
+     y = exp( a0 + a1*x + a2*x^2 + ...)
+    """
+    # Polynomial of order len(af)
+    return _np.exp( poly(XX, af) )
+
+def deriv_prodexp(XX, af):
+    """
+    derivative of product of exponentials w.r.t. x is analytic as well:
+     y = exp( a0 + a1*x + a2*x^2 + ...)
+
+     f = exp(a1x^n+a2x^(n-1)+...a(n+1))
+     f = exp(a1x^n)exp(a2x^(n-1))...exp(a(n+1)));
+     dfdx = (n*a1*x^(n-1)+(n-1)*a2*x^(n-2)+...a(n))*f
+    """
+    return deriv_poly(XX, af)*prodexp(XX, af)
+
+def partial_prodexp(XX, af):
+    """
+     The g-vector contains the partial derivatives used for error propagation
+     f = exp(a1*x^2+a2*x+a3)
+     dfda1 = x^2*f;
+     dfda2 = x  *f;
+     dfda3 = f;
+     gvec(0,1:nx) = XX**2.*prof;
+     gvec(1,1:nx) = XX   .*prof;
+     gvec(2,1:nx) =        prof;
     """
     nx = _np.size(XX)
+    num_fit = _np.size(af)  # Number of fitting parameters
+    prof = prodexp(XX, af)
 
-    info = Struct()
-    info.Lbounds = -_np.inf*_np.ones((npoly//2+1,), dtype=_np.float64)
-    info.Ubounds = _np.inf*_np.ones((npoly//2+1,), dtype=_np.float64)
+    gvec = _np.zeros((num_fit, nx), dtype=_np.float64)
+    for ii in range(num_fit):  # 1:num_fit
+        # Formulated this way, there is an analytic jacobian:
+        kk = num_fit - (ii + 1)
+        gvec[ii, :] = (XX**kk)*prof
+    # endif
+    return gvec
+
+def partial_deriv_prodexp(XX, af):
+    """
+     The g-vector (jacobian) for the derivative
+     dfdx = (...+2*a1*x + a2)*exp(...+a1*x^2+a2*x+a3)
+    """
+    num_fit = _np.size(af)  # Number of fitting parameters
+
+    prof = prodexp(XX, af)
+    dprofdx = deriv_prodexp(XX, af)
+    gvec = partial_prodexp(XX, af)
+
+    # Product rule:  partial derivatives of the exponential term times the leading derivative polynomial
+    dgdx = gvec.copy()*(_np.ones((num_fit,1), dtype=float)*_np.atleast_2d(dprofdx))
+
+    # Product rule:  exponential term times the partial derivatives of the derivative polynomial
+    for ii in range(num_fit-1):  # 1:num_fit
+        # Formulated this way, there is an analytic jacobian:
+        kk = num_fit-1 - (ii + 1)
+        dgdx[ii, :] += (kk+1)*(XX**kk)*prof
+    # endif
+    return dgdx
+
+def model_ProdExp(XX, af=None, **kwargs):
+    """
+    --- Product of Exponentials ---
+    Model - y ~ prod(af(ii)*XX^(polyorder-ii))
+    af    - estimate of fitting parameters
+    XX    - independent variable
+        npoly is overruled by the shape of af.  It is only used if af is None
+
+    y-scaling: y' = y/ys
+        y'= y/ys = exp( sum( a_i'*x^i ) ) = prod( exp( a_i'*x^i ) )
+            ln(y) = ln(ys) + sum(a_i'*x^i)
+            a_o = ln(ys) + a_o'
+            a_i = a_i'
+
+    y-shifting: y' = (y-yo)/ys
+        y'= (y-yo)/ys = exp( sum( a_i'*x^i ) ) = prod( exp( a_i'*x^i ) )
+            ln(y-yo) = ln(ys) + sum(a_i'*x^i)
+           and ln(y) = sum(a_i * x^i)
+                not trivial with constant coefficients
+
+    x-scaling: x' = x/xs
+        y'=  y/ys = exp( sum( a_i'*(x/xs)^i ) ) = prod( exp( a_i'*(x/xs)^i ) )
+            a_o = ln(ys) + a_o'
+            a_i = a_i' / xs^i
+
+    x-shifting: x' = (x-xo)/xs
+        possible but complicated ... requires binomial / multinomial theorem
+    """
+    npoly = kwargs.setdefault('npoly', 4)
 
     if af is None:
-        af = 0.1*_np.ones((npoly//2+1,), dtype=_np.float64)
-#        af *= _np.random.normal(0.0, 1.0, npoly//2+1.0)
+        af = 0.9*_np.ones((npoly+1,), dtype=_np.float64)
 #        af = randomize_initial_conditions(info.Lbounds, info.Ubounds)
     # endif
-    num_fit = _np.size(af)  # Number of fitting parameters
-    npoly = _np.int(2*(num_fit-1))  # Polynomial order from input af
-    info.Lbounds = -_np.inf*_np.ones((npoly//2+1,), dtype=_np.float64)
-    info.Ubounds = _np.inf*_np.ones((npoly//2+1,), dtype=_np.float64)
+    npoly = _np.size(af)-1
 
+    info = Struct()
+    info.Lbounds = -_np.inf*_np.ones((npoly+1,), dtype=_np.float64)
+    info.Ubounds = _np.inf*_np.ones((npoly+1,), dtype=_np.float64)
+    info.fixed = _np.zeros( _np.shape(info.Lbounds), dtype=int)
     info.af = af
+    info.kwargs = kwargs
 
-    # Even Polynomial of order num_fit, Insert zeros for the odd powers
-    a0 = _np.insert(af, _np.linspace(1, num_fit-1, 2), 0.0)
-    pp = _np.poly1d(a0)
-    prof = pp(XX)
+    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
+        aout = _np.copy(ain)
+#        aout[0] += _np.log(slope)     # absolute value?
+#        for ii in range(len(aout)):
+#            aout[ii] = aout[ii]/_np.power(xslope, ii)
+#        # end for
+        return aout
+    info.unscaleaf = unscaleaf
+    if XX is None:
+        return info
+
+    prof = prodexp(XX, af)
+    gvec = partial_prodexp(XX, af)
+
     info.prof = prof
+    info.gvec = gvec
+    info.dprofdx = deriv_prodexp(XX, af)
+    info.dgdx = partial_deriv_prodexp(XX, af)
 
-    ad = pp.deriv()
-    info.dprofdx = ad(XX)
+    info.func = lambda _x, _a: prodexp(_x, _a)
+    info.dfunc = lambda _x, _a: deriv_prodexp(_x, _a)
+    info.gfunc = lambda _x, _a: partial_prodexp(_x, _a)
+    info.dgfunc = lambda _x, _a: partial_deriv_prodexp(_x, _a)
+    return prof, gvec, info
+# end def model_ProdExp()
 
-    # The g-vector contains the partial derivatives used for error propagation
-    # f = a1*x^4+a2*x^2+a3
-    # dfda1 = x^4;
-    # dfda2 = x^2;
-    # dfda3 = 1;
-    # gvec(1,1:nx) = XX**4;
-    # gvec(2,1:nx) = XX**2;
-    # gvec(3,1:nx) = 1;
+# ========================================================================== #
+# ========================================================================== #
 
+
+def evenpoly(XX, af):
+    """
+    Even Polynomial of order num_fit, Insert zeros for the odd powers
+    """
+    num_fit = _np.size(af)  # Number of fitting parameters
+    a0 = _np.insert(af, _np.linspace(1, num_fit-1, 2), 0.0)
+    return poly(XX, a0)
+
+def deriv_evenpoly(XX, af):
+    num_fit = _np.size(af)  # Number of fitting parameters
+    a0 = _np.insert(af, _np.linspace(1, num_fit-1, 2), 0.0)
+    return deriv_poly(XX, a0)
+
+def partial_evenpoly(XX, af):
+    """
+     The g-vector contains the partial derivatives used for error propagation
+     f = a1*x^4+a2*x^2+a3
+     dfda1 = x^4;
+     dfda2 = x^2;
+     dfda3 = 1;
+     gvec(1,1:nx) = XX**4;
+     gvec(2,1:nx) = XX**2;
+     gvec(3,1:nx) = 1;
+    """
+    num_fit = _np.size(af)  # Number of fitting parameters
+    nx = _np.size(XX)
     gvec = _np.zeros((num_fit, nx), dtype=_np.float64)
     for ii in range(num_fit):  # ii=1:num_fit
         #2*(num_fit-1)
@@ -1314,204 +1491,419 @@ def model_evenpoly(XX, af=None, npoly=4):
         kk *= 2
         gvec[ii, :] = XX**kk
     # endfor
-    info.gvec = gvec
+    return gvec
 
-    # The jacobian for the derivative
-    # f = a1*x^4+a2*x^2+a3
-    # dfdx = 4*a1*x^3 + 2*a2*x + 0
-    # dfdxda1 = 4*x^3;
-    # dfda2 = 2*x^1;
-    # dfda3 = 0;
-    # dgdx(1,1:nx) = 4*XX**3;
-    # dgdx(2,1:nx) = 2*XX;
-    # dgdx(3,1:nx) = 0.0;
+def partial_deriv_evenpoly(XX, af):
+    """
+     The jacobian for the derivative
+     f = a1*x^4+a2*x^2+a3
+     dfdx = 4*a1*x^3 + 2*a2*x + 0
+     dfdxda1 = 4*x^3;
+     dfda2 = 2*x^1;
+     dfda3 = 0;
+     dgdx(1,1:nx) = 4*XX**3;
+     dgdx(2,1:nx) = 2*XX;
+     dgdx(3,1:nx) = 0.0;
+    """
+    num_fit = _np.size(af)  # Number of fitting parameters
+    nx = _np.size(XX)
     dgdx = _np.zeros((num_fit, nx), dtype=_np.float64)
     for ii in range(num_fit-1):
         kk = num_fit - (ii + 1)    # ii=0, kk = num_fit-1;   ii=num_fit-2, kk=+1
         kk *= 2                    #       kk = 2*num_fit-2;               kk=+2
         dgdx[ii,:] = kk * XX**(kk-1)
     # end for
-    info.dgdx = dgdx
+    return dgdx
 
+def model_evenpoly(XX, af=None, **kwargs):
+    """
+    --- Polynomial with only even powers ---
+    Model - y ~ sum( af(ii)*XX^2*(numfit-ii))
+    af    - estimate of fitting parameters (npoly=4, numfit=3, poly= a0*x^4+a1*x^2+a3)
+    XX    - independent variable
+    """
+    npoly = kwargs.setdefault('npoly', 4)
+
+    if af is None:
+        af = 0.1*_np.ones((npoly//2+1,), dtype=_np.float64)
+#        af = randomize_initial_conditions(info.Lbounds, info.Ubounds)
+    # endif
+    num_fit = _np.size(af)  # Number of fitting parameters
+    npoly = _np.int(2*(num_fit-1))  # Polynomial order from input af
+
+    info = Struct()
+    info.Lbounds = -_np.inf*_np.ones((npoly//2+1,), dtype=_np.float64)
+    info.Ubounds = _np.inf*_np.ones((npoly//2+1,), dtype=_np.float64)
+    info.fixed = _np.zeros( _np.shape(info.Lbounds), dtype=int)
+    info.af = af
+    info.kwargs = kwargs
+
+    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
+        aout = _np.copy(ain)
+#        aout = aout*slope
+#        aout[0] += offset
+        return aout
+    info.unscaleaf = unscaleaf
+    if XX is None:
+        return info
+
+    prof = evenpoly(XX, af)
+    gvec = partial_evenpoly(XX, af)
+
+    info.prof = prof
+    info.gvec = gvec
+    info.dprofdx = deriv_evenpoly(XX, af)
+    info.dgdx = partial_deriv_evenpoly(XX, af)
+
+    info.func = lambda _x, _a: evenpoly(_x, _a)
+    info.dfunc = lambda _x, _a: deriv_evenpoly(_x, _a)
+    info.gfunc = lambda _x, _a: partial_evenpoly(_x, _a)
+    info.dgfunc = lambda _x, _a: partial_deriv_evenpoly(_x, _a)
     return prof, gvec, info
 # end def model_evenpoly()
 
 # ========================================================================== #
 # ========================================================================== #
 
+def powerlaw(XX, af):
+    """
+     Curved power-law:
+     fc = x^(a1*x^(n+1)+a2*x^n+...a(n+1))
 
-def model_PowerLaw(XX, af=None, npoly=4):
+     With exponential cut-off:
+     f  = a(n+2)*exp(a(n+1)*XX)*fc(x);
+    """
+#    num_fit = _np.size(af)  # Number of fitting parameters
+#    npoly = (num_fit-1)-2
+
+    polys = poly(XX, af[:-2])
+    exp_factor = _np.exp(af[-2]*XX)
+    return af[-1]*exp_factor*(XX**polys)
+
+def deriv_powerlaw(XX, af):
+    """
+     dfdx = dfcdx*(a(n+2)*e^a(n+1)x) +a(n+1)*f(x);
+          = (dfcdx/fc)*f(x) + a(n+1)*f(x)
+          =  (dln(fc)dx + a(n+1)) * f(x)
+
+        fc = x^(a1*x^(n+1)+a2*x^n+...a(n+1))
+             dfcdx/fc = d ln(fc)/dx = d/dx poly*ln(x)
+             d ln(fc)/dx = dpolydx*ln(x)+poly/x
+             (dfcdx = fc*( dpolydx*x+poly ))
+
+     dfdx = = (  dpolydx*ln(x)+poly/x + a(n+1)) * f(x)
+
+     dfcdx = XX^(-1)*prof*(polys+ddx(poly)*XX*log(XX),
+     log is natural logarithm
+    """
+#    num_fit = _np.size(af)  # Number of fitting parameters
+#    npoly = (num_fit-1)-2
+
+    prof = powerlaw(XX, af)
+    polys = poly(XX, af[:-2])
+    dpolys = deriv_poly(XX, af[:-2])
+    return prof*( af[-1] + polys/XX + _np.log(_np.abs(XX))*dpolys )
+
+def partial_powerlaw(XX, af):
+    """
+     The g-vector contains the partial derivatives used for error propagation
+     f = a(n+2) * exp(a(n+1)*x) * x^( a1*x^(n)+a2*x^(n-1)+...a(n) )
+     f = a(n+2) * exp(a(n+1)*XX) * fc(x)
+
+     dfda_1ton = a(n+2) * exp(a(n+1)*XX) * dfc/da_n
+               = dfc/da_n * (f/fc) = dlnfc/da_n * f
+               = f * d/da_n poly*ln(x) = f*ln(x) * d/da_n poly
+     dfda_n = x^n*ln(x)*f
+     dfda_n+1 = XX*f
+     dfda_n+2 = f/a_n+2
+
+     gvec(0,1:nx) = XX**(n)*_np.log(_np.abs(XX))*prof
+     gvec(1,1:nx) = XX**(n-1)*_np.log(_np.abs(XX))*prof
+     gvec(2,1:nx) = XX**(n-2)*_np.log(_np.abs(XX))*prof
+     ...
+     gvec(-3,1:nx) = XX**(0)*_np.log(_np.abs(XX))*prof
+     gvec(-2, 1:nx) = XX*prof
+     gvec(-1, 1:nx) = prof/a[-1]
+    """
+    nx = _np.size(XX)
+    num_fit = _np.size(af)  # Number of fitting parameters
+    npoly = len(af[:-2])    #    npoly = num_fit-3?
+
+    prof = powerlaw(XX, af)
+    gvec = _np.zeros((num_fit, nx), dtype=_np.float64)
+    ii = 0
+    for kk in range(npoly,0,-1):
+        gvec[ii, :] = _np.power(XX, kk) * _np.log(_np.abs(XX)) * prof
+        ii += 1
+    # endfor
+    gvec[-2, :] = prof*XX
+    gvec[-1, :] = prof/af[-1]
+    return gvec
+#    prof = powerlaw(XX, af)
+#    gvec = _np.zeros((num_fit, nx), dtype=_np.float64)
+#    for ii in range(npoly+1):  # ii=1:num_fit
+#        kk = npoly+1 - (ii + 1)
+#        gvec[ii, :] = prof*_np.log(_np.abs(XX))*XX**kk
+#    # endfor
+#    gvec[num_fit-1, :] = prof/af[num_fit-1]
+#    gvec[num_fit, :] = prof*XX
+#    return gvec
+
+def partial_deriv_powerlaw(XX, af):
+    """
+     The jacobian of the derivative
+        dfda_i = d/da_i dfdx
+
+     f = a(n+2) * exp(a(n+1)*x) * x^( a1*x^(n)+a2*x^(n-1)+...a(n) )
+
+     f = a(n+2) * exp(a(n+1)*XX) * fc(x)
+
+     dfdx = (  dpolydx*ln(x)+poly/x + a(n+1)) * f(x)
+          = dpolydx*ln(x)*f(x)  +  poly/x * f(x)  +  a(n+1) * f(x)
+
+    d/da dfdx = d/da( dpolydx*ln(x)+poly/x + a(n+1)) * f(x)
+                  + ( dpolydx*ln(x)+poly/x + a(n+1)) * df/da
+                                  where dfda_n = x^n*ln(x)*f
+                                  and dlnfda_n = x^n*ln(x)
+
+    d/da dfdx = f(x) * [ d/da( dpolydx*ln(x)+poly/x + a(n+1))
+                       + ( dpolydx*ln(x)+poly/x + a(n+1)) * dlnf/da ]
+              = f(x) * d/da( dpolydx*ln(x)+poly/x + a(n+1))
+                 + dfdx * dlnfda
+
+    d/da dfdx = f(x) * d/da( dpolydx*ln(x)+poly/x + a(n+1)) + dfdx*x^n*ln(x)
+                              (3)          (2)      (1)       (0)
+     df/dadx_i=0toN
+      0) df/dadx_i  = dfdx * x^n*ln(x) +
+      1) df/dadx_i  = f(x) * d/da(a[n+1]) = 0 as the sum only goes up to n +
+      2) df/dadx_i  = f(x) * x^(n-1)
+      3) df/dadx_i  = f(x) * n*ln(x)*x^(n-1)
+    df/dadx_-2  = dfdx * x
+    df/dadx_-1  = dfdx / a(-1)
+
+generator:
+     gvec(ii, 1:nx) = XX**(n-ii)*_np.log(_np.abs(XX))*dprofdx + (1.0+(n-ii)*_np.log(_np.abs(XX)))*XX**(n-ii-1)*prof
+
+     gvec(0,1:nx) = XX**(n-0)*_np.log(_np.abs(XX))*dprofdx  + 0
+                  + XX**(n-1)*prof + n*_np.log(_np.abs(XX))*XX**(n-1)*prof
+                  = XX**(n-0)*_np.log(_np.abs(XX))*dprofdx  + (1+(n-0)*_np.log(_np.abs(XX)))*XX**(n-0-1)*prof
+
+     gvec(1,1:nx) = XX**(n-1)*_np.log(_np.abs(XX))*dprofdx + 0
+                  + XX**(n-2)*prof + (n-1)*_np.log(_np.abs(XX))*XX**(n-2)*prof
+                  = XX**(n-1)*_np.log(_np.abs(XX))*dprofdx + (1+(n-1)*_np.log(_np.abs(XX)))*XX**(n-2)*prof
+     ...
+     gvec(n,1:nx) = XX**(0)*_np.log(_np.abs(XX))*dprofdx + (1+(0)*_np.log(_np.abs(XX)))*XX**(-1)*prof
+                  = _np.log(_np.abs(XX))*dprofdx + prof/XX
+     gvec(-2, 1:nx) = XX*dprofdx
+     gvec(-1, 1:nx) = dprofdx/a[-1]
+    """
+    nx = _np.size(XX)
+    num_fit = _np.size(af)  # Number of fitting parameters
+    npoly = len(af[:-2])    #    npoly = num_fit-3?
+
+    prof = powerlaw(XX, af)
+    dprofdx = deriv_powerlaw(XX, af)
+
+    dgdx = _np.zeros((num_fit, nx), dtype=_np.float64)
+    ii = 0
+    for kk in range(npoly,0,-1):
+#        dgdx[ii, :] = (XX**(npoly-ii)*_np.log(_np.abs(XX))*dprofdx
+#                          + (1.0+(npoly-ii)*_np.log(_np.abs(XX)))*XX**(npoly-ii-1)*prof )
+        dgdx[ii, :] = (_np.power(XX, kk)*_np.log(_np.abs(XX))*dprofdx
+                          + (1.0+kk*_np.log(_np.abs(XX)))*_np.power(XX, kk-1.0)*prof )
+        ii += 1
+    # endfor
+    dgdx[-2, :] = XX*dprofdx
+    dgdx[-1, :] = dprofdx/af[-1]
+    return dgdx
+#    for ii in range(npoly+1):  # ii=1:(npoly-1)
+#        kk = npoly+1 - (ii + 1)
+#        dgdx[ii, :] = info.dprofdx*_np.log(_np.abs(XX))*(XX**kk)
+##        dgdx[ii, :] += prof*af[num_fit]*_np.log(_np.abs(XX))*(XX**kk)
+#        dgdx[ii, :] += prof*af[num_fit-1]*_np.log(_np.abs(XX))*(XX**kk)
+#
+#        if ii<npoly:
+#            dgdx[ii, :] += prof*(XX**(kk-1))*(1.0 + kk*_np.log(_np.abs(XX)))     # 3 = dcoeffs / af[:npoly+1]
+#        else:
+#            dgdx[ii, :] += prof*(XX**(kk-1))
+#        # endif
+#    # endfor
+#    dgdx[num_fit-2, :] = (info.dprofdx/(af[num_fit-2]) + af[num_fit-1])*prof/af[num_fit-1]
+#    dgdx[num_fit-1, :] = prof*( af[num_fit-1]*XX + 1.0 + XX*info.dprofdx )
+#    dgdx[num_fit-1, :] = (info.dprofdx/(af[num_fit-1]) + af[num_fit])*prof/af[num_fit-1]
+#    dgdx[num_fit  , :] = prof*( af[num_fit]*XX + 1.0 + XX*info.dprofdx )
+    return dgdx
+
+def model_PowerLaw(XX, af=None, **kwargs):
     """
     --- Power Law w/exponential cut-off ---
-    Model - fc = x^(a1*x^(n)+a2*x^(n-1)+...a(n))
-            chi ~ a(n+2)*fc*exp(a(n+1)*x)
-            # chi ~ a(n+1)*x^(a1*x^n+a2*x^(n-1)+...an)
+    Model - fc = x^( a1*x^(n)+a2*x^(n-1)+...a(n) )
+             y = a(n+2)*fc*exp(a(n+1)*x)
     af    - estimate of fitting parameters
     XX    - independent variable
+
+    y-shift:  y'=y/ys
+       y = ys*a(n+2) * exp(a(n+1)*x) * x^( a1*x^(n)+a2*x^(n-1)+...a(n) )
     """
-    info = Struct()
-    info.Lbounds = _np.hstack((-_np.inf * _np.ones((npoly,), dtype=_np.float64), -_np.inf,       0))
-    info.Ubounds = _np.hstack(( _np.inf * _np.ones((npoly,), dtype=_np.float64),  _np.inf, _np.inf))
+    npoly = kwargs.setdefault('npoly', 4)
 
     if af is None:
         af = 0.1*_np.ones((npoly+2,), dtype=_np.float64)
-#        af *= _np.random.normal(0.0, 1.0, npoly+2.0)    # endif
 #        af = randomize_initial_conditions(info.Lbounds, info.Ubounds)
     # end if
-    num_fit = _np.size(af)  # Number of fitting parameters
-    npoly = num_fit-3
+#    num_fit = _np.size(af)  # Number of fitting parameters
+#    npoly = len(af[:-2])    # num_fit-2
+
+    info = Struct()
     info.Lbounds = _np.hstack((-_np.inf * _np.ones((npoly,), dtype=_np.float64), -_np.inf,       0))
     info.Ubounds = _np.hstack(( _np.inf * _np.ones((npoly,), dtype=_np.float64),  _np.inf, _np.inf))
-
-    nx = _np.size(XX)
-
-
+    info.fixed = _np.zeros( _np.shape(info.Lbounds), dtype=int)
     info.af = af
+    info.kwargs = kwargs
 
-    if len(af) != info.Lbounds.shape[0]:
-        print('pause')
-    # end if
-    # Curved power-law:
-    # fc = x^(a1*x^(n+1)+a2*x^n+...a(n+1))
-    # With exponential cut-off:
-    # f  = a(n+2)*fc(x)*exp(a(n+1)*XX);
-    pp = _np.poly1d(af[:npoly+1])
-    polys = pp(XX)
-    exp_factor = _np.exp(af[num_fit-2]*XX)
-    prof = af[num_fit-1]*(XX**polys)*exp_factor
+    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):  # TODO: fix this!
+        aout = _np.copy(ain)
+        return aout
+    info.unscaleaf = unscaleaf
+    if XX is None:
+        return info
+
+    prof = powerlaw(XX, af)
+    gvec = partial_powerlaw(XX, af)
+
     info.prof = prof
-
-    # dfdx = dfcdx*(an*e^an1x) +an1*f(x);
-    # dfcdx = XX^(-1)*prof*(polys+ddx(poly)*XX*log(XX),
-    # log is natural logarithm
-    dcoeffs = _np.poly1d(af[:npoly+1])
-    dcoeffs = dcoeffs.deriv()
-    dpolys = dcoeffs(XX)
-    dcoeffs = dcoeffs.coeffs
-
-    info.dprofdx = polys/XX + _np.log(XX)*dpolys
-    info.dprofdx *= prof
-
-    # The g-vector contains the partial derivatives used for error propagation
-    # fc = x^( a1*x^(n+1)+a2*x^n+...a(n+1) )
-    # f  = a(n+2)*fc(x)*exp(a(n+1)*XX)
-    # dfda_n = dfc/da_n * (f/fc)
-    # dfda_n+1 = XX*f
-    # dfda_n+2 = f/a_n+2
-    # gvec(0,1:nx) = XX**(n+1)*_np.log(XX);
-    # gvec(1,1:nx) = XX   ;
-    # gvec(2,1:nx) = 1;
-    # ...
-    # gvec(num_fit-1, 1:nx) = 1;
-    # gvec(num_fit  , 1:nx) = d1;
-
-    gvec = _np.zeros((num_fit, nx), dtype=_np.float64)
-    for ii in range(npoly+1):  # ii=1:num_fit
-        kk = npoly+1 - (ii + 1)
-        gvec[ii, :] = prof*_np.log(XX)*XX**kk
-    # endfor
-    gvec[num_fit-1,:] = prof/af[num_fit-1]
-    gvec[num_fit-1, :] = prof*XX     # TODO: CHECK THIS
-#    gvec[num_fit, :] = prof*XX     # TODO: CHECK THIS
     info.gvec = gvec
+    info.dprofdx = deriv_powerlaw(XX, af)
+    info.dgdx = partial_deriv_powerlaw(XX, af)
 
-    # The jacobian of the derivative
-    dgdx = _np.zeros((num_fit, nx), dtype=_np.float64)
-    for ii in range(npoly+1):  # ii=1:(npoly-1)
-        kk = npoly+1 - (ii + 1)
-        dgdx[ii, :] = info.dprofdx*_np.log(XX)*(XX**kk)
-#        dgdx[ii, :] += prof*af[num_fit]*_np.log(XX)*(XX**kk)
-        dgdx[ii, :] += prof*af[num_fit-1]*_np.log(XX)*(XX**kk)  # TODO: check this
-
-        if ii<npoly:
-            dgdx[ii, :] += prof*(XX**(kk-1))*(1.0 + kk*_np.log(XX))     # 3 = dcoeffs / af[:npoly+1]
-        else:
-            dgdx[ii, :] += prof*(XX**(kk-1))
-        # endif
-    # endfor
-    dgdx[num_fit-2, :] = (info.dprofdx/(af[num_fit-2]) + af[num_fit-1])*prof/af[num_fit-1]
-    dgdx[num_fit-1, :] = prof*( af[num_fit-1]*XX + 1.0 + XX*info.dprofdx )
-#    dgdx[num_fit-1, :] = (info.dprofdx/(af[num_fit-1]) + af[num_fit])*prof/af[num_fit-1]
-#    dgdx[num_fit  , :] = prof*( af[num_fit]*XX + 1.0 + XX*info.dprofdx )
-    info.dgdx = dgdx
-
+    info.func = lambda _x, _a: powerlaw(_x, _a)
+    info.dfunc = lambda _x, _a: deriv_powerlaw(_x, _a)
+    info.gfunc = lambda _x, _a: partial_powerlaw(_x, _a)
+    info.dgfunc = lambda _x, _a: partial_deriv_powerlaw(_x, _a)
     return prof, gvec, info
 # end def model_PowerLaw()
 
 # ========================================================================== #
 # ========================================================================== #
 
+def expcutoff(XX, af, separate=False):   # TODO: check this
+    """
+     f     = a1*(exp(a2*XX^a3) + XX^a4) = f1+f2;
+    """
+    prof1 = af[0]*_np.exp(af[1]* _np.power(XX, af[2]))
+    prof2 = af[0]*_np.power(XX, af[3])
+    if separate:
+        return prof1, prof2
+    else:
+        return prof1 + prof2
+    # end if
+# end def
 
-def model_Exponential(XX, af=None, npoly=None):
+def deriv_expcutoff(XX, af, separate=False):   # TODO: check this
+    """
+     dfdx  = a1*(a2*a3*XX^(a3-1)*exp(a2*XX^a3) + a4*XX^(a4-1));
+    """
+    prof1, prof2 = expcutoff(XX, af, separate=True)
+    dprof1dx = af[1]*af[2]*XX**(af[2]-1.0)*prof1
+    dprof2dx = af[0]*af[3]*(XX**(af[3]-1))
+    if separate:
+        return dprof1dx, dprof2dx
+    else:
+        return dprof1dx+dprof2dx
+    # end if
+# end def
+
+def partial_expcutoff(XX, af):   # TODO: check this
+    """
+     dfda1 = f/a1;
+     dfda2 = XX^a3*f1;
+     dfda3 = f1*XX^a3*log10(XX)
+     dfda4 = a1*XX^a4*log10(XX) = log10(XX)*f2;
+    """
+    nx = _np.size(XX)
+    num_fit = _np.size(af)
+    gvec = _np.zeros( (num_fit,nx), dtype=float)
+#     for ii in range(3, num_fit)  # ii = 1:(num_fit-3)
+#         kk = npoly+1 - (ii-2)
+#         # prof2 += af[ii]*XX**kk
+#         gvec[ii,:] = af[0]*XX**kk
+#     # end
+
+    prof1, prof2 = expcutoff(XX, af, separate=True)
+    prof = prof1 + prof2
+    gvec[0, :] = prof/af[0]
+    gvec[1, :] = prof1*(XX**af[2])
+    gvec[2, :] = prof1*af[1]*_np.log(_np.abs(XX))*(XX**af[2])
+    gvec[3, :] = af[0]*_np.log(_np.abs(XX))*(XX**af[3])
+    return gvec
+
+def partial_deriv_expcutoff(XX, af):   # TODO: check this
+    nx = _np.size(XX)
+    num_fit = _np.size(af)
+    dgdx = _np.zeros( (num_fit,nx), dtype=float)
+#     for ii in range(3, num_fit)  # ii = 1:(num_fit-3)
+#         kk = npoly+1 - (ii-2)
+#         if ii < num_fit:
+#           # dprof2dx += kk*af[ii]*XX**(kk-1)
+#           dgdx[ii,:] = kk*af[0]*XX**(kk-1)
+#     # end
+
+    dprof1dx, dprof2dx = deriv_expcutoff(XX, af, separate=True)
+    dprofdx = dprof1dx + dprof2dx
+
+    dgdx[0, :] = dprofdx / af[0]
+    dgdx[1, :] = dprof1dx*(XX**af[2]) + dprof1dx/af[1]
+    dgdx[2, :] = dprof1dx*(af[1]*_np.log(_np.abs(XX))*(XX**af[2]) + _np.log(_np.abs(XX)) + 1.0/af[2] )
+    dgdx[3, :] = dprof2dx*_np.log(_np.abs(XX)) + af[0]*XX**(af[3]-1.0)
+    return dgdx
+
+
+def model_Exponential(XX, af=None, **kwargs):
     """
     --- Exponential on Background ---
-    Model - chi ~ a1*(exp(a2*xx^a3) + XX^a4)
+    Model - y = a1*(exp(a2*XX^a3) + XX^a4)
     af    - estimate of fitting parameters
     XX    - independent variables
+
+
     """
+#    npoly = kwargs.setdefault('npoly', 1)
 #    num_fit = npoly+3
+#    num_fit = _np.size(af)  # Number of fitting parameters
     num_fit = 4
+
+    if af is None:
+        af = 0.1*_np.ones((num_fit,), dtype=_np.float64)
+#        af = randomize_initial_conditions(info.Lbounds, info.Ubounds)
+    # endif
 
     info = Struct()
     info.Lbounds = -_np.inf*_np.ones((num_fit,), dtype=_np.float64)
     info.Ubounds = _np.inf*_np.ones((num_fit,), dtype=_np.float64)
     info.Lbounds[0] = 0
-
-    if af is None:
-        af = 0.1*_np.ones((num_fit,), dtype=_np.float64)
-#        af *= _np.random.normal(0.0, 1.0, num_fit)
-#        af = randomize_initial_conditions(info.Lbounds, info.Ubounds)
-    # endif
-    num_fit = _np.size(af)  # Number of fitting parameters
-    info.Lbounds = -_np.inf*_np.ones((num_fit,), dtype=_np.float64)
-    info.Ubounds = _np.inf*_np.ones((num_fit,), dtype=_np.float64)
-    info.Lbounds[0] = 0
-
-    nx = _np.size(XX)
-
+    info.fixed = _np.zeros( _np.shape(info.Lbounds), dtype=int)
     info.af = af
+    info.kwargs = kwargs
 
-    # f     = a1*(exp(a2*xx^a3) + XX^a4) = f1+f2;
-    # dfdx  = a1*(a2*a3*xx^(a3-1)*exp(a2*xx^a3) + a4*xx^(a4-1));
-    # dfda1 = f/a1;
-    # dfda2 = xx^a3*f1;
-    # dfda3 = f1*xx^a3*log10(xx)
-    # dfda4 = a1*xx^a4*log10(xx) = log10(xx)*f2;
-    prof1 = af[0]*_np.exp(af[1]*XX**af[2])
-    dprof1dx = af[1]*af[2]*XX**(af[2]-1.0)*prof1
+    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
+        aout = _np.copy(ain)
+        return aout
+    info.unscaleaf = unscaleaf
+    if XX is None:
+        return info
 
-    prof2 = af[0]*XX**af[3]
-    dprof2dx = af[0]*af[3]*(XX**(af[3]-1))
+    prof = expcutoff(XX, af)
+    gvec = partial_expcutoff(XX, af)
 
-    prof = prof1 + prof2
     info.prof = prof
-    info.dprofdx = dprof1dx + dprof2dx
+    info.gvec = gvec
+    info.dprofdx = deriv_expcutoff(XX, af)
+    info.dgdx = partial_deriv_expcutoff(XX, af)
 
-    gvec = _np.zeros( (num_fit,nx), dtype=float)
-    gvec[0, :] = prof/af[0]
-    gvec[1, :] = prof1*(XX**af[2])
-    gvec[2, :] = prof1*af[1]*_np.log(XX)*(XX**af[2])
-    gvec[3, :] = af[0]*_np.log(XX)*(XX**af[3])
-
-    dgdx = _np.zeros( (num_fit,nx), dtype=float)
-    dgdx[0, :] = info.dprofdx / af[0]
-    dgdx[1, :] = dprof1dx*(XX**af[2]) + dprof1dx/af[1]
-    dgdx[2, :] = dprof1dx*(af[1]*_np.log(XX)*(XX**af[2]) + _np.log(XX) + 1.0/af[2] )
-    dgdx[3, :] = dprof2dx*_np.log(XX) + af[0]*XX**(af[3]-1.0)
-
-    # gvec = _np.zeros( (num_fit,nx), dtype=float)
-    # dgdx = _np.zeros( (num_fit,nx), dtype=float)
-    # for ii in range(3, num_fit)  # ii = 1:(num_fit-3)
-    #     kk = npoly+1 - (ii-2)
-    #     prof2 += af[ii]*XX**kk
-    #     gvec[ii,:] = af[0]*XX**kk
-    #
-    #     if ii < num_fit:
-    #       dprof2dx += kk*af[ii]*XX**(kk-1)
-    #       dgdx[ii,:] = kk*af[0]*XX**(kk-1)
-    # # end
-
-
+    info.func = lambda _x, _a: expcutoff(_x, _a)
+    info.dfunc = lambda _x, _a: deriv_expcutoff(_x, _a)
+    info.gfunc = lambda _x, _a: partial_expcutoff(_x, _a)
+    info.dgfunc = lambda _x, _a: partial_deriv_expcutoff(_x, _a)
     return prof, gvec, info
 # end def model_Exponential()
 
@@ -1519,12 +1911,44 @@ def model_Exponential(XX, af=None, npoly=None):
 # ========================================================================== #
 
 
-def model_parabolic(XX, af):
+def parabolic(XX, af):
+    XX = clean_XX(XX)
+    return af*(1.0 - XX**2.0)
+
+def deriv_parabolic(XX, af):
+    XX = clean_XX(XX)
+    return -2.0*af*XX
+
+def partial_parabolic(XX, af):
+    XX = clean_XX(XX)
+    return _np.atleast_2d(parabolic(XX, af) / af)
+
+def partial_deriv_parabolic(XX, af):
+    XX = clean_XX(XX)
+    return -2.0*XX
+
+def model_parabolic(XX, af, **kwargs):
     """
     A parabolic profile with one free parameters:
         f(x) ~ a*(1.0-x^2)
-        xx - x - independent variable
+        XX - x - independent variable
         af - a - central value of the plasma parameter
+
+    y-scaling: y'=y/ys
+        y = ys*y'
+        a = ys*a'
+    y-shifting: y'=(y-yo)/ys
+        y = yo + ys*a'*(1.0-x^2) = yo + ys*a' - ys*a'x^2
+            hard to do with constant coefficients
+    x-scaling: x'=x/xs
+        y = ys*a'*(1.0-(x/xs)^2)
+          = ys*a'/xs^2 * (xs^2 - x^2) + ys*a'/xs^2 - ys*a'/xs^2
+          = ys*a'/xs^2 * (1.0 - x^2) + ys*a'*(1.0 - 1.0/xs^2)
+            hard to do with constant coefficients
+    x-shifting: x'=(x-xo)/xs
+        y = ys*a'*(1.0-(x-xo)^2) = ys*a'*(1.0-x^2-2xo*x+xo^2)
+          = ys*a'*(1.0-x^2)-ys*a'*xo*(2*x+xo)
+            hard to do with constant coefficients
     """
 
     if af is None:
@@ -1535,22 +1959,86 @@ def model_parabolic(XX, af):
     info = Struct()
     info.Lbounds = _np.array([0.0], dtype=_np.float64)
     info.Ubounds = _np.array([_np.inf], dtype=_np.float64)
+    info.fixed = _np.zeros( _np.shape(info.Lbounds), dtype=int)
     info.af = af
+    info.kwargs = kwargs
 
-    prof = af*(1.0 - XX**2.0)
-    gvec = _np.atleast_2d(prof / af)
+    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
+        aout = _np.copy(ain)
+#        aout = aout*slope
+        return aout
+    info.unscaleaf = unscaleaf
+    if XX is None:
+        return info
+
+    prof = parabolic(XX, af)
+    gvec = partial_parabolic(XX, af)
 
     info.prof = prof
     info.gvec = gvec
-    info.dprofdx = -2.0*af*XX
-    info.dgdx = -2.0*XX
+    info.dprofdx = deriv_parabolic(XX, af)
+    info.dgdx = partial_deriv_parabolic(XX, af)
+
+    info.func = lambda _x, _a: parabolic(_x, _a)
+    info.dfunc = lambda _x, _a: deriv_parabolic(_x, _a)
+    info.gfunc = lambda _x, _a: partial_parabolic(_x, _a)
+    info.dgfunc = lambda _x, _a: partial_deriv_parabolic(_x, _a)
     return prof, gvec, info
 
 # ========================================================================== #
 # ========================================================================== #
 
 
-def model_flattop(XX, af):
+def flattop(XX, af):
+    """
+    A flat-top plasma parameter profile with three free parameters:
+        a, b, c
+    prof ~ f(x) = a / (1 + (x/b)^c)
+    """
+    XX = clean_XX(XX)
+#    XI = _np.copy(XX)
+#    XX = XX[_np.abs(XX)<1]
+    temp = (XX/af[1])**af[2]
+    return af[0] / (1.0 + temp)
+
+def deriv_flattop(XX, af):
+    XX = clean_XX(XX)
+#    XI = _np.copy(XX)
+#    XX = XX[_np.abs(XX)<1]
+    temp = (XX/af[1])**af[2]
+    return -1.0*af[0]*af[2]*temp/(XX*(1.0+temp)**2.0)
+
+def partial_flattop(XX, af):
+    XX = clean_XX(XX)
+#    XI = _np.copy(XX)
+#    XX = XX[_np.abs(XX)<1]
+    nx = len(XX)
+    temp = (XX/af[1])**af[2]
+    prof = flattop(XX, af)
+
+    gvec = _np.zeros((3, nx), dtype=_np.float64)
+    gvec[0, :] = prof / af[0]
+    gvec[1, :] = af[0]*af[2]*temp / (af[1]*(1.0+temp)**2.0)
+    gvec[2, :] = af[0]*temp*_np.log(_np.abs(XX/af[1])) / (1.0+temp)**2.0
+    return gvec
+
+def partial_deriv_flattop(XX, af):
+    XX = clean_XX(XX)
+#    XI = _np.copy(XX)
+#    XX = XX[_np.abs(XX)<1]
+    nx = len(XX)
+    temp = (XX/af[1])**af[2]
+    prof = flattop(XX, af)
+
+    dgdx = _np.zeros((3, nx), dtype=_np.float64)
+    dgdx[0, :] = info.dprofddx / af[0]
+    dgdx[1, :] = prof * info.dprofdx * (XX/temp) * (af[2]/af[0]) * (temp-1.0) / (af[1]*af[1])
+    dgdx[2, :] = info.dprofdx/af[2]
+    dgdx[2, :] += info.dprofdx*_np.log(_np.abs(XX/af[1]))
+    dgdx[2, :] -= 2.0*(info.dprofdx**2.0)*(_np.log(_np.abs(XX/af[1]))/prof)
+    return dgdx
+
+def model_flattop(XX, af, **kwargs):
     """
     A flat-top plasma parameter profile with three free parameters:
         a, b, c
@@ -1560,46 +2048,122 @@ def model_flattop(XX, af):
         af[2] - c - the gradient steepness
     The profile is constant near the plasma center, smoothly descends into a
     gradient near (x/b)=1 and tends to zero for (x/b)>>1
+
+    y = = a / (1 + (x/b)^c)
+    y-scaling:  y'=y/ys
+       y = ys*a' / (1 + (x/b')^c')
+       a = ys*a'
+       b = b'
+       c = c'
+    y-shifting:  y'=(y-yo)/ys
+       y = ys*a' / (1 + (x/b')^c')  + yo*(1 + (x/b')^c') / (1 + (x/b')^c')
+           can't make constant coefficients
+    x-scaling:  x'=x/xs
+       y = ys*a' / (1 + (x/(xs*b'))^c')
+           a = ys*a'
+           b = xs*b'
+           c = c'
+    x-shifting:  x'=(x-xo)/xs
+       y = ys*a' / (1 + ((x-xo)/(xs*b'))^c')
+           can't make constant coefficients
     """
     if af is None:
         af = _np.array([1.0, 0.4, 5.0], dtype=_np.float64)
 #        af *= 0.1*_np.random.normal(0.0, 1.0, len(af))
     # endif
 
-    nx = len(XX)
-    XX = _np.abs(XX)
-
     info = Struct()
     info.Lbounds = _np.array([0.0, 0.0, 1.0], dtype=_np.float64)
     info.Ubounds = _np.array([_np.inf, 1.0, _np.inf], dtype=_np.float64)
+    info.fixed = _np.zeros( _np.shape(info.Lbounds), dtype=int)
     info.af = af
+    info.kwargs = kwargs
 
-    temp = (XX/af[1])**af[2]
-    prof = af[0] / (1.0 + temp)
+    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
+        aout = _np.copy(ain)
+#        aout[0] *= slope
+#        aout[1] *= xslope
+        return aout
+    info.unscaleaf = unscaleaf
+    if XX is None:
+        return info
+
+    prof = flattop(XX, af)
     info.prof = prof
 
-    gvec = _np.zeros((3, nx), dtype=_np.float64)
-    gvec[0, :] = prof / af[0]
-    gvec[1, :] = af[0]*af[2]*temp / (af[1]*(1.0+temp)**2.0)
-    gvec[2, :] = af[0]*temp*_np.log(XX/af[1]) / (1.0+temp)**2.0
+    gvec = partial_flattop(XX, af)
     info.gvec = gvec
+    info.dprofdx = deriv_flattop(XX, af)
+    info.dgdx = partial_deriv_flattop(XX, af)
 
-    info.dprofdx = -1.0*af[0]*af[2]*temp/(XX*(1.0+temp)**2.0)
-
-    dgdx = _np.zeros((3, nx), dtype=_np.float64)
-    dgdx[0, :] = info.dprofddx / af[0]
-    dgdx[1, :] = prof * info.dprofdx * (XX/temp) * (af[2]/af[0]) * (temp-1.0) / (af[1]*af[1])
-    dgdx[2, :] = info.dprofdx/af[2]
-    dgdx[2, :] += info.dprofdx*_np.log(XX/af[1])
-    dgdx[2, :] -= 2.0*(info.dprofdx**2.0)*(_np.log(XX/af[1])/prof)
-    info.dgdx = dgdx
+    info.func = lambda _x, _a: flattop(_x, _a)
+    info.dfunc = lambda _x, _a: deriv_flattop(_x, _a)
+    info.gfunc = lambda _x, _a: partial_flattop(_x, _a)
+    info.dgfunc = lambda _x, _a: partial_deriv_flattop(_x, _a)
     return prof, gvec, info
 
 # ========================================================================== #
 # ========================================================================== #
 
 
-def model_massberg(XX, af):
+def massberg(XX, af):
+    XX = clean_XX(XX)
+#    XI = _np.copy(XX)
+#    XX = XX[_np.abs(XX)<1]
+    prft = flattop(XX, af)
+    temp = XX/af[1]
+    return prft * (1-af[3]*temp)
+
+def deriv_massberg(XX, af):
+    XX = clean_XX(XX)#    XI = _np.copy(XX)
+#    XX = XX[_np.abs(XX)<1]
+    prft = flattop(XX, af)
+    drft = deriv_flattop(XX, af)
+
+    temp = XX/af[1]
+    return drft*(1-af[3]*temp) - prft*af[3]/af[1]
+
+def partial_massberg(XX, af):
+    XX = clean_XX(XX)
+#    XI = _np.copy(XX)
+#    XX = XX[_np.abs(XX)<1]
+    nx = len(XX)
+    prft = flattop(XX, af)
+    gft = partial_flattop(XX, af)
+
+    temp = XX/af[1]
+    prof = massberg(XX, af)
+
+    gvec = _np.zeros((4, nx), dtype=_np.float64)
+    gvec[0, :] = prof / af[0]
+    gvec[1, :] = gft[1,:]*(1.0-af[3]*temp) + prft*af[3]*XX/(af[1]**2.0)
+    gvec[2, :] = gft[2,:]*(1.0-af[3]*temp)
+    gvec[3, :] = (-1.0*XX / af[1])*prft
+    return gvec
+
+def partial_deriv_massberg(XX, af):
+    XX = clean_XX(XX)
+#    XI = _np.copy(XX)
+#    XX = XX[_np.abs(XX)<1]
+    nx = len(XX)
+    temp = XX/af[1]
+#    prof = massberg(XX, af)
+    dprofdx = deriv_massberg(XX, af)
+
+    prft = flattop(XX, af)
+    dflatdx = deriv_flattop(XX, af)
+    gft = partial_flattop(XX, af)
+    dgft = partial_deriv_flattop(XX, af)
+
+    dgdx = _np.zeros((4, nx), dtype= float)
+    dgdx[0,:] = dprofdx / af[0]
+    dgdx[1,:] = dgft[1,:]*(1.0-af[3]*temp) + dflatdx * af[3]*XX/(af[1]**2.0)
+    dgdx[1,:] += prft*af[3]/(af[1]**2.0) - (af[3]/af[1])*gft[1,:]
+    dgdx[2,:] = dgft[2,:]*(1.0-af[3]*temp) - gft[2, :]*af[3]/af[1]
+    dgdx[3,:] = -1.0*(XX/af[1])*prft
+    return dgdx
+
+def model_massberg(XX, af, **kwargs):
     """
     Commonly referred to the Massberg profile and used in a lot of W7-AS
     analyses.
@@ -1616,47 +2180,112 @@ def model_massberg(XX, af):
     """
     if af is None:
         af = _np.array([1.0, 0.4, 5.0, 2.0], dtype=_np.float64)
-#        af *= 0.1*_np.random.normal(0.0, 1.0, len(af))
     # endif
-
-    nx = len(XX)
-    XX = _np.abs(XX)
 
     info = Struct()
     info.Lbounds = _np.array([0.0, 0.0, 1.0, -_np.inf], dtype=_np.float64)
-    info.Ubounds = _np.array(
-        [_np.inf, 1.0, _np.inf, _np.inf], dtype=_np.float64)
+    info.Ubounds = _np.array([_np.inf, 1.0, _np.inf, _np.inf], dtype=_np.float64)
+    info.fixed = _np.zeros( _np.shape(info.Lbounds), dtype=int)
     info.af = af
+    info.kwargs = kwargs
 
-    prft, gft, inft = model_flattop(XX, af)
+    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
+        aout = _np.copy(ain)
+        return aout
+    info.unscaleaf = unscaleaf
+    if XX is None:
+        return info
 
-    temp = XX/af[1]
-    prof = prft * (1-af[3]*temp)
+    prof = massberg(XX, af)
+    gvec = partial_massberg(XX, af)
+
     info.prof = prof
-    info.dprofdx = inft.dprofdx*(1-af[3]*temp) - inft.prof*af[3]/af[1]
-
-
-    gvec = _np.zeros((4, nx), dtype=_np.float64)
-    gvec[0, :] = prof / af[0]
-    gvec[1, :] = gft[1,:]*(1.0-af[3]*temp) + inft.prof*af[3]*XX/(af[1]**2.0)
-    gvec[2, :] = gft[2,:]*(1.0-af[3]*temp)
-    gvec[3, :] = (-1.0*XX / af[1])*inft.prof
     info.gvec = gvec
+    info.dprofdx = deriv_massberg(XX, af)
+    info.dgdx = partial_deriv_massberg(XX, af)
 
-    dgdx = _np.zeros((4, nx), dtype= float)
-    dgdx[0,:] = info.dprofdx / af[0]
-    dgdx[1,:] = inft.dgdx[1,:]*(1.0-af[3]*temp) + inft.dprofdx * af[3]*XX/(af[1]**2.0)
-    dgdx[1,:] += inft.prof*af[3]/(af[1]**2.0) - (af[3]/af[1])*gft[1,:]
-    dgdx[2,:] = inft.dgdx[2,:]*(1.0-af[3]*temp) - gft[2, :]*af[3]/af[1]
-    dgdx[3,:] = -1.0*(XX/af[1])*inft.prof
-    info.dgdx = dgdx
-
+    info.func = lambda _x, _a: massberg(_x, _a)
+    info.dfunc = lambda _x, _a: deriv_massberg(_x, _a)
+    info.gfunc = lambda _x, _a: partial_massberg(_x, _a)
+    info.dgfunc = lambda _x, _a: partial_deriv_massberg(_x, _a)
     return prof, gvec, info
 
 # ========================================================================== #
 
 
-def model_2power(XX, af=None):
+def _2power(XX, af):
+    """
+     f(x) = (Core-Edge)*(1-x^pow1)^pow2 + Edge
+        (a-b)*(1- x^c)^d + b
+    """
+    XX = clean_XX(XX)
+#    XI = _np.copy(XX)
+#    XX = XX[_np.abs(XX)<1]
+    a = af[0]
+    b = af[1]
+    c = af[2]
+    d = af[3]
+    return (a-b)*_np.power(1.0-_np.power(XX, c), d) + b
+
+def deriv_2power(XX, af):
+    """
+        (a-b)*(1- x^c)^d + b
+
+
+                   d(b^x) = b^x *ln(b)
+     dfdx = -(a0-a1)*a2*a3*x^(a2-1)*(1-x^a2)^(a3-1)
+    """
+    XX = clean_XX(XX)
+#    XI = _np.copy(XX)
+#    XX = XX[_np.abs(XX)<1]
+    a = af[0]
+    b = af[1]
+    c = af[2]
+    d = af[3]
+#    dprofdx = -1.0*(a-b)*c*d*_np.power(XX, c-1.0)
+#    dprofdx *= _np.power(1.0-_np.power(XX, c), d-1.0)
+    return -1.0*(a-b)*c*d*_np.power(XX, c-1.0)*_np.power(1.0-_np.power(XX, c), d-1.0)
+
+def partial_2power(XX, af):
+    """
+     dfda0 = (1-x^a2)^a3
+     dfda1 = 1-(1-x^a2)^a3 = 1-dfda0
+     dfda2 = -(a0-a1)*(ln(x)*x^a2)*a3*(1-x^a2)^(a3-1)
+     dfda3 = (a0-a1)*(1-x^a2)^a3*ln(1-x^a2)
+    """
+    XX = clean_XX(XX)
+#    XI = _np.copy(XX)
+#    XX = XX[_np.abs(XX)<1]
+    nx = len(XX)
+    prof = _2power(XX, af)
+
+    gvec = _np.zeros((4, nx), dtype=_np.float64)
+    gvec[0, :] = (prof-af[1])/(af[0]-af[1])
+    gvec[1, :] = 1.0-gvec[0, :].copy()
+    gvec[2, :] = -1.0*af[3]*(af[0]-af[1])*(1.0-XX**af[2])**(af[3]-1.0)
+    gvec[2, :] *= XX**(af[2])*_np.log(_np.abs(XX))
+    gvec[3, :] = (af[0]-af[1])*_np.log(_np.abs(1.0-XX**af[2]))
+    gvec[3, :] *= (1.0-XX**af[2])**af[3]
+
+def partial_deriv_2power(XX, af):
+    XX = clean_XX(XX)
+#    XI = _np.copy(XX)
+#    XX = XX[_np.abs(XX)<1]
+    dprofdx = deriv_2power(XX, af)
+
+    nx = len(XX)
+    dgdx = _np.zeros((4, nx), dtype=_np.float64)
+    dgdx[0, :] = -af[2]*af[3]*(XX**(af[2]-1.0))*(1.0-XX**af[2])**(af[3]-1.0)
+    dgdx[1, :] = -1.0*dgdx[0, :].copy()
+    dgdx[2, :] = af[3]*(af[0]-af[1])*XX**(af[2]-1.0)*(1.0-XX**af[2])**af[3]
+    dgdx[2, :] *= af[2]*af[3]*XX**af[2]+_np.log(_np.abs(XX))+XX**af[2]-af[2]*_np.log(_np.abs(XX))-1.0
+    dgdx[2, :] /= (XX**af[2] - 1.0)**2.0
+    dgdx[3, :] = dprofdx / af[3]
+    dgdx[3, :] *= 1.0 + af[3]*_np.log(_np.abs(1.0-XX**af[2]))
+    return dgdx
+
+
+def model_2power(XX, af=None, **kwargs):
     """
     A two power profile fit with four free parameters:
     prof ~ f(x) = (Core-Edge)*(1-x^pow1)^pow2 + Edge
@@ -1687,67 +2316,41 @@ def model_2power(XX, af=None):
             af[4] - Edge0 - offset value subtracted from fit... should be fixed to zero, but necessary for rescaling
     found in the info Structure
     """
+    if af is None:
+        af = _np.array([1.0, 0.0, 2.0, 1.0], dtype=_np.float64)
+    # endif
 
     info = Struct()
     info.Lbounds = _np.array([0.0, 0.0, -_np.inf, -_np.inf], dtype=_np.float64)
     info.Ubounds = _np.array([_np.inf, _np.inf, _np.inf, _np.inf], dtype=_np.float64)
-#    info.Lbounds = _np.array([0.0, 0.0, -20.0, -20.0], dtype=_np.float64)
-#    info.Ubounds = _np.array([15.0, 1.0, 20.0, 20.0], dtype=_np.float64)
-
-    if af is None:
-        af = _np.array([1.0, 0.0, 2.0, 1.0], dtype=_np.float64)
-#        af *= 0.1*_np.random.normal(0.0, 1.0, len(af))
-    # endif
-
+    info.fixed = _np.zeros( _np.shape(info.Lbounds), dtype=int)
     info.af = _np.copy(af)
+    info.kwargs = kwargs
 
     def unscaleaf(ain, slope, offset):
         """ this cannot reproduce the original fit do to the offset"""
         aout = _np.copy(ain)
-        aout[0] = slope*ain[0]
-        aout[1] = slope*ain[1]
+#        aout[0] = slope*ain[0]
+#        aout[1] = slope*ain[1]
         return aout
     info.unscaleaf = unscaleaf
     if XX is None:
         return info
     # endif
 
-    nx = len(XX)
-    XX = _np.abs(XX)
-
     # f(x) = (Core-Edge)*(1-x^pow1)^pow2 + Edge
-    prof = (af[0]-af[1])*(1.0-XX**af[2])**af[3] + af[1]
+    prof = _2power(XX, af)
+    gvec = partial_2power(XX, af)
+
     info.prof = prof
-    #
-    #               d(b^x) = b^x *ln(b)
-    # dfdx = -(a0-a1)*a2*a3*x^(a2-1)*(1-x^a2)^(a3-1)
-    # dfda0 = (1-x^a2)^a3
-    # dfda1 = 1-(1-x^a2)^a3 = 1-dfda0
-    # dfda2 = -(a0-a1)*(ln(x)*x^a2)*a3*(1-x^a2)^(a3-1)
-    # dfda3 = (a0-a1)*(1-x^a2)^a3*ln(1-x^a2)
-
-    info.dprofdx = -1.0*(af[0]-af[1])*af[2]*af[3]*(XX)**(af[2]-1.0)
-    info.dprofdx *= (1.0-XX**af[2])**(af[3]-1.0)
-
-    gvec = _np.zeros((4, nx), dtype=_np.float64)
-    gvec[0, :] = (prof-af[1])/(af[0]-af[1])
-    gvec[1, :] = 1.0-gvec[0, :].copy()
-    gvec[2, :] = -1.0*af[3]*(af[0]-af[1])*(1.0-XX**af[2])**(af[3]-1.0)
-    gvec[2, :] *= XX**(af[2])*_np.log(XX)
-    gvec[3, :] = (af[0]-af[1])*_np.log(1.0-XX**af[2])
-    gvec[3, :] *= (1.0-XX**af[2])**af[3]
     info.gvec = gvec
+    info.dprofdx *= deriv_2power(XX, af)
+    info.dgdx = partial_deriv_2power(XX, af)
 
-    dgdx = _np.zeros((4, nx), dtype=_np.float64)
-    dgdx[0, :] = -af[2]*af[3]*(XX**(af[2]-1.0))*(1.0-XX**af[2])**(af[3]-1.0)
-    dgdx[1, :] = -1.0*dgdx[0, :].copy()
-    dgdx[2, :] = af[3]*(af[0]-af[1])*XX**(af[2]-1.0)*(1.0-XX**af[2])**af[3]
-    dgdx[2, :] *= af[2]*af[3]*XX**af[2]+_np.log(XX)+XX**af[2]-af[2]*_np.log(XX)-1.0
-    dgdx[2, :] /= (XX**af[2] - 1.0)**2.0
-    dgdx[3, :] = info.dprofdx / af[3]
-    dgdx[3, :] *= 1.0 + af[3]*_np.log(1.0-XX**af[2])
-    info.dgdx = dgdx
-
+    info.func = lambda _x, _a: _2power(_x, _a)
+    info.dfunc = lambda _x, _a: deriv_2power(_x, _a)
+    info.gfunc = lambda _x, _a: partial_2power(_x, _a)
+    info.dgfunc = lambda _x, _a: partial_deriv_2power(_x, _a)
     return prof, gvec, info
 
 # ========================================================================== #
@@ -1755,7 +2358,7 @@ def model_2power(XX, af=None):
 # These two haven't been checked yet!!! also need to add analytic jacobian
 # for the derivatives
 
-def model_Heaviside(XX, af=None, npoly=4, rinits=[0.30, 0.35]):
+def model_Heaviside(XX, af=None, **kwargs):
     """
     --- Polynomial with a Heaviside function (Logistics function) ---
 
@@ -1769,6 +2372,8 @@ def model_Heaviside(XX, af=None, npoly=4, rinits=[0.30, 0.35]):
     af    - estimate of fitting parameters
     XX    - independent variable
     """
+    npoly = kwargs.setdefault('npoly', 4)
+    rinits = kwargs.setdefault('rinits', [0.30, 0.35])
 #    rinits = [0.00,0.35]
 #    rinits = [0.30,0.35] #Miniature-Island, hah!
 #    rinits = [0.30,0.50] #Discontinuity
@@ -1792,6 +2397,7 @@ def model_Heaviside(XX, af=None, npoly=4, rinits=[0.30, 0.35]):
     info.Ubounds = _np.hstack(
         (_np.inf*_np.ones((num_fit-3,), dtype=_np.float64), 1, 1, _np.inf))
     info.Lbounds[0] = 0
+    info.fixed = _np.zeros( _np.shape(info.Lbounds), dtype=int)
     info.af = af
 
     zz = 1e3
@@ -1846,7 +2452,7 @@ def model_Heaviside(XX, af=None, npoly=4, rinits=[0.30, 0.35]):
 # ========================================================================== #
 
 
-def model_StepSeries(XX, af=None, npoly=4):
+def model_StepSeries(XX, af=None, **kwargs):
     """
     --- Series of step functions ---
 
@@ -1860,6 +2466,7 @@ def model_StepSeries(XX, af=None, npoly=4):
     af    - estimate of fitting parameters
     XX    - independent variable
     """
+    npoly = kwargs.setdefault('npoly',4)
 
     if af is None:
         af = _np.hstack((5.0, 1.0*_np.random.randn(npoly,)))
@@ -1875,6 +2482,7 @@ def model_StepSeries(XX, af=None, npoly=4):
         (0, -_np.inf*_np.ones((num_fit-1,), dtype=_np.float64)))
     info.Ubounds = _np.hstack(
         (10, _np.inf*_np.ones((num_fit-1,), dtype=_np.float64)))
+    info.fixed = _np.zeros( _np.shape(info.Lbounds), dtype=int)
     info.af = af
 
     # The central step and the derivative of the transition
@@ -1906,11 +2514,11 @@ def model_StepSeries(XX, af=None, npoly=4):
         # info.dprofdx = info.dprofdx+0.5*af[ii]*zz*sech(zz*(XX-bb**af[ii]))**2
 
         gvec[ii, :] = (0.5*(1 + temp)
-                       - 0.5*zz*_np.log(bb)*(bb**af[ii])*(1 - temp**2))
+                       - 0.5*zz*_np.log(_np.abs(bb))*(bb**af[ii])*(1 - temp**2))
 
 #        #indice of transitions
 #        bx = _np.floor(1+bb/(XX[2]-XX[1]))
-#        gvec[num_fit-1,ba-1:bx-1] = (zz*_np.log(bb)*(-bb)**af[num_fit-1]
+#        gvec[num_fit-1,ba-1:bx-1] = (zz*_np.log(_np.abs(bb))*(-bb)**af[num_fit-1]
 #                            * sech(zz*(XX[ba-1:bx-1]-bb**af[num_fit-1]))**2
 #        ba = _np.floor(1+bb/(XX(2)-XX(1)))
     # endfor
@@ -1934,60 +2542,58 @@ def model_profile(af=None, XX=None, model_number=7, npoly=4, nargout=1, verbose=
        1 - Product of exponentials   - f(x) ~ prod(af(ii)*XX^(polyorder-ii))
        2 - Straight Polynomial       - f(x) ~ sum( af(ii)*XX^(polyorder-ii))
        3 - Power law fit             - f(x) ~ a(n+1)*x^(a1*x^n+a2*x^(n-1)+...an)
-       4 - Exponential on Background - f(x) ~ a1*(exp(a2*xx^a3) + XX^a4)
+       4 - Exponential on Background - f(x) ~ a1*(exp(a2*XX^a3) + XX^a4)
        5 - Polynomial with a Heaviside (Logistics)
                                         - f(x) ~ a1x^2+a2x+a3+a4*(XX>a5)*(XX<a6)
        6 - Series of Step functions  - H(x1)-H(x2) ~ 1/2*(tanh(ka5)-tanh(ka6))
-       7 - Quasi-parabolic fit       - f(x) / af[0] ~ af[1]-af[4]+(1-af[1]+af[4])*(1-xx^af[2])^af[3]
-                                                + af[4]*(1-exp(-xx^2/af[5]^2))
+       7 - Quasi-parabolic fit       - f(x) / af[0] ~ af[1]-af[4]+(1-af[1]+af[4])*(1-XX^af[2])^af[3]
+                                                + af[4]*(1-exp(-XX^2/af[5]^2))
        8 - Even order polynomial     - f(x) ~ sum( af(ii)*XX^2*(polyorder-ii))
        9 - 2-power profile           - f(x) ~ (Core-Edge)*(1-x^pow1)^pow2 + Edge
        10 - Parabolic fit            - f(x) ~ a*(1.0-x^2)
        11 - Flat top profile         - f(x) ~ a / (1 + (x/b)^c)
        12 - Massberg profile         - f(x) ~ a * (1-h*(x/b)) / (1+(x/b)^c) = flattop*(1-h*(x/b))
     """
-    if af is not None:
-        if (af==0).any():
-            af[_np.where(af==0)[0]] = 1e-14
-        # end if
-    # end if
+#    if af is not None:
+#        if (af==0).any():
+#            af[_np.where(af==0)[0]] = 1e-14
+#        # end if
+#    # end if
     if XX is None:
         XX = _np.linspace(1e-4, 1, 200)
     # endif
-    if len([XX])>1 and (XX==0).any():
-        XX[_np.where(XX==0)[0]] = 1e-14
-    # end if
+    XX = clean_XX(XX)
 
     # ====================================================================== #
 
     if model_number == 1:
         if verbose: print('Modeling with an order %i product of Exponentials'%(npoly,))  # endif
-        [prof, gvec, info] = model_ProdExp(XX, af, npoly)
+        [prof, gvec, info] = model_ProdExp(XX, af, npoly=npoly)
         info.func = model_ProdExp
 
     elif model_number == 2:
         if verbose: print('Modeling with an order %i polynomial'%(npoly,))  # endif
-        [prof, gvec, info] = model_poly(XX, af, npoly)
+        [prof, gvec, info] = model_poly(XX, af, npoly=npoly)
         info.func = model_poly
 
     elif model_number == 3:
         if verbose: print('Modeling with an order %i power law'%(npoly,))  # endif
-        [prof, gvec, info] = model_PowerLaw(XX, af, npoly)
+        [prof, gvec, info] = model_PowerLaw(XX, af, npoly=npoly)
         info.func = model_PowerLaw
 
     elif model_number == 4:
         if verbose: print('Modeling with an exponential on order %i polynomial background'%(npoly,))  # endif
-        [prof, gvec, info] = model_Exponential(XX, af, npoly)
+        [prof, gvec, info] = model_Exponential(XX, af, npoly=npoly)
         info.func = model_Exponential
 
     elif model_number == 5:
         if verbose: print('Modeling with an order %i polynomial+Heaviside fn'%(npoly,))  # endif
-        [prof, gvec, info] = model_Heaviside(XX, af, npoly)
+        [prof, gvec, info] = model_Heaviside(XX, af, npoly=npoly)
         info.func = model_Heaviside
 
     elif model_number == 6:
         if verbose: print('Modeling with a %i step profile'%(npoly,))  # endif
-        [prof, gvec, info] = model_StepSeries(XX, af, npoly)
+        [prof, gvec, info] = model_StepSeries(XX, af, npoly=npoly)
         info.func = model_StepSeries
 
     elif model_number == 7:
@@ -1997,7 +2603,7 @@ def model_profile(af=None, XX=None, model_number=7, npoly=4, nargout=1, verbose=
 
     elif model_number == 8:
         if verbose: print('Modeling with an order %i even polynomial'%(npoly,))  # endif
-        [prof, gvec, info] = model_evenpoly(XX, af, npoly)
+        [prof, gvec, info] = model_evenpoly(XX, af, npoly=npoly)
         info.func = model_evenpoly
 
     elif model_number == 9:  # Two power fit
@@ -2043,7 +2649,7 @@ def model_chieff(af=None, XX=None, model_number=1, npoly=4, nargout=1, verbose=F
        1 - Product of exponentials   - chi ~ prod(af(ii)*XX^(polyorder-ii))
        2 - Straight Polynomial       - chi ~ sum( af(ii)*XX^(polyorder-ii))
        3 - Power law fit             - chi ~ a(n+1)*x^(a1*x^n+a2*x^(n-1)+...an)
-       4 - Exponential on Background - chi ~ a1*(exp(a2*xx^a3) + XX^a4)
+       4 - Exponential on Background - chi ~ a1*(exp(a2*XX^a3) + XX^a4)
        5 - Polynomial with a Heaviside (Logistics)
                                         - chi ~ a1x^2+a2x+a3+a4*(XX>a5)*(XX<a6)
        6 - Series of Step functions  - H(x1)-H(x2) ~ 1/2*(tanh(ka5)-tanh(ka6))
@@ -2051,49 +2657,47 @@ def model_chieff(af=None, XX=None, model_number=1, npoly=4, nargout=1, verbose=F
        8 - Even order polynomial     - chi ~ sum( af(ii)*XX^2*(polyorder-ii))
        9 - 2-power profile           - chi ~ (Core-Edge)*(1-x^pow1)^pow2 + Edge
     """
-    if af is not None:
-        if (af==0).any():
-            af[_np.where(af==0)[0]] = 1e-14
-        # end if
-    # end if
+#    if af is not None:
+#        if (af==0).any():
+#            af[_np.where(af==0)[0]] = 1e-14
+#        # end if
+#    # end if
 
     if XX is None:
         XX = _np.linspace(1e-4, 1, 200)
     # endif
-    if len([XX])>1 and (XX==0).any():
-        XX[_np.where(XX==0)[0]] = 1e-14
-    # end if
+    XX = clean_XX(XX)
 
     # ====================================================================== #
 
     if model_number == 1:
         if verbose: print('Modeling with an order %i product of Exponentials'%(npoly,))  # endif
-        [chi_eff, gvec, info] = model_ProdExp(XX, af, npoly)
+        [chi_eff, gvec, info] = model_ProdExp(XX, af, npoly=npoly)
         info.func = model_ProdExp
 
     elif model_number == 2:
         if verbose: print('Modeling with an order %i polynomial'%(npoly,))  # endif
-        [chi_eff, gvec, info] = model_poly(XX, af, npoly)
+        [chi_eff, gvec, info] = model_poly(XX, af, npoly=npoly)
         info.func = model_poly
 
     elif model_number == 3:
         if verbose: print('Modeling with an order %i power law'%(npoly,))  # endif
-        [chi_eff, gvec, info] = model_PowerLaw(XX, af, npoly)
+        [chi_eff, gvec, info] = model_PowerLaw(XX, af, npoly=npoly)
         info.func = model_PowerLaw
 
     elif model_number == 4:
         if verbose: print('Modeling with an exponential on order %i polynomial background'%(npoly,))  # endif
-        [chi_eff, gvec, info] = model_Exponential(XX, af, npoly)
+        [chi_eff, gvec, info] = model_Exponential(XX, af, npoly=npoly)
         info.func = model_Exponential
 
     elif model_number == 5:
         if verbose: print('Modeling with an order %i polynomial+Heaviside fn'%(npoly,))  # endif
-        [chi_eff, gvec, info] = model_Heaviside(XX, af, npoly)
+        [chi_eff, gvec, info] = model_Heaviside(XX, af, npoly=npoly)
         info.func = model_Heaviside
 
     elif model_number == 6:
         if verbose: print('Modeling with a %i step profile'%(npoly,))  # endif
-        [chi_eff, gvec, info] = model_StepSeries(XX, af, npoly)
+        [chi_eff, gvec, info] = model_StepSeries(XX, af, npoly=npoly)
         info.func = model_StepSeries
 
     elif model_number == 7:
@@ -2114,10 +2718,11 @@ def model_chieff(af=None, XX=None, model_number=1, npoly=4, nargout=1, verbose=F
 
         def tfunc_plus(XX, af, npoly=None):
             if af is None:
-                _, _, info = tfunc(XX, af, npoly)
+                _, _, info = tfunc(XX, af, npoly=npoly)
                 af = _np.asarray(info.af.tolist()+[3.0], dtype=_np.float64)
+#                info.fixed = _np.asarray(info.fixed.tolist()+[int(0)], dtype=int)
             else:
-                _, _, info = tfunc(XX, af[:-1], npoly)
+                _, _, info = tfunc(XX, af[:-1], npoly=npoly)
             # end if
             info.af = _np.copy(af)
             info.prof += af[-1].copy()
@@ -2125,13 +2730,14 @@ def model_chieff(af=None, XX=None, model_number=1, npoly=4, nargout=1, verbose=F
             info.dgdx = _np.insert(info.dgdx, [-1], _np.zeros(_np.shape(info.dgdx[0,:]), dtype=_np.float64), axis=0)
             info.Lbounds = _np.asarray(info.Lbounds.tolist()+[-20.0], dtype=_np.float64)
             info.Ubounds = _np.asarray(info.Ubounds.tolist()+[ 20.0], dtype=_np.float64)
+            info.fixed = _np.asarray(info.fixed.tolist()+[int(0)], dtype=int)
             return info.prof, info.gvec, info
         [chi_eff, gvec, info] = tfunc(XX, af)
         info.func = tfunc
 
     elif model_number == 8:
         if verbose: print('Modeling with an order %i even polynomial'%(npoly,))  # endif
-        [chi_eff, gvec, info] = model_evenpoly(XX, af, npoly)
+        [chi_eff, gvec, info] = model_evenpoly(XX, af, npoly=npoly)
         info.func = model_evenpoly
 
     elif model_number == 9:
@@ -2199,6 +2805,205 @@ def get_test_Pdep(xvar, rloc=0.1, rhalfwidth=0.05, dVdrho=None, A0=None):
 # ========================================================================== #
 # ========================================================================== #
 
+def randomize_initial_conditions(LB, UB, af0=None, varaf0=None):
+    LB = _np.atleast_1d(LB)
+    UB = _np.atleast_1d(UB)
+    LB, UB = LB.copy(), UB.copy()
+
+    af = _np.zeros_like(LB)
+    for ii in range(len(LB)):
+        # encapsulate GHz for microwaves, 1e20 for density, in practice negative infinity
+        if _np.isinf(LB[ii]):            LB[ii] = -1e21   # end if
+        if _np.isinf(UB[ii]):            UB[ii] = 1e21    # end if
+
+        if af0 is None or varaf0 is None:
+            af[ii] = _np.random.uniform(low=LB[ii], high=UB[ii], size=None)
+        else:
+            af0 = _np.atleast_1d(af0)
+            varaf0 = _np.atleast_1d(varaf0)
+            if len(varaf0)<2:
+                varaf0 = varaf0*_np.ones_like(af0)
+            # end if
+            af[ii] = _np.copy(af0[ii]) + _np.sqrt(varaf0[ii])*_np.random.normal(low=-1.0, high=1.0, size=None)
+            if af[ii]>UB[ii]:
+                af[ii] = _np.copy(UB[ii]) - 0.01*_np.sqrt(varaf0[ii])
+            elif af[ii]<LB[ii]:
+                af[ii] = _np.copy(LB[ii]) + 0.01*_np.sqrt(varaf0[ii])
+            # end if
+    # end for
+    return af
+
+#def rescale_xlims(XX, forward=True, ascl=None):
+#    if ascl is None:
+#        ascl = max(_np.max(XX), 1.0)
+#    # end if
+#    if forward:
+#        return XX/ascl
+#    else:
+#        return XX*ascl
+
+def rescale_problem(pdat=0, vdat=0, info=None, nargout=1):
+    """
+    When fitting this problem it is convenient to scale it to order 1:
+        slope = _np.nanmax(pdat)-_np.nanmin(pdat)
+        offset = _np.nanmin(pdat)
+
+        pdat = (pdat-offset)/slope
+        vdat = vdat/slope**2.0
+
+    After fitting, then the algebra necessary to unscale the problem to original
+    units is:
+        prof = slope*prof+offset
+        varp = varp*slope**2.0
+
+        dprofdx = (slope*dprofdx)
+        vardprofdx = slope**2.0 * vardprofdx
+
+    Note that when scaling the problem, it is best to propagate errors from
+    covariance / gvec / dgdx before rescaling
+    """
+    if info is None:
+        slope = _np.nanmax(pdat)-_np.nanmin(pdat)
+        offset = _np.nanmin(pdat)
+
+        pdat = (pdat.copy()-offset)/slope
+        vdat = vdat.copy()/_np.abs(slope)**2.0
+
+        return pdat, vdat, slope, offset
+#        xslope = _np.nanmax(xdat)-_np.nanmin(xdat)
+#        xoffset = _np.nanmin(xdat)
+#        return pdat, vdat, slope, offset, xslope, xoffset
+    elif info is not None:
+        slope = info.slope
+        offset = info.offset
+
+        if hasattr(info, 'xslope'):
+            xslope = info.xslope
+        else:
+            xslope = 1.0
+            info.xslope = xslope
+        # end if
+
+        if hasattr(info, 'xoffset'):
+            xoffset = info.xoffset
+        else:
+            xoffset = 0.0
+            info.xoffset = xoffset
+        # end if
+
+        if hasattr(info,'pdat'):
+            info.pdat = info.pdat*slope+offset
+            info.vdat = info.vdat * (slope**2.0)
+        # end if
+        if hasattr(info,'dprofdx'):
+            info.dprofdx = slope*info.dprofdx
+            info.vardprofdx = (slope**2.0)*info.vardprofdx
+
+            info.dprofdx /= xslope
+            info.vardprofdx /= xslope*xslope
+        # end if
+
+        if hasattr(info,'prof'):
+            info.prof = slope*info.prof+offset
+            info.varp = (slope**2.0)*info.varp
+        # end if
+
+#        info.af = info.unscaleaf(info.af, info.slope, info.offset, info.xslope)
+#        _, _, info = info.model(info.XX, info.af, **info.kwargs)
+        if nargout == 1:
+            return info
+        else:
+            return info.prof, info.varp, info.dprofdx, info.vardprofdx, info.af
+    else:
+ #        print('for a backward unscaling: you must provide the info Struct from the fit!')
+        raise ValueError('for a backward unscaling: you must provide the info Struct from the fit!')
+    # end if
+# end def rescale problem
+
+# ========================================================================== #
+# ========================================================================== #
+
+
+def piecewise_2line(x, x0, y0, k1, k2):
+    """
+    function y = piecewise_2line(x, x0, y0, k1, k2)
+
+    Model for a piecewise linear function with one break
+
+    Inputs:
+        x - model independent variable
+        x0 - position of the break in slope
+        y0 - offset at the break in slope
+        k1 - slope of first line (dydx[x<x0])
+        k2 - slope of second line (dydx[x>x0])
+
+    Outputs:
+        y(x) - model at the input positions specified by x
+    """
+    return _np.piecewise(x, [x < x0],
+                         [lambda x:k1*x + y0-k1*x0, lambda x:k2*x + y0-k2*x0])
+# end def piecewise_2line
+
+# def piecewise_linear(x, x0, y0, k1, k2):
+#
+#   yy = _np.piecewise(x, [x < x0],
+#                       [lambda x:k1*x + y0-k1*x0, lambda x:k2*x + y0-k2*x0])
+#   return yy
+# # end def piecewise_linear
+
+# ========================================================================== #
+
+
+def expdecay(tt, Y0, t0, tau):
+    return Y0*_np.exp(-(tt-t0)/tau)
+
+# ========================================================================== #
+
+def polyeval(a, x):
+    """
+    p(x) = polyeval(a, x)
+         = a[0] + a[1]x + a[2]x^2 +...+ a[n-1]x^{n-1} + a[n]x^n
+         = a[0] + x(a[1] + x(a[2] +...+ x(a[n-1] + a[n]x)...)
+    """
+    p = 0
+    for coef in a[::-1]:
+        p = p * x + coef
+    return p
+# end def polyeval
+
+def polyderiv(a):
+    """
+    p'(x) = polyderiv(a)
+          = b[0] + b[1]x + b[2]x^2 +...+ b[n-2]x^{n-2} + b[n-1]x^{n-1}
+    where
+        b[i] = (i+1)a[i+1]
+    """
+    b = [i * x for i,x in enumerate(a)][1:]
+    return b
+# end def polyderiv
+
+def polyreduce(a, root):
+    """
+    Given x = r is a root of n'th degree polynomial p(x) = (x-r)q(x),
+    divide p(x) by linear factor (x-r) using the same algorithm as
+    polynomial evaluation.  Then, return the (n-1)'th degree quotient
+    q(x) = polyreduce(a, r)
+         = c[0] + c[1]x + c[2]x^2 +...+ c[n-2]x^{n-2} + c[n-1]x^{n-1}
+    """
+    c, p = [], 0
+    a.reverse()
+    for coef in a:
+        p = p * root + coef
+        c.append(p)
+    a.reverse()
+    c.reverse()
+    return c[1:]
+# end def polyreduce
+
+# ========================================================================== #
+# ========================================================================== #
+
+
 #def sech(x):
 #    """
 #    sech(x)
@@ -2258,19 +3063,24 @@ def _derivative_inputcondition(xvar):
 
 if __name__ == '__main__':
 
-    XX = _np.linspace(0, 1, 200)
-    npoly = 10
-    model_number = 7
-#    af = [0.1,0.1,0.1]
-    af = None
-#    af = [2.0,0.1,0.1,0.5]
+    Fs = 10.0e6
+    XX = _np.linspace(-1.0, 1.0, num=1e6)*Fs
+    model_order = 2
+    chi_eff, gvec, info = model_doppler(XX=XX, af=None, Fs=Fs, noshift=True, model_order=model_order)
 
-    [chi_eff, gvec, info] = \
-        model_chieff(af=af, XX=XX, model_number=model_number, npoly=npoly, nargout=3, verbose=True)
-
+#    XX = _np.linspace(0, 1, 200)
+#    npoly = 10
+#    model_number = 7
+##    af = [0.1,0.1,0.1]
+#    af = None
+##    af = [2.0,0.1,0.1,0.5]
+#
 #    [chi_eff, gvec, info] = \
-#        model_profile(af=af, XX=XX, model_number=model_number, npoly=npoly, nargout=3, verbose=True)
-#    info.dchidx = info.dprofdx
+#        model_chieff(af=af, XX=XX, model_number=model_number, npoly=npoly, nargout=3, verbose=True)
+
+# #    [chi_eff, gvec, info] = \
+# #        model_profile(af=af, XX=XX, model_number=model_number, npoly=npoly, nargout=3, verbose=True)
+    info.dchidx = info.dprofdx
 
     varaf = (0.1*info.af)**2
     varchi = _np.zeros_like(chi_eff)
@@ -2302,4 +3112,710 @@ if __name__ == '__main__':
 
 
 
+# ================= #
 
+#def _gaussian(XX, af, **kwargs):
+#    af = _parse_gaussian_inputs(af, **kwargs)
+#    return gaussian(XX, af)
+#
+#def _partial_gaussian(XX, af, **kwargs):
+#    noshift = kwargs.setdefault('noshift',False)
+#    af = _parse_gaussian_inputs(af, **kwargs)
+#    gvec = partial_gaussian(XX, af)
+#    if noshift:
+#        gvec = _np.delete(gvec, (1), axis=0)
+#    # end if
+#    return gvec
+#
+#def _deriv_gaussian(XX, af, **kwargs):
+#    af = _parse_gaussian_inputs(af, **kwargs)
+#    return deriv_gaussian(XX, af)
+#
+#def _partial_deriv_gaussian(XX, af, **kwargs):
+#    noshift = kwargs.setdefault('noshift',False)
+#    af = _parse_gaussian_inputs(af, **kwargs)
+#    gvec = partial_deriv_gaussian(XX, af)
+#    if noshift:
+#        gvec = _np.delete(gvec, (1), axis=0)
+#    # end if
+#    return gvec
+#
+#def model_gaussian(XX, af=None, **kwargs):
+#    """
+#    A gaussian with three free parameters:
+#        XX - x - independent variable
+#        af - magnitude, shift, width
+#
+#        af[0]*_np.exp(-(XX-af[1])**2/(2.0*af[2]**2))
+#
+#    If fitting with scaling, then the algebra necessary to unscale the problem
+#    to original units is:
+#        #    wrong af[0] = slope*af[0]
+#        #    wrong offset = 0.0  (in practice, this is not included in this filt)
+#
+#        y-scaling:  y' = (y-yo)/ys
+#         (y-miny)/(maxy-miny) = (y-yo)/ys
+#         (y-yo)/ys = a' exp(-1*(x-b')^2/(2*c'^2))
+#
+#         y-yo = ys * a' * exp(-1*(x-b')^2/(2*c'^2))
+#         a = ys*a'
+#             not possible to shift and maintain constant coefficients unless yo=0.0
+#
+#        x-scaling: x' = (x-xo)/xs
+#         y(x') - yo = a'*exp(-1*(x'-b')^2.0/(2*c'^2))
+#                    = a'*exp(-1*(x/xs-xo/xs-b')^2.0/(2*c'^2))
+#                    = a'*exp(-1*(x-xo-xs*b')^2.0/(2*c'^2*xs^2))
+#         here:
+#             a = a'*ys
+#             b = b'*xs + xo
+#             c = c'*xs
+#        only works if yo = 0.0
+#     found in the info Structure
+#    """
+#    noshift = kwargs.setdefault('noshift', False)
+#    if af is None:
+#        af = 0.7*_np.ones((3,), dtype=_np.float64)
+#        if noshift:
+#            af = _np.delete(af, (1), axis=0)
+#        # end if
+#    # endif
+#
+#    if len(af) == 2:
+#        noshift = True
+##        af = _np.atleast_1d(af)
+##        af = _np.insert(af,1,0.0, axis=0)
+#    # endif
+#
+#    info = Struct()
+#    info.Lbounds = _np.array([-_np.inf, -_np.inf, -_np.inf], dtype=_np.float64)
+#    info.Ubounds = _np.array([_np.inf, _np.inf, _np.inf], dtype=_np.float64)
+#    info.af = af
+#    info.kwargs = kwargs
+#
+#    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
+#        aout = _np.copy(ain)
+# #        aout[0] = slope*aout[0]
+# #        aout[1] = xslope*aout[1]+xoffset
+# #        aout[2] = xslope*aout[2]
+#        return aout
+#    info.unscaleaf = unscaleaf
+#    if noshift:
+##        info.af = _np.delete(info.af, (1), axis=0)
+#        info.Lbounds = _np.delete(info.Lbounds, (1), axis=0)
+#        info.Ubounds = _np.delete(info.Ubounds, (1), axis=0)
+#    # end if
+#    if XX is None:
+#        return info
+#
+#    prof = gaussian(XX, af, noshift=noshift)
+#    gvec = partial_gaussian(XX, af, noshift=noshift)
+#
+#    info.prof = prof
+#    info.gvec = gvec
+#    info.dprofdx = deriv_gaussian(XX, af, noshift=noshift)
+#    info.dgdx = partial_deriv_gaussian(XX, af, noshift=noshift)
+#
+#    info.func = lambda _x, _a: gaussian(_x, _a, noshift=noshift)
+#    info.dfunc = lambda _x, _a: deriv_gaussian(_x, _a, noshift=noshift)
+#    info.gfunc = lambda _x, _a: partial_gaussian(_x, _a, noshift=noshift)
+#    info.dgfunc = lambda _x, _a: partial_deriv_gaussian(_x, _a, noshift=noshift)
+#    return prof, gvec, info
+#
+#def _lorentzian(XX, af, **kwargs):
+#    """
+#    Lorentzian normalization such that integration equals AA (af[0])
+#    """
+#    af = _parse_gaussian_inputs(af, **kwargs)
+#    AA, x0, ss = tuple(af)
+#    return lorentzian(XX, [AA, x0, ss])
+#
+#def _deriv_lorentzian(XX, af, **kwargs):
+#    af = _parse_gaussian_inputs(af, **kwargs)
+#    AA, x0, ss = tuple(af)
+#    return deriv_lorentzian(XX, [AA, x0, ss])
+#
+#def _partial_lorentzian(XX, af, **kwargs):
+#    noshift = kwargs.setdefault('noshift', False)
+#    af = _parse_gaussian_inputs(af, **kwargs)
+#    AA, x0, ss = tuple(af)
+#
+#    gvec = partial_lorentzian(XX, [AA, x0, ss])
+#    if noshift:
+#        gvec = _np.delete(gvec, (1), axis=0)
+#    # end if
+#    return gvec
+#
+#def _partial_deriv_lorentzian(XX, af, **kwargs):
+#    noshift = kwargs.setdefault('noshift', False)
+#    af = _parse_gaussian_inputs(af, **kwargs)
+#    AA, x0, ss = tuple(af)
+#
+#    gvec = partial_deriv_lorentzian(XX, [AA, x0, ss])
+#    if noshift:
+#        gvec = _np.delete(gvec, (1), axis=0)
+#    # end if
+#    return gvec
+#
+#def model_lorentzian(XX, af=None, **kwargs):
+#    """
+#    A lorentzian with three free parameters:
+#        XX - x - independent variable
+#        af - magnitude, shift, width
+#
+#        AA*0.5*ss/((XX-x0)^2+0.25*ss^2)/_np.pi
+#
+#    If fitting with scaling, then the algebra necessary to unscale the problem
+#    to original units is:
+#        af[0] = slope*af[0]
+#        offset = 0.0  (in practice, this is necessary for this fit)
+#
+#       y-scaling: y' = (y-yo)/ys
+#        (y-yo) / ys = 0.5*a'*c' / ( (x-b')^2 + 0.25*c'^2 ) / pi
+#
+#        y-yo = 0.5*ys*a'*c' / ( (x-b')^2 + 0.25*c'^2 ) / pi
+#        a = ys*a'
+#
+#       x-scaling: x' = (x-xo)/xs
+#        y-yo = 0.5*ys*a'*c' / ( (x-xo-xs*b')^2/xs^2 + 0.25*c'^2 ) / pi
+#             = 0.5 * ys*xs*a'*xs*c' /( (x-xo-xs*b')^2 + 0.25*xs^2*c'^2 )/pi
+#        a = ys*xs*a'
+#        b = xs*b'+xo
+#        c = xs*c'
+#
+#    found in the info Structure
+#    """
+#    noshift = kwargs.setdefault('noshift', False)
+#    if af is None:
+#        af = 0.7*_np.ones((3,), dtype=_np.float64)
+#    # end if
+#
+#    if len(af) == 2:
+#        noshift = True
+#        af = _np.atleast_1d(_np.copy(af))
+#        af = _np.insert(af,1,0.0, axis=0)
+#    # end if
+#
+#    if len(af) == 3 and noshift:
+#        af = _np.delete(_np.copy(af), (1), axis=0)
+#    # endif
+#
+#    info = Struct()
+#    info.Lbounds = _np.array([-_np.inf, -_np.inf, -_np.inf], dtype=_np.float64)
+#    info.Ubounds = _np.array([_np.inf, _np.inf, _np.inf], dtype=_np.float64)
+#    info.af = _np.copy(af)
+#
+#    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):  # check this ... leaving noshift to user
+#        aout = _np.copy(ain)
+# #        aout[0] = slope*xslope*aout[0]
+# #        aout[1] = xslope*aout[1]+xoffset
+# #        aout[2] = xslope*aout[2]
+#        return aout
+#    info.unscaleaf = unscaleaf
+#    if noshift:
+##        info.af = _np.delete(info.af, (1), axis=0)
+#        info.Lbounds = _np.delete(info.Lbounds, (1), axis=0)
+#        info.Ubounds = _np.delete(info.Ubounds, (1), axis=0)
+#    # end if
+#
+#    if XX is None:
+#        return info
+#
+#    prof = lorentzian(XX, af, noshift=noshift)
+#    gvec = partial_lorentzian(XX, af, noshift=noshift)
+#    info.prof = prof
+#    info.gvec = gvec
+#    info.dprofdx = deriv_lorentzian(XX, af, noshift=noshift)
+#    info.dgdx = partial_deriv_lorentzian(XX, af, noshift=noshift)
+#
+#    info.func = lambda _x, _a: lorentzian(_x, _a, noshift=noshift)
+#    info.dfunc = lambda _x, _a: deriv_lorentzian(_x, _a, noshift=noshift)
+#    info.gfunc = lambda _x, _a: partial_lorentzian(_x, _a, noshift=noshift)
+#    info.dgfunc = lambda _x, _a: partial_deriv_lorentzian(_x, _a, noshift=noshift)
+#    return prof, gvec, info
+#
+#
+## =========================================================================== #
+## =========================================================================== #
+#
+## fit model to the data
+#def model_doppler(XX, af=None, noshift=True):
+#    """
+#         simple shifted gaussian - one doppler peak
+#         3 parameter fit
+#            modelspec.gaussian AA*_np.exp(-(XX-x0)**2/(2.0*ss**2))
+#         shifted gaussian and centered lorentzian - one doppler peak and reflection
+#         6 parameter fit
+#       +    modelspec.lorentzian AA*0.5*ss/((XX-x0)*(XX-x0)+0.25*ss*ss)/_np.pi
+#         two shifted gaussians and centered lorentzian - one doppler peak and reflection
+#         9 parameter fit
+#       +    modelspec.gaussian ... initialized with opposite shifts
+#    """
+#    if af is None:
+#        af = _np.ones((3,), dtype=_np.float64)
+##        af = _np.ones((9,), dtype=_np.float64)
+#        af[0] = 1.0         # amplitude of gaussian
+#        af[1] = -500.0e3    # doppler shift of gaussian
+#        af[2] = 100.0e3     # doppler width of peak
+##        af[3] = 10.0        # integrated value of lorentzian
+##        #  af[4] is added here for simplicity.  In this model we are using an unshifted lorentzian at zero-frequency.  It will be deleted shortly.
+##        af[4] = 0.0         # shift of lorentzian
+##        af[5] = 10.0e3      # width of lorentzian peak
+##        af[6] = 0.2*af[0]   # amplitude of second gaussian
+##        af[7] =-1.0*_np.copy(af[1])    # doppler shift of second gaussian
+##        af[8] = 50.0e3      # width of doppler peak of second gaussian
+#
+##        af = _np.delete(af, (4), axis=0)
+##    elif len(af) == 8:
+##        noshift = True
+##        af = _np.insert(_np.copy(af), (4), 0.0, axis=0)
+##    # end if
+##    if XX is None: XX = _np.linspace(-2e6, 2e6, num=200)   # end if
+#
+#    def parse_noshift(ain):
+#        if noshift:
+#            a0 = ain[0:3]
+#            a1 = ain[3:6]
+#            a2 = ain[6:]
+#        else:
+#            a0 = ain[0:3]
+#            a1 = ain[3:5]
+#            a2 = ain[5:]
+#        # end if
+#        return a0, a1, a2
+#    a0, a1, a2 = parse_noshift(af)
+#
+#    i0 = model_gaussian(None, a0)
+#    info = Struct()
+#    info.af = _np.copy(i0.af)
+#    info.Lbounds = _np.copy(i0.Lbounds)
+#    info.Ubounds = _np.copy(i0.Ubounds)
+#
+#    i1 = model_lorentzian(None, a1, noshift=noshift)
+#    info.af = _np.append(info.af, i1.af, axis=0)
+#    info.Lbounds = _np.append(info.Lbounds, i1.Lbounds, axis=0)
+#    info.Ubounds = _np.append(info.Ubounds, i1.Ubounds, axis=0)
+#
+#    i2 = model_gaussian(None, a2)
+#    info.af = _np.append(info.af, i2.af, axis=0)
+#    info.Lbounds = _np.append(info.Lbounds, i2.Lbounds, axis=0)
+#    info.Ubounds = _np.append(info.Ubounds, i2.Ubounds, axis=0)
+#
+#    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
+#        a0, a1, a2 = parse_noshift(ain)
+#        aout = _np.copy(ain)
+# #        aout = i0.unscaleaf(a0, slope, offset, xslope, xoffset)
+# #        aout = _np.append(aout, i1.unscaleaf(a1, slope, offset, xslope, xoffset), axis=0)
+# #        aout = _np.append(aout, i2.unscaleaf(a2, slope, offset, xslope, xoffset), axis=0)
+#        return aout
+#    info.unscaleaf = unscaleaf
+#
+#    if XX is None:
+#        return info
+#    # end if
+#
+##    # shifted gaussian
+###    model, gvec, info = model_gaussian(XX, a0)
+##    model = gaussian(XX, a0)
+##    info.dprofdx = deriv_gaussian(XX, a0)
+##    gvec = partial_gaussian(XX, a0)
+##    info.dgdx = partial_deriv_gaussian(XX, a0)
+##
+##    # shifted gaussian with lorentzian
+###    m1, g1, i1 = model_lorentzian(XX, a1, noshift=noshift)
+##    model += lorentzian(XX, a1, noshift=noshift)
+##    info.dprofdx += deriv_lorentzian(XX, a1, noshift=noshift)
+##    gvec = _np.append(gvec, partial_lorentzian(XX, a1, noshift=noshift), axis=0)
+##    info.dgdx = _np.append(info.dgdx, partial_deriv_lorentzian(XX, a1, noshift=noshift), axis=0)
+##
+##    # two shifted gaussians with lorentzian
+###    m2, g2, i2 = model_gaussian(XX, a2)
+##    model += gaussian(XX, a2)
+##    info.dprofdx += deriv_gaussian(XX, a2)
+##    gvec = _np.append(gvec, partial_gaussian(XX, a2), axis=0)
+##    info.dgdx = _np.append(info.dgdx, partial_deriv_gaussian(XX, a2), axis=0)
+#
+#    # ===== #
+#
+#    def dopplermodel(xdat, ain):
+#        a0, a1, a2 = parse_noshift(ain)
+#        return gaussian(xdat,af=a0) \
+#             + lorentzian(xdat, af=a1, noshift=noshift) \
+#             + gaussian(xdat,af=a2)
+#
+#    def deriv_model(xdat, ain):
+#        a0, a1, a2 = parse_noshift(ain)
+#        return deriv_gaussian(xdat,af=a0) \
+#             + deriv_lorentzian(xdat, af=a1, noshift=noshift) \
+#             + deriv_gaussian(xdat,af=a2)
+#
+#    def partial_model(xdat, ain):
+#        a0, a1, a2 = parse_noshift(ain)
+#        gvec = partial_gaussian(xdat,af=a0)
+#        gvec = _np.append(gvec, partial_lorentzian(xdat, af=a1, noshift=noshift), axis=0)
+#        if noshift:
+#            gvec = _np.insert(gvec, (4), _np.zeros((len(xdat),), dtype=_np.float64), axis=0)
+#        gvec = _np.append(gvec, partial_gaussian(xdat,af=a2), axis=0)
+#        return gvec
+#
+#    def partial_deriv_model(xdat, ain):
+#        a0, a1, a2 = parse_noshift(ain)
+#        gvec = partial_deriv_gaussian(xdat,af=a0)
+#        gvec = _np.append(gvec, partial_deriv_lorentzian(xdat, af=a1, noshift=noshift), axis=0)
+#        if noshift:
+#            gvec = _np.insert(gvec, (4), _np.zeros((len(xdat),), dtype=_np.float64), axis=0)
+#        gvec = _np.append(gvec, partial_deriv_gaussian(xdat,af=a2), axis=0)
+#        return gvec
+#
+#    model = dopplermodel(XX, af)
+#    gvec = partial_model(XX, af)
+#    info.prof = model
+#    info.gvec = gvec
+#    info.dprofdx = deriv_model(XX, af)
+#    info.dgdx = partial_deriv_model(XX, af)
+#
+#    info.func = lambda _x, _a: dopplermodel(_x, _a)
+#    info.dfunc = lambda _x, _a: deriv_model(_x, _a)
+#    info.gfunc = lambda _x, _a: partial_model(_x, _a)
+#    info.dgfunc = lambda _x, _a: partial_deriv_model(_x, _a)
+#    return model, gvec, info
+## end def
+#
+## =========================================================================== #
+#
+## Set the plasma density, temperature, and Zeff profiles (TRAVIS INPUTS)
+#def qparab(XX, *aa, **kwargs):
+#    """
+#    ex// ne_parms = [0.30, 0.002, 2.0, 0.7, -0.24, 0.30]
+#    This subfunction calculates the quasi-parabolic fit
+#    Y/Y0 = aa[1]-aa[4]+(1-aa[1]+aa[4])*(1-XX^aa[2])^aa[3]+aa[4]*(1-exp(-XX^2/aa[5]^2))
+#        XX - r/a
+#    aa[0] - Y0 - function value on-axis
+#    aa[1] - gg - Y1/Y0 - function value at edge over core
+#    aa[2],aa[3]-  pp, qq - power scaling parameters
+#    aa[4],aa[5]-  hh, ww - hole depth and width
+#    """
+#    options = {}
+#    options.update(kwargs)
+#    nohollow = options.get('nohollow', False)
+#    aedge = options.get('aedge', 1.0)
+#    if len(aa)>6:
+#        nohollow = aa.pop(6)
+#    XX = _np.abs(XX)/aedge
+#    if (type(aa) is tuple) and (len(aa) == 2):
+#        nohollow = aa[1]
+#        aa = aa[0]
+#    elif (type(aa) is tuple) and (len(aa) == 1):
+#        aa = aa[0]
+#    # endif
+#    aa = _np.asarray(aa, dtype=_np.float64)
+#    if nohollow and (_np.size(aa)==4):
+#        aa = _np.vstack((aa,_np.atleast_1d(0.0)))
+#        aa = _np.vstack((aa,_np.atleast_1d(1.0)))
+#    elif nohollow:
+#        aa[4] = 0.0
+#        aa[5] = 1.0
+#    # endif
+#    prof = aa[0]*( aa[1]-aa[4]
+#                   + (1.0-aa[1]+aa[4])*_np.abs(1.0-XX**aa[2])**aa[3]
+#                   + aa[4]*(1.0-_np.exp(-XX**2.0/aa[5]**2.0)) )
+#    return prof
+## end def qparab
+#
+#def deriv_qparab(XX, aa=[0.30, 0.002, 2.0, 0.7, -0.24, 0.30], nohollow=False):
+#    """
+#    ex// ne_parms = [0.30, 0.002 2.0 0.7 -0.24 0.30]
+#    This subfunction calculates the derivative of a quasi-parabolic fit
+#    Y/Y0 = aa[1]-aa[4]+(1-aa[1]+aa[4])*(1-XX^aa[2])^aa[3]+aa[4]*(1-exp(-XX^2/aa[5]^2))
+#        XX - r/a
+#    aa[0] - Y0 - function value on-axis
+#    aa[1] - gg - Y1/Y0 - function value at edge over core
+#    aa[2],aa[3]-  pp, qq - power scaling parameters
+#    aa[4],aa[5]-  hh, ww - hole depth and width
+#    """
+#    XX = _np.abs(XX)
+#    aa = _np.asarray(aa,dtype=_np.float64)
+#    if nohollow and (_np.size(aa)==4):
+#        aa = _np.vstack((aa,_np.atleast_1d(0.0)))
+#        aa = _np.vstack((aa,_np.atleast_1d(1.0)))
+#    elif nohollow:
+#        aa[4] = 0.0
+#        aa[5] = 1.0
+#    # endif
+#
+#    dpdx = aa[0]*( (1.0-aa[1]+aa[4])*(-1.0*aa[2]*XX**(aa[2]-1.0))*aa[3]*(1.0-XX**aa[2])**(aa[3]-1.0)
+#                   - aa[4]*(-2.0*XX/aa[5]**2.0)*_np.exp(-XX**2.0/aa[5]**2.0) )
+#
+#    return dpdx
+## end def derive_qparab
+#
+#def partial_qparab(XX,aa=[0.30, 0.002, 2.0, 0.7, -0.24, 0.30], nohollow=False):
+#    """
+#    ex// ne_parms = [0.30, 0.002 2.0, 0.7 -0.24 0.30]
+#    This subfunction calculates the jacobian of a quasi-parabolic fit
+#
+#    quasi-parabolic fit:
+#    Y/Y0 = aa[1]-aa[4]+(1-aa[1]+aa[4])*(1-XX^aa[2])^aa[3]+aa[4]*(1-exp(-XX^2/aa[5]^2))
+#        XX - r/a
+#    aa[0] - Y0 - function value on-axis
+#    aa[1] - gg - Y1/Y0 - function value at edge over core
+#    aa[2],aa[3]-  pp, qq - power scaling parameters
+#    aa[4],aa[5]-  hh, ww - hole depth and width
+#    """
+#    XX = _np.abs(XX)
+#    aa = _np.asarray(aa,dtype=_np.float64)
+#    if nohollow and (_np.size(aa)==4):
+#        aa = _np.vstack((aa,_np.atleast_1d(0.0)))
+#        aa = _np.vstack((aa,_np.atleast_1d(1.0)))
+#    elif nohollow:
+#        aa[4] = 0.0
+#        aa[5] = 1.0
+#    # endif
+#    Y0 = aa[0]
+#    g = aa[1]
+#    p = aa[2]
+#    q = aa[3]
+#    h = aa[4]
+#    w = aa[5]
+#
+#    gvec = _np.zeros( (6,_np.size(XX)), dtype=_np.float64)
+#    gvec[0,:] = g-h+(1.0-g+h)*_np.abs(1.0-XX**p)**q + h*(1.0-_np.exp(-XX**2.0/w**2.0))
+#    gvec[1,:] = Y0*( 1.0-_np.abs(1.0-XX**p)**q )    # aa[0]
+#    gvec[2,:] = -1.0*Y0*q*(g-h-1.0)*(XX**p)*_np.log(_np.abs(XX))*(_np.abs(1-XX**p)**q)/(XX**p-1.0)
+#    gvec[3,:] = Y0*(-g+h+1.0)*(_np.abs(1-XX**p)**q)*_np.log(_np.abs(1.0-XX**p))
+#    gvec[4,:] = Y0*(_np.abs(1.0-XX**p)**q) - Y0*_np.exp(-(XX/w)**2.0)
+#    gvec[5,:] = -2.0*h*(XX**2.0)*Y0*_np.exp(-(XX/w)**2.0) / w**3.0
+#
+#    return gvec
+## end def partial_qparab
+#
+#def partial_deriv_qparab(XX, aa=[0.30, 0.002, 2.0, 0.7, -0.24, 0.30], nohollow=False):
+#    """
+#    ex// ne_parms = [0.30, 0.002 2.0 0.7 -0.24 0.30]
+#    This subfunction calculates the jacobian of the derivative of a
+#    quasi-parabolic fit (partial derivatives of the derivative of a quasi-parabolic fit)
+#
+#    quasi-parabolic fit:
+#    Y/Y0 = aa[1]-aa[4]+(1-aa[1]+aa[4])*(1-XX^aa[2])^aa[3]+aa[4]*(1-exp(-XX^2/aa[5]^2))
+#        XX - r/a
+#
+#    aa[0] - Y0 - function value on-axis
+#    aa[1] - gg - Y1/Y0 - function value at edge over core
+#    aa[2],aa[3]-  pp, qq - power scaling parameters
+#    aa[4],aa[5]-  hh, ww - hole depth and width
+#    """
+#    XX = _np.abs(XX)
+#    aa = _np.asarray(aa,dtype=_np.float64)
+#    if nohollow and (_np.size(aa)==4):
+#        aa = _np.vstack((aa,_np.atleast_1d(0.0)))
+#        aa = _np.vstack((aa,_np.atleast_1d(1.0)))
+#    elif nohollow:
+#        aa[4] = 0.0
+#        aa[5] = 1.0
+#    # endif
+#    Y0 = aa[0]
+#    g = aa[1]
+#    p = aa[2]
+#    q = aa[3]
+#    h = aa[4]
+#    w = aa[5]
+#
+#    gvec = _np.zeros( (6,_np.size(XX)), dtype=_np.float64)
+#    gvec[0,:] = 2.0*h*XX*_np.exp(-(XX/w)**2.0)/(w**2.0) - p*q*(-g+h+1.0)*(XX**(p-1.0))*((1.0-XX**p)**(q-1.0))
+#    gvec[1,:] = p*q*Y0*(XX**(p-1.0))*((1-XX**p)**(q-1.0))
+#
+#    gvec[2,:] = q*Y0*(-1.0*(g-h-1.0))*((1.0-XX**p)**(q-2.0))
+#    gvec[2,:] *= p*_np.log(_np.abs(XX))*((q-1.0)*(XX**(2.0*p-1.0))
+#                    - (XX**(p-1.0))*(1.0-XX**p))+(XX**p-1.0)*XX**(p-1.0)
+#
+#    gvec[3,:] = p*Y0*(g-h-1.0)*(XX**(p-1.0))*((1.0-XX**p)**(q-1.0))*(q*_np.log(_np.abs(1.0-XX**p))+1.0)
+#    gvec[4,:] = (2.0*XX*Y0*_np.exp(-1.0*(XX/w)**2.0))/(w**2.0) - p*q*Y0*(XX**(p-1.0))*((1.0-XX**p)**(q-1.0))
+#
+#    gvec[5,:] = h*Y0*_np.exp(-1.0*(XX/w)**2.0)*((4.0*(XX**3.0))/(w**5.0)-(4.0*XX)/(w**3.0))
+#
+#    return gvec
+## end def partial_deriv_qparab
+#
+#def deriv2_qparab(XX, aa=[0.30, 0.002, 2.0, 0.7, -0.24, 0.30], nohollow=False):
+#    """
+#    ex// ne_parms = [0.30, 0.002 2.0 0.7 -0.24 0.30]
+#    This subfunction calculates the second derivative of a quasi-parabolic fit
+#    Y/Y0 = aa[1]-aa[4]+(1-aa[1]+aa[4])*(1-XX^aa[2])^aa[3]+aa[4]*(1-exp(-XX^2/aa[5]^2))
+#        XX - r/a
+#    aa[0] - Y0 - function value on-axis
+#    aa[1] - gg - Y1/Y0 - function value at edge over core
+#    aa[2],aa[3]-  pp, qq - power scaling parameters
+#    aa[4],aa[5]-  hh, ww - hole depth and width
+#    """
+#    XX = _np.abs(XX)
+#    aa = _np.asarray(aa,dtype=_np.float64)
+#    if nohollow and (_np.size(aa)==4):
+#        aa = _np.vstack((aa,_np.atleast_1d(0.0)))
+#        aa = _np.vstack((aa,_np.atleast_1d(1.0)))
+#    elif nohollow:
+#        aa[4] = 0.0
+#        aa[5] = 1.0
+#    # endif
+#    d2pdx2 = aa[3]*(aa[2]**2.0)*(aa[3]-1.0)*(1.0+aa[4]-aa[1])*(XX**(2.*aa[2]-2.0))*(1-XX**aa[2])**(aa[3]-2.0)
+#    d2pdx2 -= (aa[2]-1.0)*aa[2]*aa[3]*(1.0+aa[4]-aa[1])*(XX**(aa[2]-2.0))*(1-XX**aa[2])**(aa[3]-1.0)
+#    d2pdx2 += (2.0*aa[4]*_np.exp(-XX**2.0/(aa[5]**2.0)))/(aa[5]**2.0)
+#    d2pdx2 -= (4*aa[4]*(XX**2.0)*_np.exp(-XX**2.0/(aa[5]**2.0)))/(aa[5]**4.0)
+#    d2pdx2 *= aa[0]
+#    return d2pdx2
+## end def derive_qparab
+#
+#def partial_deriv2_qparab(XX, aa=[0.30, 0.002, 2.0, 0.7, -0.24, 0.30], nohollow=False):
+#    """
+#    ex// ne_parms = [0.30, 0.002 2.0 0.7 -0.24 0.30]
+#    This subfunction calculates the jacobian of the second derivative of a
+#    quasi-parabolic fit (partial derivatives of the second derivative of a quasi-parabolic fit)
+#
+#    quasi-parabolic fit:
+#    Y/Y0 = aa[1]-aa[4]+(1-aa[1]+aa[4])*(1-XX^aa[2])^aa[3]+aa[4]*(1-exp(-XX^2/aa[5]^2))
+#        XX - r/a
+#
+#    aa[0] - Y0 - function value on-axis
+#    aa[1] - gg - Y1/Y0 - function value at edge over core
+#    aa[2],aa[3]-  pp, qq - power scaling parameters
+#    aa[4],aa[5]-  hh, ww - hole depth and width
+#    """
+#    XX = _np.abs(XX)
+#    aa = _np.asarray(aa,dtype=_np.float64)
+#    if nohollow and (_np.size(aa)==4):
+#        aa = _np.vstack((aa,_np.atleast_1d(0.0)))
+#        aa = _np.vstack((aa,_np.atleast_1d(1.0)))
+#    elif nohollow:
+#        aa[4] = 0.0
+#        aa[5] = 1.0
+#    # endif
+#    Y0 = aa[0]
+#    g = aa[1]
+#    p = aa[2]
+#    q = aa[3]
+#    h = aa[4]
+#    w = aa[5]
+#
+#    gvec = _np.zeros( (6,_np.size(XX)), dtype=_np.float64)
+#    gvec[0,:] = deriv2_qparab(XX, aa, nohollow) / Y0
+#    gvec[1,:] = -p*q*Y0*(XX**(p-2.0))*(1.0-XX**p)**(q-2.0)*(p*(q*(XX**p)-1.0)-XX**p+1.0)
+#    gvec[2,:] = p*_np.log(_np.abs(XX))*(p*((q**2.0)*(XX**(2.0*p))-3.0*q*(XX**p)+XX**p+1.0)-(XX**p-1.0)*(q*XX**p-1.0))
+#    gvec[2,:] += (XX**p-1.0)*(2.0*p*(q*(XX**p)-1.0)-XX**p+1.0)
+#    gvec[2,:] *= q*Y0*(g-h-1.0)*(XX**(p-2.0))*((1.0-XX**p)**(q-3.0))
+#    gvec[3,:] = p*Y0*(-(g-h-1.0))*(XX**(p-2.0))*((1.0-XX**p)**(q-2.0))*(p*(2.0*q*XX**p-1.0)+q*(p*(q*XX**p-1.0)-XX**p+1.0)*_np.log(_np.abs(1.0-XX**p))-XX**p+1.0)
+#    gvec[4,:] = Y0*(p*q*(XX**(p-2.0))*((1.0-XX**p)**(q-2.0))*(p*(q*XX**p-1.0)-XX**p+1.0)+(2.0*_np.exp(-XX**2.0/w**2.0)*(w**2.0-2.0*XX**2.0))/w**4.0)
+#    gvec[5,:] = -(4.0*h*Y0*_np.exp(-XX**2.0/w**2.0)*(w**4.0-5*w**2.0*XX**2.0+2.0*XX**4.0))/w**7.0
+#
+#    return gvec
+## end def partial_deriv2_qparab
+#
+#
+#def model_qparab(XX, af=None, nohollow=False, prune=False, rescale=False, info=None):
+#    """
+#    ex// ne_parms = [0.30, 0.002, 2.0, 0.7, -0.24, 0.30]
+#    This function calculates the quasi-parabolic fit
+#        y/a = b-e+(1-b+e)*(1-x^c)^d + e*(1-exp(-x^2/f^2))
+#        y/a = edgepower(x,[b-e,c,d]) + expedge(x,[e,f])
+#            where
+#
+#    Y/Y0 = af[1]-af[4]+(1-af[1]+af[4])*(1-XX^af[2])^af[3]
+#                + af[4]*(1-exp(-XX^2/af[5]^2))
+#    XX - r/a
+#a    af[0] - Y0 - function value on-axis
+#b    af[1] - gg - Y1/Y0 - function value at edge over core
+#c,d    af[2],af[3]-  pp, qq - power scaling parameters
+#e,f    af[4],af[5]-  hh, ww - hole depth and width
+#
+#    If fitting with scaling, then the algebra necessary to unscale the problem
+#    to original units is:
+#            af[0] is Y0, af[1] if Y1/Y0; Y1 = af[1]*af[0]
+#
+#        af[1] = (slope*af[1]*af[0]+offset)/(slope*af[0]+offset)
+#        af[0] = slope*af[0]+offset
+#    found in the info Structure
+#
+#    """
+#    if info is None:
+#        info = Struct()  # Custom class that makes working with dictionaries easier
+##    info.Lbounds = _np.array([    0.0, 0.0,-_np.inf,-_np.inf,-_np.inf,-_np.inf], dtype=_np.float64)
+##    info.Ubounds = _np.array([_np.inf, _np.inf, _np.inf, _np.inf, _np.inf, _np.inf], dtype=_np.float64)
+##    info.Lbounds = _np.array([  0.0, 0.0,-20,-20,-1,-1], dtype=_np.float64)
+##    info.Ubounds = _np.array([ 20.0, 1.0, 20, 20, 1, 1], dtype=_np.float64)
+#    info.Lbounds = _np.array([  0.0, 0.0,-10,-10,-1,-1], dtype=_np.float64)
+#    info.Ubounds = _np.array([ 20.0, 1.0, 10, 10, 1, 1], dtype=_np.float64)
+#
+#    if af is None:
+#        af = _np.array([1.0, 0.002, 2.0, 0.7, -0.24, 0.30], dtype=_np.float64)
+##        af = randomize_initial_conditions(info.Lbounds, info.Ubounds)
+#        if nohollow:
+#            af[4] = 0.0
+#            af[5] = 1.0
+#        # endif
+#    if len(af) == 4:
+#        nohollow = True
+#        af = _np.hstack((af,0.0))
+#        af = _np.hstack((af,1.0))
+#    # endif
+#    info.af = _np.copy(af)
+#
+#    def unscaleaf(ain, slope, offset):
+#        aout = _np.copy(ain)
+# #        aout[1] = (slope*ain[1]*ain[0]+offset)/(slope*ain[0]+offset)
+# #        aout[0] = slope*ain[0]+offset
+#        return aout
+#    info.unscaleaf = unscaleaf
+#    if XX is None:
+#        if prune:
+#            info.af = info.af[:4]
+#            info.Lbounds = info.Lbounds[:4]
+#            info.Ubounds = info.Ubounds[:4]
+#        # end if
+#        return info
+#    # endif
+#
+#    # ========= #
+#    XX = _np.abs(XX)
+#    if rescale:
+#        XX = rescale_xlims(XX, forward=True, ascl=rescale)
+#    else:
+#        rescale = 1.0
+#    # end if
+#
+#    # ========= #
+#
+#    af = af.reshape((len(af),))
+#    if _np.isfinite(af).any() == 0:
+#        print("checkit! No finite values in fit coefficients! (from model_spec: model_qparab)")
+##    print(_np.shape(af))
+#
+#    try:
+#        prof = qparab(XX, af, nohollow)
+##        prof = interp_irregularities(prof, corezero=False)
+#        info.prof = prof
+#
+#        gvec = partial_qparab(XX*rescale, af, nohollow)
+##        gvec = interp_irregularities(gvec, corezero=False)  # invalid slice
+#        info.gvec = gvec
+#
+#        info.dprofdx = deriv_qparab(XX, af, nohollow)
+##        info.dprofdx = interp_irregularities(info.dprofdx, corezero=True)
+#
+#        info.dgdx = partial_deriv_qparab(XX*rescale, af, nohollow)
+##        info.dgdx = interp_irregularities(info.dgdx, corezero=False)
+#    except:
+#        pass
+#        raise
+#
+#    if prune:
+#        af = af[:4]
+#        info.Lbounds = info.Lbounds[:4]
+#        info.Ubounds = info.Ubounds[:4]
+#
+#        gvec = gvec[:4, :]
+#        info.dgdx = info.dgdx[:4, :]
+#    # endif
+#    info.af = af
+#
+#    return prof, gvec, info
+## end def model_qparab
+
+# ========================================================================== #
+# ========================================================================== #

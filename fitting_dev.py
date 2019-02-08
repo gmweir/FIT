@@ -311,6 +311,191 @@ def savitzky_golay(y, window_size, order, deriv=0):
     y = _np.concatenate((firstvals, y, lastvals))
     return _np.convolve( m, y, mode='valid')
 
+
+"""Detect peaks in data based on their amplitude and other features."""
+def detect_peaks(x, mph=None, mpd=1, threshold=0, edge='rising',
+                 kpsh=False, valley=False, show=False, ax=None):
+
+    """Detect peaks in data based on their amplitude and other features.
+
+    Parameters
+    ----------
+    x : 1D array_like
+        data.
+    mph : {None, number}, optional (default = None)
+        detect peaks that are greater than minimum peak height (if parameter
+        `valley` is False) or peaks that are smaller than maximum peak height
+         (if parameter `valley` is True).
+    mpd : positive integer, optional (default = 1)
+        detect peaks that are at least separated by minimum peak distance (in
+        number of data).
+    threshold : positive number, optional (default = 0)
+        detect peaks (valleys) that are greater (smaller) than `threshold`
+        in relation to their immediate neighbors.
+    edge : {None, 'rising', 'falling', 'both'}, optional (default = 'rising')
+        for a flat peak, keep only the rising edge ('rising'), only the
+        falling edge ('falling'), both edges ('both'), or don't detect a
+        flat peak (None).
+    kpsh : bool, optional (default = False)
+        keep peaks with same height even if they are closer than `mpd`.
+    valley : bool, optional (default = False)
+        if True (1), detect valleys (local minima) instead of peaks.
+    show : bool, optional (default = False)
+        if True (1), plot data in matplotlib figure.
+    ax : a matplotlib.axes.Axes instance, optional (default = None).
+
+    Returns
+    -------
+    ind : 1D array_like
+        indeces of the peaks in `x`.
+
+    Notes
+    -----
+    The detection of valleys instead of peaks is performed internally by simply
+    negating the data: `ind_valleys = detect_peaks(-x)`
+
+    The function can handle NaN's
+
+    See this IPython Notebook [1]_.
+
+    References
+    ----------
+    .. [1] http://nbviewer.ipython.org/github/demotu/BMC/blob/master/notebooks/DetectPeaks.ipynb
+
+    __author__ = "Marcos Duarte, https://github.com/demotu/BMC"
+    __version__ = "1.0.5"
+    __license__ = "MIT"
+
+    Examples
+    --------
+    >>> from detect_peaks import detect_peaks
+    >>> x = _np.random.randn(100)
+    >>> x[60:81] = _np.nan
+    >>> # detect all peaks and plot data
+    >>> ind = detect_peaks(x, show=True)
+    >>> print(ind)
+
+    >>> x = _np.sin(2*_np.pi*5*_np.linspace(0, 1, 200)) + _np.random.randn(200)/5
+    >>> # set minimum peak height = 0 and minimum peak distance = 20
+    >>> detect_peaks(x, mph=0, mpd=20, show=True)
+
+    >>> x = [0, 1, 0, 2, 0, 3, 0, 2, 0, 1, 0]
+    >>> # set minimum peak distance = 2
+    >>> detect_peaks(x, mpd=2, show=True)
+
+    >>> x = _np.sin(2*_np.pi*5*_np.linspace(0, 1, 200)) + _np.random.randn(200)/5
+    >>> # detection of valleys instead of peaks
+    >>> detect_peaks(x, mph=-1.2, mpd=20, valley=True, show=True)
+
+    >>> x = [0, 1, 1, 0, 1, 1, 0]
+    >>> # detect both edges
+    >>> detect_peaks(x, edge='both', show=True)
+
+    >>> x = [-2, 1, -2, 2, 1, 1, 3, 0]
+    >>> # set threshold = 2
+    >>> detect_peaks(x, threshold = 2, show=True)
+
+    Version history
+    ---------------
+    '1.0.5':
+        The sign of `mph` is inverted if parameter `valley` is True
+
+    """
+
+    x = _np.atleast_1d(x).astype('float64')
+    if x.size < 3:
+        return _np.array([], dtype=int)
+    if valley:
+        x = -x
+        if mph is not None:
+            mph = -mph
+    # find indices of all peaks
+    dx = x[1:] - x[:-1]
+    # handle NaN's
+    indnan = _np.where(_np.isnan(x))[0]
+    if indnan.size:
+        x[indnan] = _np.inf
+        dx[_np.where(_np.isnan(dx))[0]] = _np.inf
+    ine, ire, ife = _np.array([[], [], []], dtype=int)
+    if not edge:
+        ine = _np.where((_np.hstack((dx, 0)) < 0) & (_np.hstack((0, dx)) > 0))[0]
+    else:
+        if edge.lower() in ['rising', 'both']:
+            ire = _np.where((_np.hstack((dx, 0)) <= 0) & (_np.hstack((0, dx)) > 0))[0]
+        if edge.lower() in ['falling', 'both']:
+            ife = _np.where((_np.hstack((dx, 0)) < 0) & (_np.hstack((0, dx)) >= 0))[0]
+    ind = _np.unique(_np.hstack((ine, ire, ife)))
+    # handle NaN's
+    if ind.size and indnan.size:
+        # NaN's and values close to NaN's cannot be peaks
+        ind = ind[_np.in1d(ind, _np.unique(_np.hstack((indnan, indnan-1, indnan+1))), invert=True)]
+    # first and last values of x cannot be peaks
+    if ind.size and ind[0] == 0:
+        ind = ind[1:]
+    if ind.size and ind[-1] == x.size-1:
+        ind = ind[:-1]
+    # remove peaks < minimum peak height
+    if ind.size and mph is not None:
+        ind = ind[x[ind] >= mph]
+    # remove peaks - neighbors < threshold
+    if ind.size and threshold > 0:
+        dx = _np.min(_np.vstack([x[ind]-x[ind-1], x[ind]-x[ind+1]]), axis=0)
+        ind = _np.delete(ind, _np.where(dx < threshold)[0])
+    # detect small peaks closer than minimum peak distance
+    if ind.size and mpd > 1:
+        ind = ind[_np.argsort(x[ind])][::-1]  # sort ind by peak height
+        idel = _np.zeros(ind.size, dtype=bool)
+        for i in range(ind.size):
+            if not idel[i]:
+                # keep peaks with the same height if kpsh is True
+                idel = idel | (ind >= ind[i] - mpd) & (ind <= ind[i] + mpd) \
+                    & (x[ind[i]] > x[ind] if kpsh else True)
+                idel[i] = 0  # Keep current peak
+        # remove the small peaks and sort back the indices by their occurrence
+        ind = _np.sort(ind[~idel])
+
+    if show:
+        if indnan.size:
+            x[indnan] = _np.nan
+        if valley:
+            x = -x
+            if mph is not None:
+                mph = -mph
+        _plot_peakdetect(x, mph, mpd, threshold, edge, valley, ax, ind)
+
+    return ind
+
+
+def _plot_peakdetect(x, mph, mpd, threshold, edge, valley, ax, ind):
+    """Plot results of the detect_peaks function, see its help."""
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError:
+        print('matplotlib is not available.')
+    else:
+        if ax is None:
+            _, ax = plt.subplots(1, 1, figsize=(8, 4))
+
+        ax.plot(x, 'b', lw=1)
+        if ind.size:
+            label = 'valley' if valley else 'peak'
+            label = label + 's' if ind.size > 1 else label
+            ax.plot(ind, x[ind], '+', mfc=None, mec='r', mew=2, ms=8,
+                    label='%d %s' % (ind.size, label))
+            ax.legend(loc='best', framealpha=.5, numpoints=1)
+        ax.set_xlim(-.02*x.size, x.size*1.02-1)
+        ymin, ymax = x[_np.isfinite(x)].min(), x[_np.isfinite(x)].max()
+        yrange = ymax - ymin if ymax > ymin else 1
+        ax.set_ylim(ymin - 0.1*yrange, ymax + 0.1*yrange)
+        ax.set_xlabel('Data #', fontsize=14)
+        ax.set_ylabel('Amplitude', fontsize=14)
+        mode = 'Valley detection' if valley else 'Peak detection'
+        ax.set_title("%s (mph=%s, mpd=%d, threshold=%s, edge='%s')"
+                     % (mode, str(mph), mpd, str(threshold), edge))
+        # plt.grid()
+        plt.show()
+# end def plot_peakdetect
+
 # ========================================================================== #
 
 # =============================== #
@@ -383,6 +568,7 @@ def gaussian_peak_width(tt,sig_in,param):
     # end for
 
     return results.reshape(-1,3)
+
 
 # ======================================================================== #
 
@@ -1711,31 +1897,39 @@ if __name__=="__main__":
     except:
         from .model_spec import model_qparab
     # end try
-    info = model_qparab(XX=None)
-    af = info.af
-    af = _np.asarray([af[ii]+0.05*af[ii]*_np.random.normal(0.0, 1.0, 1) for ii in range(len(af))],
-                     dtype=_np.float64)
+    for jj in range(3):
+        info = model_qparab(XX=None)
+        af = info.af
 
-    QTBdat = {}
-    QTBdat['roa'] = _np.linspace(0.05, 1.05, num=10)
-    QTBdat['ne'], _, _ = model_qparab(QTBdat['roa'], af)
-    QTBdat['ne'] *= 1e20
-    QTBdat['varNL'] = (0.1*QTBdat['ne'])**2.0
-    QTBdat['varNH'] = (0.1*QTBdat['ne'])**2.0
+        aN = _np.asarray([af[ii]+0.50*af[ii]*_np.random.normal(0.0, 1.0, 1) for ii in range(len(af))],
+                         dtype=_np.float64)
+        aN[0] = _np.random.uniform(0.1, 1.2, 1)
+        QTBdat = {}
+        QTBdat['roa'] = _np.linspace(0.05, 1.05, num=10)
+        QTBdat['ne'], _, _ = model_qparab(QTBdat['roa'], aN)
 
-    aT = _np.asarray([4.00, 0.07, 5.0, 2.0, 0.04, 0.50], dtype=_np.float64)
-    aT = _np.asarray([aT[ii]+0.05*aT[ii]*_np.random.normal(0.0, 1.0, 1) for ii in range(len(aT))],
-                     dtype=_np.float64)
-    QTBdat['Te'], _, _ = model_qparab(QTBdat['roa'], aT)
-    QTBdat['varTL'] = (0.1*QTBdat['Te'])**2.0
-    QTBdat['varTH'] = (0.1*QTBdat['Te'])**2.0
+        QTBdat['ne'] *= 1e20
+        QTBdat['varNL'] = (0.1*QTBdat['ne'])**2.0
+        QTBdat['varNH'] = (0.1*QTBdat['ne'])**2.0
 
-    nout = fit_TSneprofile(QTBdat, _np.linspace(0, 1.05, num=51), plotit=True,
-                           agradrho=1.20, returnaf=False, bootstrappit=False)
+#        aT = _np.asarray([4.00, 0.07, 5.0, 2.0, 0.04, 0.50], dtype=_np.float64)
+        aT = _np.asarray([af[ii]+0.50*af[ii]*_np.random.normal(0.0, 1.0, 1) for ii in range(len(af))],
+                         dtype=_np.float64)
+        aT[0] = _np.random.uniform(1.0, 9.0, 1)
+#        aT = _np.asarray([aT[ii]+0.05*aT[ii]*_np.random.normal(0.0, 1.0, 1) for ii in range(len(aT))],
+#                         dtype=_np.float64)
+        QTBdat['Te'], _, _ = model_qparab(QTBdat['roa'], aT)
+        QTBdat['varTL'] = (0.1*QTBdat['Te'])**2.0
+        QTBdat['varTH'] = (0.1*QTBdat['Te'])**2.0
 
-    Tout = fit_TSteprofile(QTBdat, _np.linspace(0, 1.05, num=51), plotit=True,
-                           agradrho=1.20, returnaf=False, bootstrappit=False)
-#    test_linreg()
+        nout = fit_TSneprofile(QTBdat, _np.linspace(0, 1.05, num=51), plotit=True,
+                               agradrho=1.20, returnaf=False, bootstrappit=False)
+
+        Tout = fit_TSteprofile(QTBdat, _np.linspace(0, 1.05, num=51), plotit=True,
+                               agradrho=1.20, returnaf=False, bootstrappit=False)
+    # end if
+
+    test_linreg()
 #    test_derivatives()
 
 #    x = _np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10 ,11, 12, 13, 14, 15], dtype=float)
@@ -1750,12 +1944,6 @@ if __name__=="__main__":
 
 # ======================================================================== #
 # ======================================================================== #
-
-
-
-
-
-
 
 
 

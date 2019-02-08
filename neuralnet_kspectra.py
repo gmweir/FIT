@@ -101,7 +101,9 @@ if __name__ == "__main__":
 
     # Train the neural network using the training set.
     # Do it 60,000 times and make small adjustments each time.
-    neural_network.train(training_set_inputs, training_set_outputs, 60000)
+    neural_network.train(training_set_inputs, training_set_outputs, 60000)    # 60e3, 0.0078876
+#    neural_network.train(training_set_inputs, training_set_outputs, 600000)   # 600e3, 0.00248153
+#    neural_network.train(training_set_inputs, training_set_outputs,6000000)   # 6,000e3, 0.0007868
 
     print("Stage 2) New synaptic weights after training: ")
     neural_network.print_weights()

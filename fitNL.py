@@ -197,6 +197,36 @@ __metaclass__ = type
 
 
 # ======================================================================== #
+# ========================================================================== #
+
+
+def gen_random_init_conds(func, **fkwargs):
+    af0 = fkwargs.pop('af0', None)
+    varaf0 = fkwargs.pop('varaf0', None)
+
+    # Call the wrapper function to get reasonable bounds
+    temp = func(XX=None, af=None, **fkwargs)
+
+    # Differentiate base data set from default starting positions by randomly
+    # setting the profile to be within the upper / lower bounds (or reasonable values)
+    aa = _ms.randomize_initial_conditions(LB=temp.Lbounds, UB=temp.Ubounds, af0=af0, varaf0=varaf0)
+
+#    aa = temp.af
+#    aa += 0.5*aa*_np.random.normal(0.0, 1.0, len(aa))
+#
+    # Doesn't work super well:
+#    aa = _np.zeros_like(temp.af)
+#    for ii in range(len(temp.af)):
+#        LB = temp.Lbounds[ii]
+#        UB = temp.Ubounds[ii]
+#        if _np.isinf(LB):   LB = 0.1*_np.sign(LB)*temp.af[ii]            # endif
+#        if _np.isinf(UB):   UB = 0.1*_np.sign(UB)*temp.af[ii]            # endif
+#
+#        aa[ii] = temp.af[ii] + _np.random.normal(0.5*LB+0.5*UB, _np.abs(UB-LB), 1)
+#    # end for
+    return aa
+
+# ========================================================================== #
 
 # Fitting using the Levenberg-Marquardt algorithm.    #
 def modelfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
@@ -228,6 +258,7 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     LB = kwargs.pop('LB', None)
     UB = kwargs.pop('UB', None)
     p0 = kwargs.pop('af0', None)
+    fixed = kwargs.pop('fixed', None)
 
     skipwithnans = kwargs.pop('PassBadFit', False)
     plotit = kwargs.pop('plotit', False)
@@ -241,6 +272,8 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
         LB = info.Lbounds
     if UB is None:
         UB = info.Ubounds
+    if fixed is None:
+        fixed = info.fixed
     # end if
     numfit = len(p0)
 
@@ -296,7 +329,7 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     #       ex//   [0, 1] -> no lower bound on parameter, but create an upper bound
     #       ex//   [1, 1] -> lower and upper bounds on parameter
     #   'limits' lower and upper bound values matching boolean mask in 'limited'
-    parinfo = [{'value':p0[ii], 'fixed':0, 'limited':[1,1], 'limits':[LB[ii],UB[ii]],
+    parinfo = [{'value':p0[ii], 'fixed':fixed[ii], 'limited':[1,1], 'limits':[LB[ii],UB[ii]],
                 'mpside':[2]}
                 for ii in range(numfit)]
 
@@ -674,6 +707,7 @@ class fitNL_base(Struct):
         self.af0 = kwargs.pop("af0", self.af0)
         self.LB = kwargs.pop("LB", -_np.Inf*_np.ones_like(self.af0))
         self.UB = kwargs.pop("UB",  _np.Inf*_np.ones_like(self.af0))
+        self.fixed = kwargs.pop("fixed", _np.zeros(_np.shape(self.af0), dtype=int))
 
         # ========================== #
 
@@ -999,6 +1033,7 @@ class fitNL(fitNL_base):
 
         LB = self.LB
         UB = self.UB
+        fixed = self.fixed
         numfit = len(p0)
 
         # Settings for each parameter of the fit.
@@ -1009,9 +1044,8 @@ class fitNL(fitNL_base):
         #       ex//   [0, 1] -> no lower bound on parameter, but create an upper bound
         #       ex//   [1, 1] -> lower and upper bounds on parameter
         #   'limits' lower and upper bound values matching boolean mask in 'limited'
-        parinfo = [{'value':p0[ii], 'fixed':0, 'limited':[1,1], 'limits':[LB[ii],UB[ii]],
-                    'mpside':[2]}
-                    for ii in range(numfit)]
+        parinfo = [{'value':p0[ii], 'fixed':fixed[ii], 'limited':[1,1], 'limits':[LB[ii],UB[ii]],
+                    'mpside':[2]} for ii in range(numfit)]
 
         # Pass data into the solver through keywords
         fa = {'x':self.xdat, 'y':self.ydat, 'err':_np.sqrt(self.vary)}
@@ -1106,29 +1140,43 @@ class fitNL(fitNL_base):
 # end class fitNL
 
 
-# ========================================================================== #
 
 
-def gen_random_init_conds(func, **fkwargs):
+def gaussian_peak_width(tt,sig_in,param):
+    """
+     param contains intitial guesses for fitting gaussians,
+     (Amplitude, x value, sigma):
+     param = [[50,40,5],[50,110,5],[100,160,5],[100,220,5],
+          [50,250,5],[100,260,5],[100,320,5], [100,400,5],
+          [30,300,150]]  # this last one is our noise estimate
 
-    _, _, temp = func(1.0, af=None, **fkwargs)
+     Define a function that returns the magnitude of stuff under a gaussian
+     peak (with support for multiple peaks)
+    """
+    fit = lambda param, xx: _np.sum([_ms.gaussian(xx, param[ii*3], param[ii*3+1],
+                                              param[ii*3+2])
+                                    for ii in _np.arange(len(param)/3)], axis=0)
+    # Define a function that returns the difference between the fitted gaussian
+    # and the input signal
+    err = lambda param, xx, yy: fit(param, xx)-yy
 
-    # Differentiate base data set from default starting positions by randomly
-    # setting the profile to be within the upper / lower bounds (or reasonable values)
-    aa = temp.af
-    aa += 0.5*aa*_np.random.normal(0.0, 1.0, len(aa))
+    # If multiple peaks have been requested do some array manipulation
+    param = _np.asarray(param).flatten()
+    # end if
+    # tt  = xrange(len(sig_in))
 
-    # Doesn't work super well:
-#    aa = _np.zeros_like(temp.af)
-#    for ii in range(len(temp.af)):
-#        LB = temp.Lbounds[ii]
-#        UB = temp.Ubounds[ii]
-#        if _np.isinf(LB):   LB = 0.1*_np.sign(LB)*temp.af[ii]            # endif
-#        if _np.isinf(UB):   UB = 0.1*_np.sign(UB)*temp.af[ii]            # endif
-#
-#        aa[ii] = temp.af[ii] + _np.random.normal(0.5*LB+0.5*UB, _np.abs(UB-LB), 1)
-#    # end for
-    return aa
+    # Least squares fit the gaussian peaks: "args" gives the arguments to the
+    # err function defined above
+    results, value = leastsq(err, param, args=(tt, sig_in))
+
+    for res in results.reshape(-1,3):
+        print('Peak detected at: amplitude, position, sigma %f '%(res))
+    # end for
+
+    return results.reshape(-1,3)
+
+
+
 
 # ========================================================================== #
 
@@ -1142,18 +1190,20 @@ def test_fit(func=_ms.model_qparab, **fkwargs):
     ydat, _, temp = func(xdat, af=aa, **fkwargs)
 
 #    yerr = 0.00*ydat
-    yerr = 0.000001*_np.ones_like(ydat)
+#    yerr = 0.000001
+    yerr = 0.1*_np.min(ydat)
+    yerr = yerr*_np.ones_like(ydat)
     yxx, _, _ = func(XX, af=aa, **fkwargs)
 
 #    info = fit_mpfit(xdat, ydat, yerr, XX, func)
-    info = fit_mpfit(xdat, ydat, yerr, XX, func, fkwargs)
-
+#    info = fit_mpfit(xdat, ydat, yerr, XX, func, fkwargs)
+    info = modelfit(xdat, ydat, yerr, XX, func, fkwargs)
 #    assert _np.allclose(info.params, aa)
 #    assert info.dof==len(xdat)-len(aa)
 
-    ydat += yerr*_np.random.normal(0.04, 0.99, len(xdat))
+    ydat += 0.05*_np.mean(ydat)*_np.random.normal(0.0, 1.0, len(ydat))
 #    info = fit_mpfit(xdat, ydat, yerr, XX, func)
-    info = fit_mpfit(xdat, ydat, yerr, XX, func, fkwargs)
+    info = modelfit(xdat, ydat, yerr, XX, func, fkwargs)
 
     _plt.figure()
     ax1 = _plt.subplot(3, 1, 1)
@@ -1188,11 +1238,11 @@ def qparabfit(x, y, ey, XX, **kwargs):
     see no reason to remove it yet.
     """
     # subfunction kwargs
-    nohollow = kwargs.pop("nohollow", False)
-#    scale_by_data = kwargs.pop('scale_problem',True)
+    nohol = kwargs.pop("nohollow", False)
+    scale_by_data = kwargs.pop('scale_problem',True)
 
     # solver kwargs
-    kwargs.setdefault('scale_problem',True)
+#    kwargs.setdefault('scale_problem', True)
 #    kwargs.setdefault('maxiter',2000)
 #    kwargs.setdefault('xtol',1e-16)
 #    kwargs.setdefault('ftol',1e-16)
@@ -1237,20 +1287,21 @@ def qparabfit(x, y, ey, XX, **kwargs):
         ylbl2 = r'a/L$_{Te}$'
     # endif
 
+    #  TODO:  REMOVE THE PARAMETERS FOR "NOHOLLOW" and PRUNE
     def myqparab(x, af=None, nohollow=False, infoin=None):
-        prune = False
-        if nohollow:            prune = True        # end if
-        return _ms.model_qparab(x, af=af, nohollow=nohollow, prune=prune, info=infoin)
+#        prune = False
+#        if nohollow:            prune = True        # end if
+        return _ms.model_qparab(x, af=af, nohollow=nohollow, info=infoin) #, prune=prune)
 
-    info = myqparab(None, nohollow=nohollow)
+    info = myqparab(None) #, nohollow=nohollow)
     af0 = info.af.copy()
-#    if scale_by_data:
-#        y, ey2, slope, offset = _ms.rescale_problem(_np.copy(y), _np.copy(ey)**2.0)
-#        ey = _np.sqrt(ey2)
-#        af0[0] = 1.0
-#        af0[1] = 0.0
-#    # end if
-#    af0[0] = y[_np.argmin(x)].copy()
+    if scale_by_data:
+        y, ey2, slope, offset = _ms.rescale_problem(_np.copy(y), _np.copy(ey)**2.0)
+        ey = _np.sqrt(ey2)
+        af0[0] = 1.0
+        af0[1] = 0.0
+    # end if
+    af0[0] = y[_np.argmin(x)].copy()
     kwargs.setdefault('af0',af0)
     xin = x.copy()
     yin = y.copy()
@@ -1271,32 +1322,26 @@ def qparabfit(x, y, ey, XX, **kwargs):
         eyin = _ut.cylsym_even(eyin)
 
     # Call mpfit
-#    info = fit_mpfit(xin, yin, eyin, XX, myqparab, fkwargs={"nohollow":nohollow}, **kwargs)
-    info = modelfit(xin, yin, eyin, XX, myqparab, fkwargs={"nohollow":nohollow}, **kwargs)
+#    info = fit_mpfit(xin, yin, eyin, XX, myqparab, fkwargs={"nohollow":nohol}, **kwargs)
+    info = modelfit(xin, yin, eyin, XX, myqparab, fkwargs={"nohollow":nohol}, **kwargs)
+
 #    print(info.)
-#    if scale_by_data:
-#        # slope = _np.nanmax(pdat)-_np.nanmin(pdat)
-#        # offset = _np.nanmin(pdat)
-##        info.prof = _np.copy(prof)
-#        info.varp = _np.copy(info.varprof)
-##        info.dprofdx = _np.copy(dprofdx)
-##        info.vardprofdx = _np.copy(vardprofdx)
-##        info.af = _np.copy(af)
-#        info.slope = slope
-#        info.offset = offset
-#        info = _ms.rescale_problem(info=info, nargout=1)
-#        info.varprof = info.varp
-#        y = y*slope+offset
-#        ey2 = ey2*(slope**2.0)
-#        ey = _np.sqrt(ey2)
-#    # end if
-    if nohollow:
-        # add back in the two parameters after fitting with hollowness
-        _, _, info = myqparab(XX, af=info.params, nohollow=False, infoin=info)
-        info.params = info.af.copy()
-        info.LB = info.Lbounds.copy()
-        info.UB = info.Ubounds.copy()
-    # endif
+    if scale_by_data:
+        # slope = _np.nanmax(pdat)-_np.nanmin(pdat)
+        # offset = _np.nanmin(pdat)
+#        info.prof = _np.copy(prof)
+        info.varp = _np.copy(info.varprof)
+#        info.dprofdx = _np.copy(dprofdx)
+#        info.vardprofdx = _np.copy(vardprofdx)
+#        info.af = _np.copy(af)
+        info.slope = slope
+        info.offset = offset
+        info = _ms.rescale_problem(info=info, nargout=1)
+        info.varprof = info.varp
+        y = y*slope+offset
+        ey2 = ey2*(slope**2.0)
+        ey = _np.sqrt(ey2)
+    # end if
 
     # ================================= #
 
@@ -1373,10 +1418,10 @@ def test_qparab_fit(nohollow=False):
         aa[5] = 1.0
     # endif
 
-#    xdat = _np.linspace(0.05, 0.95, 10)
-    xdat = _np.linspace(0.01, 1.05, 60)
-    xdat += 0.07*_np.random.normal(0.0, 1.0, len(xdat))
-    ydat, _, temp = _ms.model_qparab(xdat, aa)
+    xdat = _np.linspace(0.05, 0.93, 10)
+#    xdat = _np.linspace(0.01, 1.05, 60)
+#    xdat += 0.04*_np.random.normal(0.0, 1.0, len(xdat))
+    ydat, _, temp = _ms.model_qparab(xdat, aa, nohollow=nohollow)
     yerr = 0.05*ydat
 
     # ============================================== #
@@ -1405,17 +1450,17 @@ def test_qparab_fit(nohollow=False):
     # ============================================== #
 
 
-    XX = _np.linspace( 0.0, 1.0, 99)
+    XX = _np.linspace( 0.0, 0.999, 99)
     yxx, _, _ = _ms.model_qparab(XX, aa)
 
-    info = qparabfit(xdat, ydat, yerr, XX, nohollow=False, **solver_options)
+    info = qparabfit(xdat, ydat, yerr, XX, nohollow=nohollow, **solver_options)
 
 #    assert _np.allclose(info.params, aa)
 #    assert info.dof==len(xdat)-len(aa)
 
     ydat += yerr*_np.random.normal(0.0, 1.0, len(xdat))
     ydat += 0.2*ydat*_np.random.normal(0.0, 1.0, len(xdat))
-    info = qparabfit(xdat, ydat, yerr, XX, nohollow=False, **solver_options)
+    info = qparabfit(xdat, ydat, yerr, XX, nohollow=nohollow, **solver_options)
 
     _plt.figure()
     ax1 = _plt.subplot(3, 1, 1)
@@ -1496,13 +1541,84 @@ def test_dat(multichannel=True):
 
     return x, y, vary
 
+def test_doppler_data(af, **kwargs):
+    noshift = kwargs.setdefault('noshift', True)
+    model_order = kwargs.setdefault('model_order', 2)
+    Fs = kwargs.setdefault('Fs', 10e6)
+    hopstep = kwargs.setdefault('hopstep', 10e-3)
+    freq = kwargs.setdefault('freq', None)
+    relvar = kwargs.setdefault('relvar', 0.1)    # relative variance in data
+    skewness = kwargs.setdefault('skewness', 0.0)    # relative skewness in data noise
 
-def test_fitNL(test_qparab=True, scale_by_data=True):
-    try:
-        import model_spec as _ms
-    except:
-        from . import model_spec as _ms
-    # end try
+    if freq is None:
+        freq = _np.linspace(-0.5*Fs, 0.5*Fs, num=hopstep*Fs)
+    # end if
+
+    data, gvec, info = _ms.model_doppler(XX=freq, af=af, Fs=Fs, noshift=noshift, model_order=model_order)
+    data += _np.sqrt(relvar)*data*_np.random.normal(loc=skewness, scale=1.0, size=len(data))
+
+    # assume the data represents the PSD of IQ data
+#    data =
+    return data
+
+
+def test_doppler_model(noshift=True, Fs=10.0e6, model_order=0):
+    hopstep = 10.0e-3 # hop step
+    Nwin = 8  # default number of windows at 50% overlap in welch's PSD
+
+    xx = _np.linspace(0.0, Fs, num=int(Fs*hopstep*1.5/Nwin)) -0.5*Fs
+    xx /= Fs
+
+    # guassian
+#    A0 = 1.0e-6   # [dB], amplitude
+    x0 = -0.04   # [Hz/Fs], shift of Doppler peak
+    s0 = 0.005    # [Hz/Fs], width of Doppler peak
+#   s0*A0 = 0.5*A1
+    A0 = 1e-1*1.0e-3/s0
+
+#    x0 *= Fs
+#    s0 *= Fs
+    af = _np.asarray([A0, x0, s0], dtype=_np.float64)
+    #    _, _, i0 = _ms.model_gaussian(xx, af=af, noshift=False)
+    #    af = i0.af
+    # end if
+
+    if model_order>0:
+        # centered lorentzian
+        A1 = 1.0e-3   # [dB], amplitude
+        x1 = 0.0   # [Hz/Fs], shift of Doppler peak
+        s1 = 0.01    # [Hz/Fs], width of Doppler peak
+
+#        x1 *= Fs
+#        s1 *= Fs
+        af = _np.asarray(af.tolist()+[A1, x1, s1], dtype=_np.float64)
+    #    _, _, i1 = _ms.model_lorentzian(xx, af=[A1, x1, s1], noshift=noshift)
+    #    af = _np.append(af, i1.af, axis=0)
+    # end if
+
+    if model_order>1:
+        # second shifted gaussian
+        A2 =  0.5*_np.copy(A0)   # [dB], amplitude
+        x2 = -0.75*_np.copy(x0)   # [Hz/Fs], shift of Doppler peak
+        s2 = 2*_np.copy(s0)    # [Hz/Fs], width of Doppler peak
+
+#        x2 *= Fs
+#        s2 *= Fs
+        af = _np.asarray(af.tolist()+[A2, x2, s2], dtype=_np.float64)
+    #    _, _, i2 = _ms.model_gaussian(xx, af=[A2, x2, s2], noshift=False)
+    #    af = _np.append(af, i2.af, axis=0)
+    # end if
+
+#    _, _, info = _ms.model_doppler(XX=xx, af=af, Fs=Fs, noshift=noshift, model_order=model_order)
+    _, _, info = _ms.model_doppler(XX=xx, af=af, Fs=1.0, noshift=noshift, model_order=model_order)
+    model = info.func
+    partial_model = info.gfunc
+    return af, model, partial_model, _ms.model_doppler
+# end def
+
+
+def test_fitNL(test_qparab=True, scale_by_data=False):
+
     def test_line_data():
         af = [0.2353335600009, 3.1234563234]
         return af, _ms.line, _ms.line_gvec, _ms.model_line
@@ -1519,26 +1635,39 @@ def test_fitNL(test_qparab=True, scale_by_data=True):
     if test_qparab:
         af, model, pderivmodel, wrapper = test_qparab_data()
         x = _np.linspace(-0.8, 1.05, 11)
+#        x = _np.linspace(-0.8, 0.95, 11)
     else:
         af, model, pderivmodel, wrapper = test_line_data()
         x = _np.linspace(-2, 15, 100)
     # endif
-    af0 = 0.1*_np.asarray(af, dtype=float)
+    af0 = _np.copy( _np.asarray(af, dtype=_np.float64) )
+    af0 += 0.5*af0*_np.random.normal(0.0, 1.0, len(af))
 
     y = mymodel(af, x)
-    y += 0.05*_np.sin(0.53 * 2*_np.pi*x/(_np.max(x)-_np.min(x)))
-    y += 0.3*_np.mean(y)*_np.random.normal(0.0, 1.0, len(y))
+#    y += 0.05*_np.sin(0.53 * 2*_np.pi*x/(_np.max(x)-_np.min(x)))
+    y += 0.1*_np.mean(y)*_np.random.normal(0.0, 1.0, len(y))
 #    vary = None
 #    vary = _np.zeros_like(y)
     vary = 0.05*_np.mean(y)
-    vary += ( 0.2*_np.mean(y)*_np.random.normal(0.0, 1.0, len(y)) )**2.0
+    vary += ( 0.05*_np.mean(y)*_np.random.normal(0.0, 1.0, len(y)) )**2.0
 
     if test_qparab:
         import pybaseutils as _pyb
+        isort = _np.argsort(_np.abs(x))
+        x = x[isort]
+        y = y[isort]
+        vary = vary[isort]
+
         x = _pyb.utils.cylsym_odd(x)
-        y = _pyb.utils.cylsym_even(y)
-        vary = _pyb.utils.cylsym_even(vary)
+        y = _pyb.utils.cylsym_even(_np.copy(y))
+        vary = _pyb.utils.cylsym_even(_np.copy(vary))
+    else:
+        isort = _np.argsort(x)
+        x = x[isort]
+        y = y[isort]
+        vary = vary[isort]
     # endif
+
     info = wrapper(XX=None)
 
     if scale_by_data:
@@ -1548,9 +1677,7 @@ def test_fitNL(test_qparab=True, scale_by_data=True):
     options = {}
 #    options = {'fjac':myjac, 'UB':UB, 'LB':LB}
 #    options = {'fjac':myjac}
-    options = {'UB':info.Ubounds, 'LB':info.Lbounds}
-#    ft = fitNL(xdat=x, ydat=y, vary=vary, af0=af0, func=mymodel, fjac=myjac)
-#    ft = fitNL(xdat=x, ydat=y, vary=vary, af0=af0, func=mymodel)
+    options = {'UB':info.Ubounds, 'LB':info.Lbounds, 'fixed':info.fixed}
     ft = fitNL(xdat=x, ydat=y, vary=vary, af0=af0, func=mymodel, **options)
     ft.run()
     ft.xx = _np.linspace(x.min(), x.max(), num=100)
@@ -1582,24 +1709,232 @@ def test_fitNL(test_qparab=True, scale_by_data=True):
 
 #    a, b, Var_a, Var_b = linreg(x, y, verbose=True, varY=vary, varX=None, cov=False, plotit=True)
     print(ft.af-af)
-    return ft
+    return ft, af
 # end def test_fitNL
+
+
+def doppler_test(scale_by_data=True, noshift=True, Fs=10.0e6, model_order=2, hopstep=10.0e-3, af=None, af0=None, varaf0=None):
+#    fit = _fl.modelfit(x=freq, y=10.0*_np.log10(_np.abs(PS)),
+#              ey=_np.sqrt((1.0/(_np.abs(PS)*_np.log(10.0))*_np.abs(PS)/_np.sqrt(Navr))**2.0),
+#              XX=freq, func=model_doppler, fkwargs={}, scale_problem=False)
+
+    af, model, pderivmodel, wrapper = test_doppler_model(noshift=noshift, Fs=Fs, model_order=model_order)
+
+    if af is None:
+        # randomize the data a little
+#        af = gen_random_init_conds(wrapper, noshift=noshift, Fs=Fs, model_order=model_order)
+#        af = gen_random_init_conds(wrapper, noshift=noshift, Fs=1.0, model_order=model_order)
+
+        af += 0.5*af*_np.random.normal(0.0, 1.0, len(af))
+        af[1] *= _np.random.choice([1.0, -1.0])
+        if model_order>1:
+            af[7] *= _np.random.choice([1.0, -1.0])
+        # end if
+    else:      # if input is specified, don't do the randomization
+        af = _np.copy(af)
+    # end if
+
+    if af0 is None:
+        # randomize the initial conditions a little
+#        af0 = gen_random_init_conds(wrapper, noshift=noshift, Fs=Fs, model_order=model_order)
+#        af0 = gen_random_init_conds(wrapper, noshift=noshift, Fs=1.0, model_order=model_order, af0=af0, varaf0=varaf0)
+        af0 = _np.copy(_np.asarray(af, dtype=_np.float64))
+        af0 += 0.5*af0*_np.random.normal(0.0, 1.0, len(af0))
+        af0[1] *= _np.random.choice([1.0, -1.0])
+        if model_order>1:
+            af0[7] *= _np.random.choice([1.0, -1.0])
+        # end if
+    else:     # if input is specified, don't do the randomization
+        af0 = _np.copy(af0)
+    # end if
+    x = _np.linspace(-0.5*Fs, 0.5*Fs, num=int(hopstep*Fs*1.5/8))
+    x /= Fs # normalize to sampling frequency
+
+#    wrapper = _ms.model_doppler
+    def mymodel(_a, _x):
+#        model, _, _ = wrapper(_x, _a, Fs=Fs, noshift=noshift, model_order=model_order)
+#        return model
+        return model(_x, _a)
+
+    def myjac(_a, _x):
+#        _, gvec, _ = wrapper(_x, _a, Fs=Fs, noshift=noshift, model_order=model_order)
+#        return gvec
+        return pderivmodel(_x, _a)
+
+    y = mymodel(af, x)
+#    y += 0.05*_np.sin(0.53 * 2*_np.pi*x/(_np.max(x)-_np.min(x)))
+#    y += 0.3*_np.mean(y)*_np.random.normal(0.0, 1.0, len(y))
+#    vary = None
+    vary = _np.zeros_like(y)
+#    vary = 0.05*_np.mean(y)
+    vary += ( 0.01*_np.mean(y)*_np.random.normal(0.0, 1.0, len(y)) )**2.0
+
+#    info = wrapper(XX=None, af=af0, Fs=Fs, noshift=noshift, model_order=model_order)
+    info = wrapper(XX=None, af=af0, Fs=1.0, noshift=noshift, model_order=model_order)
+
+    if scale_by_data:
+        y, vary, slope, offset = _ms.rescale_problem(_np.copy(y), _np.copy(vary))
+    # end if
+
+    options = {}
+#    options = {'fjac':myjac, 'UB':UB, 'LB':LB}
+#    options = {'fjac':myjac}
+    options = {'UB':info.Ubounds, 'LB':info.Lbounds, 'fixed':info.fixed}
+#    options = {'UB':info.Ubounds, 'LB':info.Lbounds, 'fixed':info.fixed}
+#    ft = fitNL(xdat=x, ydat=y, vary=vary, af0=af0, func=mymodel, fjac=myjac)
+    ft = fitNL(xdat=x, ydat=y, vary=vary, af0=af0, func=mymodel, **options)
+    ft.run()
+    ft.xx = _np.linspace(x.min(), x.max(), num=len(y))
+    ft.properror(xvec=ft.xx, gvec=myjac(ft.af, ft.xx))   # use with analytic jacobian
+#    ft.bootstrapper(ft.xx)   # use with no analytic jacobian
+#    ft.yf = ft.func(ft.af, ft.xx)
+#    a, b = ft.af
+
+    if scale_by_data:
+#        self.af
+#        self.chi2_reduced
+#        self.perror
+#        self.covmat
+
+        ft.pdat = ft.ydat
+        ft.vdat = ft.vary
+        ft.prof = ft.yf
+        ft.varp = ft.vfit
+        ft.slope = slope
+        ft.offset = offset
+        ft.unscaleaf = info.unscaleaf
+        ft = _ms.rescale_problem(info=ft, nargout=1)
+        ft.ydat = ft.pdat
+        ft.vary = ft.vdat
+        ft.vfit = ft.varp
+        ft.yf = ft.prof
+
+#        x *= ascl
+#        ft.x *= ascl
+#        af[1:3] /= ascl
+#        af[4:6] /= ascl
+#        af[6:] /= ascl
+    # end if
+    ft.plot()
+
+    figs = 2
+    if model_order>1:
+        # switch the peak reported as a Doppler shift by greatest doppler shift
+        if _np.abs(ft.af[7]) > _np.abs(ft.af[1]):
+            asave = _np.copy(ft.af)
+            asave[:3] = _np.copy(ft.af[6:])
+            asave[6:] = _np.copy(ft.af[:3])
+            ft.af = asave
+#        # switch the peak reported as a Doppler shift by greatest modelled power
+#        if ft.af[6]*ft.af[8] > ft.af[0]*ft.af[3]:
+#            asave = _np.copy(ft.af)
+#            asave[:3] = _np.copy(ft.af[6:])
+#            asave[6:] = _np.copy(ft.af[:3])
+#            ft.af = asave
+#        # end if
+    # end if
+
+    data_integral = _np.trapz(ft.ydat, x=ft.xdat)
+    if model_order>-1:
+        fit0 = _ms.gaussian(ft.xdat, ft.af[:3])
+        fit_integral = _np.trapz(fit0, x=ft.xdat)
+        fits = _np.copy(ft.ydat)
+    if model_order>0:
+        fit1 = _ms.lorentzian(ft.xdat, ft.af[3:6])
+        fit_integral += _np.trapz(fit1, x=ft.xdat)
+        fits -= _np.copy(fit1)
+    if model_order>1:
+        fit2 = _ms.gaussian(ft.xdat, ft.af[6:])
+        fit_integral += _np.trapz(fit2, x=ft.xdat)
+        fits -= _np.copy(fit2)
+    # end if
+    integral_perc_error = 100.0*(1.0-fit_integral/data_integral)
+    ft.interr = _np.copy(integral_perc_error)
+    print('Percent error in signal power:'+'%6.1f%%'%(integral_perc_error,))
+
+    _plt.figure()
+    _ax1 = _plt.subplot(figs, 1, 1)
+    _ax1.set_title('Input data and fitted model')
+    _ax1.errorbar(ft.xdat, ft.ydat, yerr=_np.sqrt(ft.vary), fmt='k-', linewidth=0.25)
+    _ax1.plot(ft.xdat, ft.ydat, 'k-', linewidth=1.0)
+#    _ax1.fill_between(ft.xdat, ft.ydat-_np.sqrt(ft.vary), ft.ydat+_np.sqrt(ft.vary),
+#          interpolate=True, color='k', alpha=0.3)
+    _ax1.plot(ft.xx, ft.yf, 'b-', linewidth=1.0)
+    _ax1.fill_between(ft.xx, ft.yf-_np.sqrt(ft.vfit), ft.yf+_np.sqrt(ft.vfit),
+          interpolate=True, color='b', alpha=0.3)
+    _ax1.set_ylabel('Doppler model')
+
+    # ==== #
+
+    _ax2 = _plt.subplot(figs, 1, 2, sharex=_ax1)
+    _ax2.errorbar(ft.xdat, fits, yerr=_np.sqrt(ft.vary), fmt='k-', linewidth=0.25)
+#    _ax2.plot(ft.xdat, fits, 'k-', linewidth=1.0)
+    _ax2.plot(ft.xdat, fit0, 'b-', linewidth=1.0)
+    if model_order>0:        _ax2.plot(ft.xdat, fit1, 'k-', linewidth=1.0)
+    if model_order>1:        _ax2.plot(ft.xdat, fit2, 'k-', linewidth=1.0)
+    _ax2.set_xlabel('f')
+    _ax2.set_ylabel('Doppler peak')
+#    _plt.show()
+
+
+#    a, b, Var_a, Var_b = linreg(x, y, verbose=True, varY=vary, varX=None, cov=False, plotit=True)
+    print(ft.af-af)
+    return ft, af
+# end def
 
 
 # ========================================================================== #
 # ========================================================================== #
 
 if __name__=="__main__":
-    test_qparab_fit(nohollow=False)
-    test_qparab_fit(nohollow=True)
-    ft = test_fitNL(True)
-    ft = test_fitNL(False)
+    _, _ = doppler_test(scale_by_data=False)
 
-#    test_fit(_ms.model_qparab, nohollow=False)
+#    test_qparab_fit(nohollow=False)
+#    test_qparab_fit(nohollow=True)
+#    ft = test_fitNL(False)
+#    ft = test_fitNL(True)  # issue with interpolation when x>1
+
+#    test_fit(_ms.model_line)
+#    test_fit(_ms.model_gaussian)    # check initial conditions
+#    test_fit(_ms.model_lorentzian)
+# #    test_fit(_ms.model_doppler, noshift=1, Fs=1, model_order=0)  # nan in model params!
+#    test_fit(_ms.model_doppler, noshift=1, Fs=1, model_order=1)
+#    test_fit(_ms.model_doppler, noshift=1, Fs=1, model_order=2)
+#    test_fit(_ms.model_doppler, noshift=0, Fs=1, model_order=2)
+#    test_fit(_ms.model_edgepower)
+#    test_fit(_ms.model_twopower)
+#    test_fit(_ms.model_expedge)
+#    test_fit(_ms.model_qparab, nohollow=False) # broken
 #    test_fit(_ms.model_qparab, nohollow=True)
+#    test_fit(_ms.model_poly, npoly=2)
+#    test_fit(_ms.model_poly, npoly=3)
+#    test_fit(_ms.model_poly, npoly=6)
 #    test_fit(_ms.model_ProdExp, npoly=2)
 #    test_fit(_ms.model_ProdExp, npoly=3)
 #    test_fit(_ms.model_ProdExp, npoly=4)
+#    test_fit(_ms.model_evenpoly, npoly=2)
+#    test_fit(_ms.model_evenpoly, npoly=3)
+#    test_fit(_ms.model_evenpoly, npoly=6)
+#    test_fit(_ms.model_PowerLaw, npoly=2)
+#    test_fit(_ms.model_PowerLaw, npoly=3)
+#    test_fit(_ms.model_PowerLaw, npoly=4)
+#    test_fit(_ms.model_Exponential)
+#    test_fit(_ms.model_parabolic)
+
+    # double check math!
+#    test_fit(_ms.model_flattop)
+#    test_fit(_ms.model_massberg)
+#    test_fit(_ms.model_flattop)
+#    test_fit(_ms.model_2power)
+
+    # need to be reformatted still (2 left!)
+#    test_fit(_ms.model_Heaviside, npoly=3, rinits=[0.30, 0.35])
+#    test_fit(_ms.model_Heaviside, npoly=3, rinits=[0.12, 0.27])
+#    test_fit(_ms.model_Heaviside, npoly=4, rinits=[0.30, 0.35])
+#    test_fit(_ms.model_Heaviside, npoly=4, rinits=[0.12, 0.27])
+#    test_fit(_ms.model_StepSeries, npoly=3)
+#    test_fit(_ms.model_StepSeries, npoly=4)
+#    test_fit(_ms.model_StepSeries, npoly=5)
 # endif
 
 
