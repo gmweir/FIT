@@ -18,7 +18,7 @@ import numpy as _np
 import matplotlib.pyplot as _plt
 #import pybaseutils as _pyut
 from pybaseutils.Struct import Struct
-from pybaseutils.utils import sech, interp_irregularities, interp # analysis:ignore
+from pybaseutils.utils import sech, interp_irregularities, interp, argsort # analysis:ignore
 
 # ========================================================================== #
 # ========================================================================== #
@@ -150,28 +150,133 @@ def _parse_gaussian_inputs(af, **kwargs):
     return af
 
 def gaussian(XX, af):
+    """
+    f = A*exp(-(x-xo)**2.0/(2.0*ss**2.0))
+        A = af[0]
+        xo = af[1]
+        ss = af[2]
+    """
     AA, x0, ss = tuple(af)
     return AA*_np.exp(-(XX-x0)**2/(2.0*ss**2))
 
 def partial_gaussian(XX, af):
+    """
+    f = A*exp(-(x-xo)**2.0/(2.0*ss**2.0))
+        A = af[0]
+        xo = af[1]
+        ss = af[2]
+
+    dfdA = f/A
+    dfdxo = A*(x-xo)*exp(-(x-xo)**2.0/(2.0*ss**2.0))/ss^2 = (x-xo)/ss^2 * f
+    dfdss =  (x-xo)^2/ss^3 * f
+    """
     AA, x0, ss = tuple(af)
+    prof = gaussian(XX, af)
     gvec = _np.zeros( (3,len(XX)), dtype=_np.float64)
-    gvec[0,:] = _np.exp(-(XX-x0)**2/(2.0*ss**2))
-    gvec[1,:] = AA*(XX-x0)*_np.exp((-0.5*(XX-x0)**2.0)/(ss**2.0))/(ss**2.0)
-    gvec[2,:] = AA*((XX-x0)**2.0) *_np.exp((-0.5*(XX-x0)**2.0)/(ss**2.0))/(ss**3.0)
+    gvec[0,:] = prof/AA
+    gvec[1,:] = ((XX-x0)/(ss**2.0))*prof
+    gvec[2,:] = (((XX-x0)**2.0)/(ss**3.0)) * prof
     return gvec
 
 def deriv_gaussian(XX, af):
+    """
+    f = A*exp(-(x-xo)**2.0/(2.0*ss**2.0))
+        A = af[0]
+        xo = af[1]
+        ss = af[2]
+
+    dfdx = -(x-xo)/ss^2 *f
+    """
     AA, x0, ss = tuple(af)
-    return -1.0*AA*(XX-x0)*_np.exp((-0.5*(XX-x0)**2.0)/(ss**2.0))/(ss**2.0)
+    prof = gaussian(XX, af)
+    return -1.0*(XX-x0)/_np.power(ss, 2.0) * prof
 
 def partial_deriv_gaussian(XX, af):
+    """
+    f = A*exp(-(x-xo)**2.0/(2.0*ss**2.0))
+        A = af[0]
+        xo = af[1]
+        ss = af[2]
+
+    dfdx = -(x-xo)/ss^2 *f
+    term1 = (-(x-xo)/ss^2)
+
+    d^2f/dxdA = 0*f + df/dA * term1
+              = partial_gaussian[0]*term1
+    d^2f/dxdxo = 1.0/(ss^2)*f + df/dxo * term1
+               =  prof/(ss^2) + partial_gaussian[1]*term1
+    d^2f/dxdss = 2.0*(x-xo)/(ss^3)*f + df/dxo * term1
+               = -2.0*term1*prof/ss + partial_gaussian[2]*term1
+    """
+    AA, x0, ss = tuple(af)
+
+    prof = gaussian(XX, af)
+    term1 = (-1.0*(XX-x0)/_np.power(ss,2.0))
+    gvec = partial_gaussian(XX, af)
+
+    dgdx = _np.zeros( (3,len(XX)), dtype=_np.float64)
+    dgdx[0,:] = gvec[0,:]*term1
+    dgdx[1,:] = prof/_np.power(ss,2.0) + gvec[1,:]*term1
+    dgdx[2,:] = -2.0*term1*prof/ss + gvec[2,:]*term1
+    return dgdx
+
+def normal(XX, af):
+    """
+    f = A*exp(-(x-xo)**2.0/(2.0*ss**2.0))/sqrt(2*pi*ss^2.0)
+        A = af[0]
+        xo = af[1]
+        ss = af[2]
+    """
+    AA, x0, ss = tuple(af)
+    nn = _np.sqrt(2.0*_np.pi*_np.power(ss, 2.0))
+    return gaussian(XX,af)/nn
+
+def partial_normal(XX, af):
+    """
+    f = A*exp(-(x-xo)**2.0/(2.0*ss**2.0))/sqrt(2*pi*ss^2.0)
+
+    dfdA = f/A
+    dfdxo = (x-xo)/ss^2 * f
+    dfdss =  (x-xo)^2/ss^3 * f + A*exp(-(x-xo)**2.0/(2.0*ss**2.0))*d/ds( sqrt(2*pi*ss^2.0)**-1 )
+        d/ds( sqrt(2*pi*ss^2.0)**-1 ) = sqrt(2*pi)^-1 * d/ds( (ss^2.0)**-0.5 ) = sqrt(2*pi)^-1 * d/ds( abs(ss)^-1.0 )
+            = sqrt(2*pi)^-1 * (2*ss)*-0.5 * (ss^2.0)^-1.5 = sqrt(2*pi)^-1 *-ss/(ss^3.0) = sqrt(2*pi)^-1 *1.0/ss^2
+            = sqrt(2*pi*ss**2.0)^-1 *1.0/abs(ss)
+    dfdss =  (x-xo)^2/ss^3 * f + 1.0/abs(ss) * f
+    """
     AA, x0, ss = tuple(af)
     gvec = _np.zeros( (3,len(XX)), dtype=_np.float64)
-    gvec[0,:] = -1.0*(XX-x0)*_np.exp(-0.5*(XX-x0)**2/(ss**2))/(ss**2.0)
-    gvec[1,:] = AA*_np.exp(-0.5*(XX-x0)**2/(ss**2))*(ss*2.0-XX*2.0+2*XX*x0-x0**2.0)/(ss**4.0)
-    gvec[2,:] = AA*_np.exp(-0.5*(XX-x0)**2/(ss**2))*(-1.0*XX*3.0+3.0*(XX**2.0)*x0-3.0*XX*(x0**2.0) + 2.0*XX*(ss**2.0) + x0**3.0 - 2.0*x0*(ss**2.0))/(ss**5.0)
+    prof = normal(XX, af)
+    gvec = _np.zeros( (3,len(XX)), dtype=_np.float64)
+    gvec[0,:] = prof/AA
+    gvec[1,:] = ((XX-x0)/(ss**2.0))*prof
+    gvec[1,:] = (((XX-x0)**2.0)/(ss**3.0)) * prof -prof/_np.abs(ss)
     return gvec
+
+def deriv_normal(XX, af):
+    AA, x0, ss = tuple(af)
+    nn = _np.sqrt(2.0*_np.pi*_np.power(ss, 2.0))
+    return deriv_gaussian(XX, af)/nn
+
+def partial_deriv_normal(XX, af):
+    """
+    f = A*exp(-(x-xo)**2.0/(2.0*ss**2.0))/sqrt(2*pi*ss^2.0)
+
+    dfdx = -(x-xo)/ss^2 *f
+
+    d2fdxdA = dfdx/A = -(x-xo)/ss^2 *dfdA
+    d2fdxdxo = f/ss^2 -(x-xo)/ss^2 *dfdxo
+    d2fdxds = 2*(x-xo)/ss^3 *f -(x-xo)/ss^2 *dfds
+
+    """
+    AA, x0, ss = tuple(af)
+    gvec = _np.zeros( (3,len(XX)), dtype=_np.float64)
+    prof = normal(XX, af)
+    gvec = partial_normal(XX, af)
+    dgdx = _np.zeros((3,len(XX)), dtype=_np.float64)
+    dgdx[0,:] = -(XX-x0)/_np.power(ss, 2.0)*gvec[0,:]
+    dgdx[1,:] = prof/_np.power(XX, 2.0) - ((XX-x0)/_np.power(ss, 2.0))*gvec[1,:]
+    dgdx[1,:] = 2.0*(XX-x0)*prof/_np.power(XX, 3.0) - ((XX-x0)/_np.power(ss, 2.0))*gvec[2,:]
+    return dgdx
 
 def model_gaussian(XX, af=None, **kwargs):
     """
@@ -181,16 +286,22 @@ def model_gaussian(XX, af=None, **kwargs):
 
         af[0]*_np.exp(-(XX-af[1])**2/(2.0*af[2]**2))
 
+        note that if normalized, then the PDF form is used so that the integral
+        is equal to af[0]:
+            af[0]*_np.exp(-(XX-af[1])**2/(2.0*af[2]**2))/_np.sqrt(2.0*pi*af[2]**2.0)
+
     If fitting with scaling, then the algebra necessary to unscale the problem
     to original units is:
-        #    wrong af[0] = slope*af[0]
-        #    wrong offset = 0.0  (in practice, this is not included in this filt)
 
         y-scaling:  y' = (y-yo)/ys
          (y-miny)/(maxy-miny) = (y-yo)/ys
          (y-yo)/ys = a' exp(-1*(x-b')^2/(2*c'^2))
 
          y-yo = ys * a' * exp(-1*(x-b')^2/(2*c'^2))
+
+         ln(y-yo) = ln(  exp(ln(ys * a')) * exp(-1*(x-b')^2/(2*c'^2)) )
+                  = ln(  exp(ln(ys*a')-1*(x-b')^2/(2*c'^2)) )
+                  = ln(ys*a') - (x-b')^2/(2*c'^2)
          a = ys*a'
              not possible to shift and maintain constant coefficients unless yo=0.0
 
@@ -202,10 +313,15 @@ def model_gaussian(XX, af=None, **kwargs):
              a = a'*ys
              b = b'*xs + xo
              c = c'*xs
-        only works if yo = 0.0
+                 shift and scaling works, but yo scaling only works if yo = 0.0
      found in the info Structure
     """
-    if af is None:        af = _np.asarray([1.0e-1/0.05, -0.3, 0.1], dtype=_np.float64)    # end if
+    normalized = kwargs.setdefault('norm', False)
+
+    if af is None:
+        af = _np.asarray([1.0e-1/0.05, -0.3, 0.1], dtype=_np.float64)
+        if normalized: af[0] = 1.0  # end if
+    # end if
 
     info = Struct()
     info.Lbounds = _np.array([-_np.inf, -_np.inf, -_np.inf], dtype=_np.float64)
@@ -225,18 +341,184 @@ def model_gaussian(XX, af=None, **kwargs):
     if XX is None:
         return info
     # end if
-    prof = gaussian(XX, af)
-    gvec = partial_gaussian(XX, af)
+
+    if normalized:
+        prof = normal(XX, af)
+        gvec = partial_normal(XX, af)
+
+        info.prof = prof
+        info.gvec = gvec
+        info.dprofdx = deriv_normal(XX, af)
+        info.dgdx = partial_deriv_normal(XX, af)
+
+        info.func = lambda _x, _a: normal(_x, _a)
+        info.dfunc = lambda _x, _a: deriv_normal(_x, _a)
+        info.gfunc = lambda _x, _a: partial_normal(_x, _a)
+        info.dgfunc = lambda _x, _a: partial_deriv_normal(_x, _a)
+    else:
+        prof = gaussian(XX, af)
+        gvec = partial_gaussian(XX, af)
+
+        info.prof = prof
+        info.gvec = gvec
+        info.dprofdx = deriv_gaussian(XX, af)
+        info.dgdx = partial_deriv_gaussian(XX, af)
+
+        info.func = lambda _x, _a: gaussian(_x, _a)
+        info.dfunc = lambda _x, _a: deriv_gaussian(_x, _a)
+        info.gfunc = lambda _x, _a: partial_gaussian(_x, _a)
+        info.dgfunc = lambda _x, _a: partial_deriv_gaussian(_x, _a)
+    return prof, gvec, info
+
+def model_normal(XX, af, **kwargs):
+    norm = kwargs.pop('norm', True)  # analysis:ignore
+    return model_gaussian(XX, af, norm=True, **kwargs)
+
+# ========================= #
+
+def loggaussian(XX, af):
+    """
+    f = 10*log10( A*exp(-(x-xo)**2.0/(2.0*ss**2.0)) )
+      = 10/ln(10)*ln( exp(ln(A))*exp(-(x-xo)**2.0/(2.0*ss**2.0)) )
+      = 10/ln(10)*( ln(A) -(x-xo)**2.0/(2.0*ss**2.0)  )
+        A = af[0]     and AA>0
+        xo = af[1]
+        ss = af[2]
+    """
+    # return _np.log(gaussian)
+    AA, x0, ss = tuple(af)
+    return (10.0/_np.log(10))*_np.abs(_np.log(AA)-_np.power(XX-x0, 2.0)/(2.0*_np.power(ss, 2.0)))
+
+def partial_loggaussian(XX, af):
+    """
+    f = 10*_np.log10( A*exp(-(x-xo)**2.0/(2.0*ss**2.0)) )
+      = 10/ln(10)*( ln(A) -(x-xo)**2.0/(2.0*ss**2.0)  )
+
+    dfdA = 10/(A*ln(10))
+    dfdxo = 10*(x-xo)/(ss^2 * ln(10))
+    dfdss =  10*(x-xo)^2/(ss^3 * ln(10))
+    """
+    AA, x0, ss = tuple(af)
+    gvec = _np.zeros( (3,len(XX)), dtype=_np.float64)
+    gvec[0,:] = 10.0/(AA*_np.log(10.0))
+    gvec[1,:] = 10.0*((XX-x0)/(_np.power(ss, 2.0)*_np.log(10.0)))
+    gvec[2,:] = 10.0*_np.power(XX-x0, 2.0)/(_np.power(ss, 3.0)*_np.log(10.0))
+    return gvec
+
+def deriv_loggaussian(XX, af):
+    """
+    f = 10*_np.log10( A*exp(-(x-xo)**2.0/(2.0*ss**2.0)) )
+      = 10/ln(10)*( ln(A) -(x-xo)**2.0/(2.0*ss**2.0)  )
+        A = af[0]
+        xo = af[1]
+        ss = af[2]
+
+
+    f = 10/ln(10)*ln(g)   where g is gaussian
+
+    dfdx = 10/ln(10) * dln(g)/dx
+         = 10/ln(10) * dgdx/g
+    or with less function calls
+    dfdx = -10.0*(x-xo)/(ss**2.0 * _np.log(10))
+    """
+    AA, xo, ss = tuple(af)
+    return -10.0*(XX-xo)/(_np.power(ss, 2.0) * _np.log(10))
+
+def partial_deriv_loggaussian(XX, af):
+    """
+    f = 10*_np.log10( A*exp(-(x-xo)**2.0/(2.0*ss**2.0)) )
+      = 10/ln(10)*( ln(A) -(x-xo)**2.0/(2.0*ss**2.0)  )
+
+    dfdx = -10.0*(x-xo)/(ss**2.0 * _np.log(10))
+        A = af[0]
+        xo = af[1]
+        ss = af[2]
+
+    dfdx = -(x-xo)/ss^2  * 10.0/ln(10)
+
+    d^2f/dxdA = 0.0
+    d^2f/dxdxo = 10.0/(_np.log(10.0)*ss^2)
+    d^2f/dxdss = 20.0*(x-xo)/(_np.log(10.0)*ss^3)
+    """
+    AA, x0, ss = tuple(af)
+
+    dgdx = _np.zeros( (3,len(XX)), dtype=_np.float64)
+    dgdx[1,:] = 10.0/(_np.log(10.0)*_np.power(ss,2.0))
+    dgdx[2,:] = 20.0*(XX-x0)/(_np.log(10)*_np.power(ss,3.0))
+    return dgdx
+
+
+def model_loggaussian(XX, af=None, **kwargs):
+    """
+    A lognormal with three free parameters:
+        XX - x - independent variable
+        af - magnitude, shift, width
+
+    f = 10*_np.log10( A*exp(-(x-xo)**2.0/(2.0*ss**2.0)) )
+      = 10/ln(10)*( ln(A) -(x-xo)**2.0/(2.0*ss**2.0)  )
+
+    If fitting with scaling, then the algebra necessary to unscale the problem
+    to original units is much easier than the gaussian case:
+
+
+        y-scaling:  y' = (y-yo)/ys
+         (y-miny)/(maxy-miny) = (y-yo)/ys
+         (y-yo)/ys = 10/ln(10)*( ln(a') -(x-b')**2.0/(2.0*(c')**2.0)  )
+
+         y = yo + 10/ln(10)* ys * ( ln(a') -(x-b')**2.0/(2.0*(c')**2.0)  )
+      10.0/ln(10)*ln(a) = yo+10.0*ys*ln(a')/ln(10)
+             1/(c**2.0) = 10.0*ys/( ln(10)*(c')**2.0)
+
+             a = exp( ln(10)/10.0*yo+ys*ln(a') )
+             b = b'
+             c = c'*_np.sqrt( ln(10.0)/ (10.0*ys) )
+                 possible to shift and scale y-data (linear problem)
+
+        x-scaling: x' = (x-xo)/xs
+         y = yo + 10/ln(10)* ys * ( ln(a') -(x'-b')**2.0/(2.0*(c')**2.0)  )
+           = yo + 10/ln(10)* ys * ( ln(a') -(x-xo-xs*b')**2.0/(2.0*(xs*c')**2.0)  )
+
+         here:
+             a = exp( ln(10)*yo/10.0+ys*ln(a') )
+             b = b'*xs + xo
+             c = c'*xs*_np.sqrt( ln(10.0)/ (10.0*ys) )
+
+                possible to shift and scale x- and y-data
+     found in the info Structure
+    """
+    if af is None:
+        af = _np.asarray([1.0, -0.3, 0.1], dtype=_np.float64)    # end if
+
+    info = Struct()
+    info.Lbounds = _np.array([0.0, -_np.inf, -_np.inf], dtype=_np.float64)
+    info.Ubounds = _np.array([_np.inf, _np.inf, _np.inf], dtype=_np.float64)
+    info.fixed = _np.zeros( _np.shape(info.Lbounds), dtype=int)
+    info.af = _np.copy(af)
+    info.kwargs = kwargs
+
+    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
+        aout = _np.copy(ain)
+#        aout[0] = _np.exp( _np.log(10.0)*offset/10.0 + slope*_np.log(aout[0]))
+#        aout[1] = xslope*aout[1]+xoffset
+#        aout[2] = xslope*aout[2]*_np.sqrt( _np.log(10.0)/(10.0*slope))
+        return aout
+    info.unscaleaf = unscaleaf
+
+    if XX is None:
+        return info
+    # end if
+    prof = loggaussian(XX, af)
+    gvec = partial_loggaussian(XX, af)
 
     info.prof = prof
     info.gvec = gvec
-    info.dprofdx = deriv_gaussian(XX, af)
-    info.dgdx = partial_deriv_gaussian(XX, af)
+    info.dprofdx = deriv_loggaussian(XX, af)
+    info.dgdx = partial_deriv_loggaussian(XX, af)
 
-    info.func = lambda _x, _a: gaussian(_x, _a)
-    info.dfunc = lambda _x, _a: deriv_gaussian(_x, _a)
-    info.gfunc = lambda _x, _a: partial_gaussian(_x, _a)
-    info.dgfunc = lambda _x, _a: partial_deriv_gaussian(_x, _a)
+    info.func = lambda _x, _a: loggaussian(_x, _a)
+    info.dfunc = lambda _x, _a: deriv_loggaussian(_x, _a)
+    info.gfunc = lambda _x, _a: partial_loggaussian(_x, _a)
+    info.dgfunc = lambda _x, _a: partial_deriv_loggaussian(_x, _a)
     return prof, gvec, info
 
 # ========================================================================== #
@@ -246,6 +528,7 @@ def model_gaussian(XX, af=None, **kwargs):
 def lorentzian(XX, af):
     """
     Lorentzian normalization such that integration equals AA (af[0])
+        f = 0.5*A*s / ( (x-xo)**2.0 + 0.25*ss**2.0 ) / pi
     """
     AA, x0, ss = tuple(af)
     return AA*0.5*ss/((XX-x0)*(XX-x0)+0.25*ss*ss)/_np.pi
@@ -334,6 +617,160 @@ def model_lorentzian(XX, af=None, **kwargs):
     info.dgfunc = lambda _x, _a: partial_deriv_lorentzian(_x, _a)
     return prof, gvec, info
 
+# ====== #
+
+def loglorentzian(XX, af):
+    """
+    log of a Lorentzian
+        f = 10*log10(  0.5*A*s / ( (x-xo)**2.0 + 0.25*ss**2.0 ) / pi  )
+          = 10*log10( 0.5*A*s )
+            - 10*log10((x-xo)**2.0 + 0.25*ss**2.0 )
+            - 10*log10(pi)
+        f = 10*log10( 0.5*A*s ) - 10*log10(pi)
+          - 10*log10((x-xo)**2.0 + 0.25*ss**2.0 )
+
+          = line plus log of a shifted parabola
+    """
+    return 10.0*_np.log(lorentzian(XX, af))/_np.log(10)
+#    AA, x0, ss = tuple(af)
+#    return ( 10.0*_np.log10( 0.5*AA*ss )
+#           - 10.0*_np.log10(_np.pi)
+#           - 10.0*_np.log10((XX-x0)**2.0 + 0.25*ss**2.0 ) )
+
+def deriv_loglorentzian(XX, af):
+    """
+    derivative of the log of a Lorentzian
+        f = 10*log10( 0.5*A*s ) - 10*log10(pi)
+          - 10*log10((x-xo)**2.0 + 0.25*ss**2.0 )
+
+        dfdx = d/dx ( - 10*_np.log10((x-xo)**2.0 + 0.25*ss**2.0 ) )
+             = -2.0*(x-xo)*10.0/((x-xo)**2.0 + 0.25*ss**2.0 )/_np.log(10)
+    """
+    AA, x0, ss = tuple(af)
+    return -20.0*(XX-x0)/( _np.log(10) *( _np.power(XX-x0, 2.0)+0.25*_np.power(ss, 2.0)) )
+
+def partial_loglorentzian(XX, af):
+    """
+    jacobian of the log of a Lorentzian
+    f = 10*log10( 0.5*A*s ) - 10*log10(pi)
+      - 10*log10((x-xo)**2.0 + 0.25*ss**2.0 )
+
+
+    dfdai = d/dai ( ... )
+
+    dfdA = d/dA 10*log10( 0.5*A*s )
+         = d/dA 10*log10( 0.5)+10*log10(A)+10*log10(s )
+         = 10.0/( _np.log(10.0)*A )
+    dfdxo = -d/dxo 10*log10((x-xo)**2.0 + 0.25*ss**2.0 )
+          = 2.0*(x-xo)*10.0/((x-xo)**2.0 + 0.25*ss**2.0 )/_np.log(10)
+    dfdss = d/dss 10*log10( 0.5*A*s ) - 10*log10((x-xo)**2.0 + 0.25*ss**2.0 )
+          = 10/(s*log(10)) -0.25*2.0*10*ss / ( _np.log(10)*((x-xo)**2.0 + 0.25*ss**2.0) )
+
+   """
+    AA, x0, ss = tuple(af)
+
+    gvec = _np.zeros( (3,len(XX)), dtype=_np.float64)
+    gvec[0,:] = 10.0/(_np.log(10.0)*AA)
+    gvec[1,:] = 20.0*(XX-x0)/( _np.log(10.0)*(_np.power(XX-x0, 2.0) + 0.25*_np.power(ss, 2.0 )))
+    gvec[2,:] = 10.0/(_np.log(10.0)*ss) - 5.0*ss/( _np.log(10.0)*(_np.power(XX-x0, 2.0) + 0.25*_np.power(ss, 2.0 )))
+    return gvec
+
+def partial_deriv_loglorentzian(XX, af):
+    """
+    derivative of the log of a Lorentzian
+    f = 10*log10( 0.5*A*s ) - 10*log10(pi)
+      - 10*log10((x-xo)**2.0 + 0.25*ss**2.0 )
+
+    dfdx = d/dx ( - 10*_np.log10((x-xo)**2.0 + 0.25*ss**2.0 ) )
+         = -20.0*(x-xo)/((x-xo)**2.0 + 0.25*ss**2.0 )/_np.log(10)
+
+    d2f/dxdAA = 0.0
+    d2f/dxdx0 = 80.0*(s-2.0*(x-xo))*(s+2.0*(x-xo))/(log10*(4.0*(x-xo)**2.0 + ss**2.0)**2.0 )
+    d2f/dxds =
+    """
+    AA, x0, ss = tuple(af)
+
+    gvec = _np.zeros( (3,len(XX)), dtype=_np.float64)
+    gvec[1,:] = 80.0*(ss-2.0*(XX-x0))*(ss+2.0*(XX-x0))/( _np.log(10)*_np.power( 4.0*_np.power(XX-x0, 2.0) + _np.power(ss, 2.0) , 2.0) )
+    gvec[2,:] = 10.0*ss*(XX-x0)/(_np.log(10.0)*_np.power(_np.power(XX-x0, 2.0)+0.25*_np.power(ss, 2.0), 2.0) )
+    return gvec
+
+def model_loglorentzian(XX, af=None, **kwargs):
+    """
+    A log-lorentzian with three free parameters:
+        XX - x - independent variable
+        af - magnitude, shift, width
+
+      f =  10.0*_np.log10( AA*0.5*ss/((XX-x0)^2+0.25*ss^2)/_np.pi )
+
+      f = 10*log10(A) - 10*log10(s) + 10*log10(0.5) - 10*log10(pi)
+        - 10*log10((x-xo)**2.0 + 0.25*ss**2.0 )
+
+    A log-lorentzian is a shifted log-parabola in x-s space that is centered at (xo,0)
+
+    If fitting with scaling, then the algebra necessary to unscale the problem
+    to original units is:
+
+       y-scaling: y' = (y-yo)/ys
+        (y-yo) / ys = 10*log10(a')-10*log10(c')+10*log10(0.5)-10*log10(pi)
+                    - 10*log10((x-b')**2.0 + 0.25*(c')**2.0 )
+
+        y = yo + ys*(10*log10(a')-10*log10(c')+10*log10(0.5)-10*log10(pi)
+                    - 10*log10((x-b')**2.0 + 0.25*(c')**2.0 ))
+                   group terms to make it easier
+               10*ln(a)/ln(10) = yo+10.0*ys*ln(a')/ln(10)
+                  ln(a) = ln(10)/10*yo+ys*ln(a')
+                     a = exp(ln(10)/10*yo+ys*ln(a') )
+                     b = b'
+                     c = c'
+
+       x-scaling: x' = (x-xo)/xs
+        y = yo + ys*(10*log10(a')-10*log10(c')+10*log10(0.5)-10*log10(pi)
+             - 10*log10(((x-xo-xs*b')**2.0 + 0.25*(xs*c')**2.0 ))/xs**2.0 )
+          = yo + ys*(10*log10(a')-10*log10(c')+10*log10(0.5)-10*log10(pi)
+             - 10*log10((x-xo-xs*b')**2.0 + 0.25*(xs*c')**2.0)
+             - 10*log10( xs**2.0 ) )
+
+                     a = exp(ln(10)/10*yo-2.0*ys*ln(xs)+ys*ln(a'))
+                     b = xs*b'+xo
+                     c = xs*c'
+
+    found in the info Structure
+    """
+    if af is None:        af = _np.asarray([1.0, 0.4, 0.05], dtype=_np.float64)    # end if
+
+    info = Struct()
+    info.Lbounds = _np.array([0.0, -_np.inf, 0.0], dtype=_np.float64)
+    info.Ubounds = _np.array([_np.inf, _np.inf, _np.inf], dtype=_np.float64)
+    info.fixed = _np.zeros( _np.shape(info.Lbounds), dtype=int)
+    info.af = _np.copy(af)
+    info.kwargs = kwargs
+
+    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
+        aout = _np.copy(ain)
+#        aout[0] = _np.exp( _np.log(10.0)*offset/10.0 - 2.0*slope*_np.log(xslope)+yslope*_np.log(aout[0]))
+#        aout[1] = xslope*aout[1]+xoffset
+#        aout[2] = xslope*aout[2]
+        return aout
+    info.unscaleaf = unscaleaf
+
+    if XX is None:
+        return info
+    # end if
+    prof = loglorentzian(XX, af)
+    gvec = partial_loglorentzian(XX, af)
+
+    info.prof = prof
+    info.gvec = gvec
+    info.dprofdx = deriv_loglorentzian(XX, af)
+    info.dgdx = partial_deriv_loglorentzian(XX, af)
+
+    info.func = lambda _x, _a: loglorentzian(_x, _a)
+    info.dfunc = lambda _x, _a: deriv_loglorentzian(_x, _a)
+    info.gfunc = lambda _x, _a: partial_loglorentzian(_x, _a)
+    info.dgfunc = lambda _x, _a: partial_deriv_loglorentzian(_x, _a)
+    return prof, gvec, info
+
 # ========================================================================== #
 # ========================================================================== #
 
@@ -349,45 +786,97 @@ def _parse_noshift(ain, model_order=2):
 
 def doppler(xdat, ain, model_order=2):
     a0, a1, a2 = _parse_noshift(ain, model_order=model_order)
-    prof = gaussian(xdat,af=a0)
+    prof = normal(xdat,af=a0)
     if model_order>0:
         prof += lorentzian(xdat, af=a1)
     if model_order>1:
-        prof += gaussian(xdat,af=a2)
+        prof += normal(xdat,af=a2)
     return prof
 
 def deriv_doppler(xdat, ain, model_order=2):
     a0, a1, a2 = _parse_noshift(ain, model_order=model_order)
-    prof = deriv_gaussian(xdat,af=a0)
+    prof = deriv_normal(xdat,af=a0)
     if model_order>0:
         prof += deriv_lorentzian(xdat, af=a1)
     if model_order>1:
-        prof += deriv_gaussian(xdat,af=a2)
+        prof += deriv_normal(xdat,af=a2)
     return prof
-#    return ( deriv_gaussian(xdat, af=a0)
-#            + deriv_lorentzian(xdat, af=a1)
-#            + deriv_gaussian(xdat, af=a2) )
 
 def partial_doppler(xdat, ain, model_order=2):
     a0, a1, a2 = _parse_noshift(ain, model_order=model_order)
-    gvec = partial_gaussian(xdat, af=a0)
+    gvec = partial_normal(xdat, af=a0)
     if model_order>0:
         gvec = _np.append(gvec, partial_lorentzian(xdat, af=a1), axis=0)
     if model_order>1:
-        gvec = _np.append(gvec, partial_gaussian(xdat, af=a2), axis=0)
+        gvec = _np.append(gvec, partial_normal(xdat, af=a2), axis=0)
     return gvec
 
 def partial_deriv_doppler(xdat, ain, model_order=2):
     a0, a1, a2 = _parse_noshift(ain, model_order=model_order)
-    gvec = partial_deriv_gaussian(xdat, af=a0)
+    gvec = partial_deriv_normal(xdat, af=a0)
     if model_order>0:
         gvec = _np.append(gvec, partial_deriv_lorentzian(xdat, af=a1), axis=0)
     if model_order>1:
-        gvec = _np.append(gvec, partial_deriv_gaussian(xdat, af=a2), axis=0)
+        gvec = _np.append(gvec, partial_deriv_normal(xdat, af=a2), axis=0)
     return gvec
+
+def _doppler_logdata(xdat, ain, model_order=2):
+    return 10.0*_np.log10(doppler(xdat, ain, model_order))
+
+def _deriv_doppler_logdata(xdat, ain, model_order=2):
+    """
+        f = 10*log10(y)
+        dfdx = 10.0/ln(10) d ln(y)/dx
+            d ln(y)/dx = 1/y * dydx
+    """
+    prof = doppler(xdat, ain, model_order)
+    deriv = deriv_doppler(xdat, ain, model_order)
+    return 10.0*deriv/(prof*_np.log(10.0))
+
+def _partial_doppler_logdata(xdat, ain, model_order=2):
+    """
+        f = 10*log10(y)
+        dfdx = 10.0/ln(10) d ln(y)/dx
+            d ln(y)/dx = 1/y * dydx
+        dfda = 10.0 / ln(10) * d ln(y)/da
+             = 10.0/ ln(10) *dyda/y
+    """
+    prof = doppler(xdat, ain, model_order)
+    gvec = partial_doppler(xdat, ain, model_order)
+    for ii in range(len(ain)):
+        gvec[ii,:] /= prof
+    # end for
+    return 10.0*gvec/_np.log(10.0)
+
+def _partial_deriv_doppler_logdata(xdat, ain, model_order=2):
+    """
+        f = 10*log10(y)
+        dfdx = 10.0/ln(10) d ln(y)/dx
+            d ln(y)/dx = 1/y * dydx
+        d2fdxda = d(df/dx)/da
+                = 10.0/ln(10) d(dy/dx/y)/da
+                = 10.0/ln(10) * ( 1/y*d2y/dxda - dyda/y^2 )
+    """
+    prof = doppler(xdat, ain, model_order)
+    gvec = partial_doppler(xdat, ain, model_order)
+    dgdx = partial_deriv_doppler(xdat, ain, model_order)
+    dlngdx = _np.zeros_like(gvec)
+    for ii in range(len(ain)):
+        dlngdx[ii,:] = dgdx[ii,:]/prof -gvec[ii,:]/(prof*prof)
+    # end for
+    return 10.0*dlngdx/_np.log(10)
 
 # fit model to the data
 def model_doppler(XX, af=None, **kwargs):
+    logdata = kwargs.setdefault('logdata', False)
+    if logdata:
+        return _model_doppler_logdata(XX, af=_np.copy(af), **kwargs)
+    else:
+        return _model_doppler_lindata(XX, af=_np.copy(af), **kwargs)
+    # end if
+# end def
+
+def _model_doppler_lindata(XX, af=None, **kwargs):
     """
          simple shifted gaussian - one doppler peak
          3 parameter fit
@@ -405,13 +894,13 @@ def model_doppler(XX, af=None, **kwargs):
     if af is None:
         af = _np.ones((9,), dtype=_np.float64)
         # frequencies are normalized to sampling frequency
-        af[0] = 1e-6       # amplitude of gaussian
-        af[1] = -0.04       # doppler shift of gaussian,
+        af[0] = 1.0e-4      # integral of gaussian, -30 dBm ~ 0.001 mW = 1e-6 uW
+        af[1] = -0.04       # (-0.4 MHz) doppler shift of gaussian,
         af[2] = 0.005       # doppler width of peak
-        af[3] = 1.0         # integrated value of lorentzian
+        af[3] = 1.0e-3      # integrated value of lorentzian
         af[4] = 0.0         # shift of lorentzian
         af[5] = 0.01        # width of lorentzian peak
-        af[6] = 0.5*_np.copy(af[0])   # amplitude of second gaussian
+        af[6] = 0.5*_np.copy(af[0])   # integral of second gaussian
         af[7] =-0.75*_np.copy(af[1])  # doppler shift of second gaussian
         af[8] = 2.0*_np.copy(af[2])   # width of doppler peak of second gaussian
 
@@ -431,13 +920,11 @@ def model_doppler(XX, af=None, **kwargs):
     a0, a1, a2 = _parse_noshift(af, model_order=model_order)
 #    af = _np.asarray(a0.tolist()+a1.tolist()+a2.tolist(), dtype=_np.float64)
 
-    i0 = model_gaussian(None, a0)
+    i0 = model_gaussian(None, a0, norm=True)
     info = Struct()
     info.af = _np.copy(i0.af)
     info.Lbounds = _np.array([0.0,-Fs/2, -Fs/2], dtype=_np.float64)
     info.Ubounds = _np.array([1.0, Fs/2, Fs/2], dtype=_np.float64)  # update this based on experience
-#    info.Lbounds = _np.copy(i0.Lbounds)
-#    info.Ubounds = _np.copy(i0.Ubounds)
     info.fixed = _np.zeros( _np.shape(info.Lbounds), dtype=int)
 
     if model_order>0:
@@ -449,15 +936,13 @@ def model_doppler(XX, af=None, **kwargs):
         info.af = _np.append(info.af, i1.af, axis=0)
         i1.Lbounds = _np.array([0.0,-Fs/2.0, -Fs/2.0], dtype=_np.float64)
         i1.Ubounds = _np.array([10.0, Fs/2.0, Fs/2.0], dtype=_np.float64)
-#        i1.Lbounds = _np.array([    0.0,-Fs/2.0, -Fs/10.0], dtype=_np.float64)
-#        i1.Ubounds = _np.array([_np.inf, Fs/2.0, Fs/10.0], dtype=_np.float64)
         info.Lbounds = _np.append(info.Lbounds, i1.Lbounds, axis=0)
         info.Ubounds = _np.append(info.Ubounds, i1.Ubounds, axis=0)
         info.fixed = _np.append(info.fixed, i1.fixed, axis=0)
     # end if
 
     if model_order>1:
-        i2 = model_gaussian(None, a2)
+        i2 = model_gaussian(None, a2, norm=True)
         info.af = _np.append(info.af, i2.af, axis=0)
         i2.Lbounds = _np.array([0.0,-Fs/2.0, -Fs/2.0], dtype=_np.float64)
         i2.Ubounds = _np.array([1.0, Fs/2.0, Fs/2.0], dtype=_np.float64)
@@ -497,6 +982,147 @@ def model_doppler(XX, af=None, **kwargs):
     return model, gvec, info
 # end def
 
+def _model_doppler_logdata(XX, af=None, **kwargs):
+    model_order = kwargs.setdefault('model_order', 0)
+    if XX is None:
+        info = _model_doppler_lindata(None, af=af, **kwargs)
+        return info
+    # end if
+    model, gvec, info = _model_doppler_lindata(XX, af=af, **kwargs)
+    af = info.af.copy()
+
+    # ===== #
+
+    model = _doppler_logdata(XX, af, model_order=model_order)
+    gvec = _partial_doppler_logdata(XX, af, model_order=model_order)
+
+    info.prof = model
+    info.gvec = gvec
+    info.dprofdx = _deriv_doppler_logdata(XX, af, model_order=model_order)
+    info.dgdx = _partial_deriv_doppler_logdata(XX, af, model_order=model_order)
+
+    info.func = lambda _x, _a: _doppler_logdata(_x, _a, model_order=model_order)
+    info.dfunc = lambda _x, _a: _deriv_doppler_logdata(_x, _a, model_order=model_order)
+    info.gfunc = lambda _x, _a: _partial_doppler_logdata(_x, _a, model_order=model_order)
+    info.dgfunc = lambda _x, _a: _partial_deriv_doppler_logdata(_x, _a, model_order=model_order)
+    return model, gvec, info
+
+#def _model_doppler_logdata(XX, af=None, **kwargs):
+#    """
+#         logarithm of shifted gaussian - one doppler peak (linear fit)
+#         3 parameter fit
+#           10*log10( modelspec.gaussian AA*_np.exp(-(XX-x0)**2/(2.0*ss**2)) )
+#         logarithm of shifted gaussian and centered lorentzian - one doppler peak and reflection
+#         6 parameter fit
+#          + 10*log10(modelspec.lorentzian AA*0.5*ss/((XX-x0)*(XX-x0)+0.25*ss*ss)/_np.pi)
+#         two shifted gaussians and centered lorentzian - one doppler peak and reflection
+#         9 parameter fit
+#          + 10*log10( modelspec.gaussian ... initialized with opposite shifts )
+#
+#    this was just a test for a kluge:  we know that log(a+b) != log(a) + log(b).
+#        although mathematically untrue, in practice it is pretty close
+#
+#        A lognormal approximation for a sum of lognormals by matching the
+#        first two moments is sometimes called a Fenton-Wilkinson approximation
+#            Wilkinson, R.I 1934 Bell Labs: sum( exp(N_i)) then log(S) approx N(mu, sigma^2)
+#
+#    """
+#    model_order = kwargs.setdefault('model_order', 0)
+#    Fs = kwargs.setdefault('Fs', None)  # default to normalized frequencies
+#    noshift = kwargs.setdefault('noshift', True)
+#    if af is None:
+#        af = _np.ones((9,), dtype=_np.float64)
+#        # frequencies are normalized to sampling frequency
+#        af[0] = -6       # amplitude of gaussian
+#        af[1] = -0.04       # doppler shift of gaussian,
+#        af[2] = 0.005       # doppler width of peak
+#        af[3] = -3         # integrated value of lorentzian
+#        af[4] = 0.0         # shift of lorentzian
+#        af[5] = 0.01        # width of lorentzian peak
+#        af[6] = -6          # amplitude of second gaussian
+#        af[7] =-0.75*_np.copy(af[1])  # doppler shift of second gaussian
+#        af[8] = 2.0*_np.copy(af[2])   # width of doppler peak of second gaussian
+#
+#        if Fs is not None:
+#            af[1] *= Fs;            af[2] *= Fs
+#            af[4] *= Fs;            af[5] *= Fs
+#            af[7] *= Fs;            af[8] *= Fs
+#        # end if
+#
+#        if model_order<2:
+#            af = af[:6]
+#        elif model_order<1:
+#            af = af[:3]
+#        # end if
+#    # end if
+#    if Fs is None:                  Fs = 1.0            # end if
+#    a0, a1, a2 = _parse_noshift(af, model_order=model_order)
+##    af = _np.asarray(a0.tolist()+a1.tolist()+a2.tolist(), dtype=_np.float64)
+#
+#    i0 = model_loggaussian(None, a0)
+#    info = Struct()
+#    info.af = _np.copy(i0.af)
+#    info.Lbounds = _np.array([-_np.inf,-Fs/2, -Fs/2], dtype=_np.float64)
+#    info.Ubounds = _np.array([10.0, Fs/2, Fs/2], dtype=_np.float64)  # update this based on experience
+##    info.Lbounds = _np.copy(i0.Lbounds)
+##    info.Ubounds = _np.copy(i0.Ubounds)
+#    info.fixed = _np.zeros( _np.shape(info.Lbounds), dtype=int)
+#
+#    if model_order>0:
+#        i1 = model_loglorentzian(None, a1)
+#        if noshift:
+#            i1.fixed[1] = int(1)
+#            i1.af[1] = 0.0
+#        # end if
+#        info.af = _np.append(info.af, i1.af, axis=0)
+#        i1.Lbounds = _np.array([-_np.inf,-Fs/2.0, -Fs/2.0], dtype=_np.float64)
+#        i1.Ubounds = _np.array([10.0, Fs/2.0, Fs/2.0], dtype=_np.float64)
+#        info.Lbounds = _np.append(info.Lbounds, i1.Lbounds, axis=0)
+#        info.Ubounds = _np.append(info.Ubounds, i1.Ubounds, axis=0)
+#        info.fixed = _np.append(info.fixed, i1.fixed, axis=0)
+#    # end if
+#
+#    if model_order>1:
+#        i2 = model_loggaussian(None, a2)
+#        info.af = _np.append(info.af, i2.af, axis=0)
+#        i2.Lbounds = _np.array([-_np.inf,-Fs/2.0, -Fs/2.0], dtype=_np.float64)
+#        i2.Ubounds = _np.array([10.0, Fs/2.0, Fs/2.0], dtype=_np.float64)
+#        info.Lbounds = _np.append(info.Lbounds, i2.Lbounds, axis=0)
+#        info.Ubounds = _np.append(info.Ubounds, i2.Ubounds, axis=0)
+#        info.fixed = _np.append(info.fixed, i2.fixed, axis=0)
+#
+#    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
+#        a0, a1, a2 = _parse_noshift(ain, model_order=model_order)
+#        aout = _np.copy(ain)
+#        aout = i0.unscaleaf(a0, slope, offset, xslope, xoffset)
+#        if model_order>0:
+#            aout = _np.append(aout, i1.unscaleaf(a1, slope, offset, xslope, xoffset), axis=0)
+#        if model_order>1:
+#            aout = _np.append(aout, i2.unscaleaf(a2, slope, offset, xslope, xoffset), axis=0)
+#        return aout
+#    info.unscaleaf = unscaleaf
+#
+#    if XX is None:
+#        return info
+#    # end if
+#
+#    # ===== #
+#
+#    model = _doppler_logdata(XX, af, model_order=model_order)
+#    gvec = _partial_doppler_logdata(XX, af, model_order=model_order)
+#
+#    info.prof = model
+#    info.gvec = gvec
+#    info.dprofdx = _deriv_doppler_logdata(XX, af, model_order=model_order)
+#    info.dgdx = _partial_deriv_doppler_logdata(XX, af, model_order=model_order)
+#
+#    info.func = lambda _x, _a: _doppler_logdata(_x, _a, model_order=model_order)
+#    info.dfunc = lambda _x, _a: _deriv_doppler_logdata(_x, _a, model_order=model_order)
+#    info.gfunc = lambda _x, _a: _partial_doppler_logdata(_x, _a, model_order=model_order)
+#    info.dgfunc = lambda _x, _a: _partial_deriv_doppler_logdata(_x, _a, model_order=model_order)
+#    return model, gvec, info
+## end def
+
 # =========================================================================== #
 
 
@@ -520,10 +1146,14 @@ def edgepower(XX, af):
     b = af[0]
     c = af[1]
     d = af[2]
-    prof = b+(1-b)*_np.power((1-_np.power(XX,c)), d)
-    if (XI>=1.0).any():
+    prof = b+(1-b)*_np.power((1-_np.power(_np.abs(XX),c)), d)
+    if (_np.abs(XI)>=1.0).any():
         # Linearly interpolate to along current trajectory from last valid point
-        prof = interp(XX, prof, None, XI )
+        xsort, _ = argsort(XX, iunsort=True)
+        isort, iunsort = argsort(XI, iunsort=True)
+
+        prof = interp(XX[xsort], prof[xsort], None, XI[isort] )  # TODO:  NAN'S COME FROM NON-UNIQUE REPEATED X
+        prof = prof[iunsort]
     # endif
     return prof
 
@@ -540,16 +1170,21 @@ def partial_edgepower(XX, af):
     d = af[2]
 
     gvec = _np.zeros((3,_np.size(XX)), dtype=_np.float64)
-    gvec[0,:] = 1.0 - _np.power(1-_np.power(XX,c),d)
-    gvec[1,:] = -1.0 * (1.0-b)*d*_np.power(XX,c)*_np.log(_np.abs(XX))*_np.power(1.0-_np.power(XX,c),d-1.0)
-    gvec[2,:] = -1.0*(b-1.0)*_np.power((1-_np.power(XX,c)), d)*_np.log(_np.abs(1.0-_np.power(XX,c)))
+    gvec[0,:] = 1.0 - _np.power(1-_np.power(_np.abs(XX),c),d)
+    gvec[1,:] = -1.0 * (1.0-b)*d*_np.power(_np.abs(XX),c)*_np.log(_np.abs(XX))*_np.power(1.0-_np.power(_np.abs(XX),c),d-1.0)
+    gvec[2,:] = -1.0*(b-1.0)*_np.power((1-_np.power(_np.abs(XX),c)), d)*_np.log(_np.abs(1.0-_np.power(_np.abs(XX),c)))
 
-    if (XI>=1).any():
+    if (_np.abs(XI)>=1).any():
 #        # Linearly interpolate to along current trajectory from last valid point
+        xsort, _ = argsort(XX, iunsort=True)
+        isort, iunsort = argsort(XI, iunsort=True)
+
+        gvec = interp(XX[xsort], gvec[:,xsort], None, XI[isort] )
+        gvec = gvec[:,iunsort]
 #        gvec = interp(XX, gvec, None, XI )
 
-        # Assume constant at edge
-        gvec = _np.append(gvec, _np.atleast_2d(gvec[:,-1]).T*_np.ones((1,len(XI)-len(XX)), dtype=_np.float64), axis=1)
+        # Assume constant at edge  # TODO:  GENERALIZE THIS FOR NEGATIVE GVEC ON HFS
+#        gvec = _np.append(gvec, _np.atleast_2d(gvec[:,-1]).T*_np.ones((1,len(XI)-len(XX)), dtype=_np.float64), axis=1)
 
         # NaN at edge
 #        gvec = _np.append(gvec, _np.nan*_np.atleast_2d(gvec[:,-1]).T*_np.ones((1,len(XI)-len(XX)), dtype=_np.float64), axis=1)
@@ -566,9 +1201,13 @@ def deriv_edgepower(XX, af):
     b = af[0]
     c = af[1]
     d = af[2]
-    dpdx = -1.0*(1-b)*c*d*_np.power(XX,c-1)*_np.power((1-_np.power(XX,c)), d-1)
-    if (XI>=1).any():
-        dpdx = interp(XX, dpdx, None, XI )
+    dpdx = -1.0*(1-b)*c*d*_np.power(_np.abs(XX),c-1)*_np.power((1-_np.power(_np.abs(XX),c)), d-1)
+    if (_np.abs(XI)>=1).any():
+        xsort, _ = argsort(XX, iunsort=True)
+        isort, iunsort = argsort(XI, iunsort=True)
+
+        dpdx = interp(XX[xsort], dpdx[xsort], None, XI[isort] )
+        dpdx = dpdx[iunsort]
     # endif
     return dpdx
 
@@ -585,20 +1224,26 @@ def partial_deriv_edgepower(XX, af):
     d = af[2]
 
     gvec = _np.zeros((3,_np.size(XX)), dtype=_np.float64)
-    gvec[0,:] = c*d*_np.power(XX,c-1.0)*_np.power(1.0-_np.power(XX,c),d-1.0)
+    gvec[0,:] = c*d*_np.power(_np.abs(XX),c-1.0)*_np.power(1.0-_np.power(_np.abs(XX),c),d-1.0)
     gvec[1,:] = (
-        -1.0*(1-b)*d*_np.power(XX,c-1.0)*_np.power(1.0-_np.power(XX,c), d-1.0)
-        - (1.0-b)*d*c*_np.power(XX,c-1.0)*_np.log(_np.abs(XX))*_np.power(1.0-_np.power(XX,c),d-1.0)
-        + (1.0-b)*(d-1.0)*d*c*_np.power(XX,2*c-1.0)*_np.log(_np.abs(XX))*_np.power(1.0-_np.power(XX,c),d-2.0)
+        -1.0*(1-b)*d*_np.power(_np.abs(XX),c-1.0)*_np.power(1.0-_np.power(_np.abs(XX),c), d-1.0)
+        - (1.0-b)*d*c*_np.power(_np.abs(XX),c-1.0)*_np.log(_np.abs(XX))*_np.power(1.0-_np.power(_np.abs(XX),c),d-1.0)
+        + (1.0-b)*(d-1.0)*d*c*_np.power(_np.abs(XX),2*c-1.0)*_np.log(_np.abs(XX))*_np.power(1.0-_np.power(_np.abs(XX),c),d-2.0)
         )
     gvec[2,:] = (
-        -1.0*(1.0-b)*c*_np.power(XX,c-1.0)*_np.power(1.0-_np.power(XX,c),d-1.0)
-        - (1.0-b)*c*d*_np.power(XX,c-1.0)*_np.power(1.0-_np.power(XX,c),d-1.0)*_np.log(_np.abs(1.0-_np.power(XX,c)))
+        -1.0*(1.0-b)*c*_np.power(_np.abs(XX),c-1.0)*_np.power(1.0-_np.power(_np.abs(XX),c),d-1.0)
+        - (1.0-b)*c*d*_np.power(_np.abs(XX),c-1.0)*_np.power(1.0-_np.power(_np.abs(XX),c),d-1.0)*_np.log(_np.abs(1.0-_np.power(_np.abs(XX),c)))
         )
-    if (XI>=1).any():
+    if (_np.abs(XI)>=1).any():
 #        gvec = interp(XX, gvec, None, XI )
-        # Assume constant at edge
-        gvec = _np.append(gvec, _np.atleast_2d(gvec[:,-1]).T*_np.ones((1,len(XI)-len(XX)), dtype=_np.float64), axis=1)
+        xsort, _ = argsort(XX, iunsort=True)
+        isort, iunsort = argsort(XI, iunsort=True)
+
+        gvec = interp(XX[xsort], gvec[:,xsort], None, XI[isort] )
+        gvec = gvec[:,iunsort]
+
+        # Assume constant at edge  # TODO:  GENERALIZE THIS!
+#        gvec = _np.append(gvec, _np.atleast_2d(gvec[:,-1]).T*_np.ones((1,len(XI)-len(XX)), dtype=_np.float64), axis=1)
 
         # NaN at edge
 #        gvec = _np.append(gvec, _np.nan*_np.atleast_2d(gvec[:,-1]).T*_np.ones((1,len(XI)-len(XX)), dtype=_np.float64), axis=1)
@@ -615,11 +1260,15 @@ def deriv2_edgepower(XX, af):
     b = af[0]
     c = af[1]
     d = af[2]
-    deriv = ((b-1)*(c-1)*c*d*_np.power(XX,c-2)*_np.power(1.0-_np.power(XX,c),d-1.0)
-     - (b-1.0)*_np.power(c,2.0)*(d-1.0)*d*_np.power(XX,2*c-2.0)*_np.power(1.0-_np.power(XX,c),d-2.0))
-    if (XI>=1).any():
+    deriv = ((b-1)*(c-1)*c*d*_np.power(_np.abs(XX),c-2)*_np.power(1.0-_np.power(_np.abs(XX),c),d-1.0)
+     - (b-1.0)*_np.power(c,2.0)*(d-1.0)*d*_np.power(_np.abs(XX),2*c-2.0)*_np.power(1.0-_np.power(_np.abs(XX),c),d-2.0))
+    if (_np.abs(XI)>=1).any():
         # Linearly interpolate derivative along its current trajectory from last valid point
-        deriv = interp(XX, deriv, None, XI )
+#        deriv = interp(XX, deriv, None, XI )
+        xsort, _ = argsort(XX, iunsort=True)
+        isort, iunsort = argsort(XI, iunsort=True)
+        deriv = interp(XX[xsort], deriv[xsort], None, XI[isort] )
+        deriv = deriv[iunsort]
     # endif
     return deriv
 
@@ -637,29 +1286,33 @@ def partial_deriv2_edgepower(XX, af):
 
     gvec = _np.zeros((3,_np.size(XX)), dtype=_np.float64)
     gvec[0,:] = (
-        (c-1.0)*c*d*_np.power(XX,c-2.0)*_np.power(1.0-_np.power(XX,c),d-1.0)
-      - _np.power(c, 2.0)*(d-1.0)*d*_np.power(XX, 2*c-2.0)*_np.power(1.0-_np.power(XX,c), d-2.0)
+        (c-1.0)*c*d*_np.power(_np.abs(XX),c-2.0)*_np.power(1.0-_np.power(_np.abs(XX),c),d-1.0)
+      - _np.power(c, 2.0)*(d-1.0)*d*_np.power(_np.abs(XX), 2*c-2.0)*_np.power(1.0-_np.power(_np.abs(XX),c), d-2.0)
       )
     gvec[1,:] = (
-          (b-1.0)*d*(c-1.0)*_np.power(XX,c-2.0)*_np.power(1.0-_np.power(XX,c),d-1.0)
-        + (b-1.0)*d*c*_np.power(XX,c-2)*_np.power(1.0-_np.power(XX,c),d-1.0)
-        + (b-1.0)*d*(c-1.0)*c*_np.power(XX,c-2.0)*_np.log(_np.abs(XX))*_np.power(1.0-_np.power(XX,c),d-1.0)
-        + (b-1.0)*(d-2.0)*(d-1.0)*d*_np.power(c,2.0)*_np.power(XX,3*c-2.0)*_np.log(_np.abs(XX))*_np.power(1.0-_np.power(XX,c),d-3.0)
-        - 2.0*(b-1.0)*(d-1.0)*d*_np.power(c,2.0)*_np.power(XX,2*c-2.0)*_np.log(_np.abs(XX))*_np.power(1.0-_np.power(XX,c),d-2.0)
-        - 2.0*(b-1.0)*(d-1.0)*d*c*_np.power(XX,2*c-2.0)*_np.power(1-_np.power(XX,c),d-2.0)
-        - (b-1.0)*(d-1.0)*d*(c-1.0)*c*_np.power(XX,2*c-2.0)*_np.log(_np.abs(XX))*_np.power(1 - _np.power(XX,c),d-2.0)
+          (b-1.0)*d*(c-1.0)*_np.power(_np.abs(XX),c-2.0)*_np.power(1.0-_np.power(_np.abs(XX),c),d-1.0)
+        + (b-1.0)*d*c*_np.power(_np.abs(XX),c-2)*_np.power(1.0-_np.power(_np.abs(XX),c),d-1.0)
+        + (b-1.0)*d*(c-1.0)*c*_np.power(_np.abs(XX),c-2.0)*_np.log(_np.abs(XX))*_np.power(1.0-_np.power(_np.abs(XX),c),d-1.0)
+        + (b-1.0)*(d-2.0)*(d-1.0)*d*_np.power(c,2.0)*_np.power(_np.abs(XX),3*c-2.0)*_np.log(_np.abs(XX))*_np.power(1.0-_np.power(_np.abs(XX),c),d-3.0)
+        - 2.0*(b-1.0)*(d-1.0)*d*_np.power(c,2.0)*_np.power(_np.abs(XX),2*c-2.0)*_np.log(_np.abs(XX))*_np.power(1.0-_np.power(_np.abs(XX),c),d-2.0)
+        - 2.0*(b-1.0)*(d-1.0)*d*c*_np.power(_np.abs(XX),2*c-2.0)*_np.power(1-_np.power(_np.abs(XX),c),d-2.0)
+        - (b-1.0)*(d-1.0)*d*(c-1.0)*c*_np.power(_np.abs(XX),2*c-2.0)*_np.log(_np.abs(XX))*_np.power(1 - _np.power(_np.abs(XX),c),d-2.0)
         )
     gvec[2,:] = (
-        -1.0*(b-1.0)*_np.power(c,2.0)*(d-1.0)*_np.power(XX,2*c-2.0)*_np.power(1.0-_np.power(XX,c),d-2.0)
-        - (b-1.0)*_np.power(c,2.0)*d*_np.power(XX,2*c-2.0)*_np.power(1.0-_np.power(XX,2),d-2.0)
-        - (b-1.0)*_np.power(c,2.0)*(d-1.0)*d*_np.power(XX,2*c-2.0)*_np.power(1.0-_np.power(XX,c),d-2.0)*_np.log(_np.abs(1.0-_np.power(XX,c)))
-        + (b-1.0)*(c-1.0)*c*_np.power(XX,c-2.0)*_np.power(1.0-_np.power(XX,c),d-1.0)
-        + (b-1.0)*(c-1.0)*c*d*_np.power(XX,c-2.0)*_np.power(1.0-_np.power(XX,c),d-1.0)*_np.log(_np.abs(1-_np.power(XX,c)))
+        -1.0*(b-1.0)*_np.power(c,2.0)*(d-1.0)*_np.power(_np.abs(XX),2*c-2.0)*_np.power(1.0-_np.power(_np.abs(XX),c),d-2.0)
+        - (b-1.0)*_np.power(c,2.0)*d*_np.power(_np.abs(XX),2*c-2.0)*_np.power(1.0-_np.power(_np.abs(XX),2),d-2.0)
+        - (b-1.0)*_np.power(c,2.0)*(d-1.0)*d*_np.power(_np.abs(XX),2*c-2.0)*_np.power(1.0-_np.power(_np.abs(XX),c),d-2.0)*_np.log(_np.abs(1.0-_np.power(_np.abs(XX),c)))
+        + (b-1.0)*(c-1.0)*c*_np.power(_np.abs(XX),c-2.0)*_np.power(1.0-_np.power(_np.abs(XX),c),d-1.0)
+        + (b-1.0)*(c-1.0)*c*d*_np.power(_np.abs(XX),c-2.0)*_np.power(1.0-_np.power(_np.abs(XX),c),d-1.0)*_np.log(_np.abs(1-_np.power(_np.abs(XX),c)))
         )
-    if (XI>=1).any():
+    if (_np.abs(XI)>=1).any():
 #        gvec = interp(XX, gvec, None, XI )
-        # Assume constant at edge
-        gvec = _np.append(gvec, _np.atleast_2d(gvec[:,-1]).T*_np.ones((1,len(XI)-len(XX)), dtype=_np.float64), axis=1)
+        # Assume constant at edge  # TODO: GENERALIZE THIS FOR HFS
+#        gvec = _np.append(gvec, _np.atleast_2d(gvec[:,-1]).T*_np.ones((1,len(XI)-len(XX)), dtype=_np.float64), axis=1)
+        xsort, _ = argsort(XX, iunsort=True)
+        isort, iunsort = argsort(XI, iunsort=True)
+        gvec = interp(XX[xsort], gvec[:,xsort], None, XI[isort] )
+        gvec = gvec[:,iunsort]
 
         # NaN at edge
 #        gvec = _np.append(gvec, _np.nan*_np.atleast_2d(gvec[:,-1]).T*_np.ones((1,len(XI)-len(XX)), dtype=_np.float64), axis=1)
@@ -736,6 +1389,10 @@ def model_edgepower(XX, af=None, **kwargs):
 #    XX = XX[_np.abs(XX)<1]
 #    if (XI>=1).any():
 #        # Linearly interpolate derivative to zero from last valid point
+#        xsort, _ = argsort(XX, iunsort=True)
+#        isort, iunsort = argsort(XI, iunsort=True)
+#        deriv = interp(XX[xsort], deriv[xsort], None, XI[isort] )
+#        deriv = deriv[iunsort]
 #        prof = interp(XX[XX<1], prof, None, XX )
 #        gvec = interp(XX[XX<1], gvec, None, XX )
 #        info.dprofdx = interp(XX[XX<1], info.dprofdx, None, XX )
@@ -1085,10 +1742,10 @@ def deriv2_qparab(XX, aa):
 #    XX = XX[_np.abs(XX)<1]
     aa = _np.asarray(aa,dtype=_np.float64)
 
-    d2pdx2 = aa[3]*(aa[2]**2.0)*(aa[3]-1.0)*(1.0+aa[4]-aa[1])*(XX**(2.*aa[2]-2.0))*(1-XX**aa[2])**(aa[3]-2.0)
-    d2pdx2 -= (aa[2]-1.0)*aa[2]*aa[3]*(1.0+aa[4]-aa[1])*(XX**(aa[2]-2.0))*(1-XX**aa[2])**(aa[3]-1.0)
-    d2pdx2 += (2.0*aa[4]*_np.exp(-XX**2.0/(aa[5]**2.0)))/(aa[5]**2.0)
-    d2pdx2 -= (4*aa[4]*(XX**2.0)*_np.exp(-XX**2.0/(aa[5]**2.0)))/(aa[5]**4.0)
+    d2pdx2 = aa[3]*(aa[2]**2.0)*(aa[3]-1.0)*(1.0+aa[4]-aa[1])*_np.power(_np.abs(XX), 2.*aa[2]-2.0)*(1-_np.power(_np.abs(XX),aa[2]))**(aa[3]-2.0)
+    d2pdx2 -= (aa[2]-1.0)*aa[2]*aa[3]*(1.0+aa[4]-aa[1])*_np.power(_np.abs(XX), aa[2]-2.0)*_np.power(1-_np.power(_np.abs(XX), aa[2]), aa[3]-1.0)
+    d2pdx2 += (2.0*aa[4]*_np.exp(-_np.power(XX,2.0)/_np.power(aa[5], 2.0)))/_np.power(aa[5], 2.0)
+    d2pdx2 -= (4*aa[4]*_np.power(XX, 2.0)*_np.exp(-_np.power(XX, 2.0)/_np.power(aa[5], 2.0)))/_np.power(aa[5], 4.0)
     d2pdx2 *= aa[0]
     return d2pdx2
 # end def derive_qparab
@@ -1121,13 +1778,13 @@ def partial_deriv2_qparab(XX, aa):
 
     gvec = _np.zeros( (6,_np.size(XX)), dtype=_np.float64)
     gvec[0,:] = deriv2_qparab(XX, aa) / Y0
-    gvec[1,:] = -p*q*Y0*(XX**(p-2.0))*(1.0-XX**p)**(q-2.0)*(p*(q*(XX**p)-1.0)-XX**p+1.0)
-    gvec[2,:] = p*_np.log(_np.abs(XX))*(p*((q**2.0)*(XX**(2.0*p))-3.0*q*(XX**p)+XX**p+1.0)-(XX**p-1.0)*(q*XX**p-1.0))
-    gvec[2,:] += (XX**p-1.0)*(2.0*p*(q*(XX**p)-1.0)-XX**p+1.0)
-    gvec[2,:] *= q*Y0*(g-h-1.0)*(XX**(p-2.0))*((1.0-XX**p)**(q-3.0))
-    gvec[3,:] = p*Y0*(-(g-h-1.0))*(XX**(p-2.0))*((1.0-XX**p)**(q-2.0))*(p*(2.0*q*XX**p-1.0)+q*(p*(q*XX**p-1.0)-XX**p+1.0)*_np.log(_np.abs(1.0-XX**p))-XX**p+1.0)
-    gvec[4,:] = Y0*(p*q*(XX**(p-2.0))*((1.0-XX**p)**(q-2.0))*(p*(q*XX**p-1.0)-XX**p+1.0)+(2.0*_np.exp(-XX**2.0/w**2.0)*(w**2.0-2.0*XX**2.0))/w**4.0)
-    gvec[5,:] = -(4.0*h*Y0*_np.exp(-XX**2.0/w**2.0)*(w**4.0-5*w**2.0*XX**2.0+2.0*XX**4.0))/w**7.0
+    gvec[1,:] = -p*q*Y0*_np.power(_np.abs(XX), p-2.0)*_np.power(1.0-_np.power(_np.abs(XX), p), q-2.0)*(p*(q*_np.power(_np.abs(XX), p)-1.0)-_np.power(XX, p)+1.0)
+    gvec[2,:] = p*_np.log(_np.abs(XX))*(p*(_np.power(q, 2.0)*_np.power(_np.abs(XX), 2.0*p)-3.0*q*_np.power(_np.abs(XX), p)+_np.power(_np.abs(XX), p)+1.0)-(_np.power(XX, p)-1.0)*(q*_np.power(_np.abs(XX), p)-1.0))
+    gvec[2,:] += (_np.power(_np.abs(XX), p)-1.0)*(2.0*p*(q*_np.power(_np.abs(XX), p)-1.0)-_np.power(_np.abs(XX), p)+1.0)
+    gvec[2,:] *= q*Y0*(g-h-1.0)*_np.power(_np.abs(XX), p-2.0)*(_np.power(1.0-_np.power(_np.abs(XX), p), q-3.0))
+    gvec[3,:] = p*Y0*(-(g-h-1.0))*_np.power(_np.abs(XX), p-2.0)*_np.power(1.0-_np.power(_np.abs(XX), p), q-2.0)*(p*(2.0*q*_np.power(_np.abs(XX), p)-1.0)+q*(p*(q*_np.power(_np.abs(XX), p)-1.0)-_np.power(_np.abs(XX), p)+1.0)*_np.log(_np.abs(1.0-_np.power(_np.abs(XX)**p)))-_np.power(_np.abs(XX), p)+1.0)
+    gvec[4,:] = Y0*(p*q*_np.power(_np.abs(XX), p-2.0)*_np.power(1.0-_np.power(_np.abs(XX), p), q-2.0)*(p*(q*_np.power(_np.abs(XX), p)-1.0)-_np.power(_np.abs(XX), p)+1.0)+(2.0*_np.exp(-_np.power(XX, 2.0)/_np.power(w, 2.0))*(_np.power(w, 2.0)-2.0*_np.power(_np.abs(XX), 2.0)))/_np.power(w, 4.0))
+    gvec[5,:] = -(4.0*h*Y0*_np.exp(-_np.power(XX, 2.0)/_np.power(w, 2.0))*(_np.power(w, 4.0)-5*_np.power(w, 2.0)*_np.power(_np.abs(XX), 2.0)+2.0*_np.power(_np.abs(XX), 4.0)))/_np.power(w, 7.0)
 
     return gvec
 # end def partial_deriv2_qparab
@@ -1135,12 +1792,68 @@ def partial_deriv2_qparab(XX, aa):
 
 def model_qparab(XX, af=None, **kwargs):
     """
+    Y/Y0 = aa[1]-aa[4]+(1-aa[1]+aa[4])*(1-XX^aa[2])^aa[3]+aa[4]*(1-exp(-XX^2/aa[5]^2))
+        XX - r/a
+
+    aa[0] - Y0 - function value on-axis
+    aa[1] - gg - Y1/Y0 - function value at edge over core
+    aa[2],aa[3]-  pp, qq - power scaling parameters
+    aa[4],aa[5]-  hh, ww - hole depth and width
+
         b+(1-b)*(1-XX^c)^d
     {x element R: (d>0 and c=0 and x>0) or (d>0 and x=1)
             or (c>0 and 0<=x<1) or (c<0 and x>1) }
         nohollow = True
         af = _np.hstack((af,0.0))
         af = _np.hstack((af,1.0))
+
+        Y0 = core
+        YO*aa[1] = edge
+
+    rescaling: y'=(y-yo)/ys
+        y' = a0'*( a1'-a4'+(1-a1'+a4')*(1-x^a2')^a3' + a4'*(1-exp(x^2/a5'^2)))
+           = a0'*a1'-a0'*a4' + a0'*(1-a1'+a4')*(...) + a0'*a4'*(...)
+           = -a4' + (1+a4')*(...) + a4'*(...)
+
+        y = yo+a0'*(...)
+            by inspection
+             (1)    a0*a1-a0*a4 = yo+a0'*a1'-a0'*a4'
+
+        and  (2)   a0*(1-a1+a4) = a0'*(1-a1'+a4')
+                 a0-a1*a0+a0*a4 = a0'-a0'*a1'+a0'*a4'
+        and  (3)          a0*a4 = a0'*a4'
+
+                use (3) in (1):  a0*a1 = yo+a0'*a1'
+                    (3) in (2):  a0-a1*a0 = a0'-a0'*a1' ->
+                                a0*(1-a1) = a0'*(1-a1')
+
+              a0 = a0'*(1-a1)/(1-a1') = (yo+a0'*a1')/a1
+               a0'*(1-a1)/(1-a1') = (yo+a0'*a1')/a1
+                    a0'*(1-a1)*a1 = (1-a1')*(yo+a0'*a1')
+                    a1-a1^2 = (1-a1')*(yo/a0'+a1')
+                    a1-a1^2 = yo/a0'+a1'-yo*a1'/a0'-a1'^2
+
+                        a1 = yo/a0' + a1' - yo*a1'/a0'
+                        a0 = a0'*(1-a1)/(1-a1')
+                        a4 = a0'*a4'/a0
+
+    rescaling: x'=(x-xo)/xs
+        is not possible because of the non-linearities in the x-functions
+            (1-x^a2)^a3 = (1-(x-xo)^a2'/xs^a2')^a3'
+
+      and   exp(x^2/a5^2) = exp((x-xo)^2/(xs*a5')^2)
+            exp(x/a5) = exp((x-xo)/(xs*a5'))
+                x/a5 = (x-xo)/(xs*a5')
+                x*xs*a5' = x*a5-xo*a5
+                independence of x means that x*(xs*a5'-a5) = 0, a5 = xs*a5'
+                but x*xs*a5' = x*xs*a5'-xo*a5 requires that xo == 0
+
+            (1-x^a2)^a3 = (1-x^a2'/xs^a2')^a3'
+            a3*ln(1-x^a2) = a3'*ln(1-x^a2'/xs^a2')
+                assume a3 == a3'
+                x^a2 = x^a2'/xs^a2'
+                a2*ln(x) = a2'*ln(x)-a2'*ln(xs)
+                    a2 = a2'*(1-ln(xs)/ln(x))  ... only works if xs = 1.0
     """
     info = kwargs.setdefault('info', Struct())
     nohollow = kwargs.pop('nohollow', False)
@@ -1168,13 +1881,23 @@ def model_qparab(XX, af=None, **kwargs):
     info.kwargs = kwargs
 
     def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
+        """
+        a1 = yo/a0' + a1' - yo*a1'/a0'
+        a0 = a0'*(1-a1)/(1-a1')
+        a4 = a0'*a4'/a0
+        """
         aout = _np.copy(ain)
+#        aout[1] = offset/ain[0] + ain[1] - offset*ain[1]/ain[0]
+#        aout[0] = ain[0]*(1-aout[1])/(1-ain[1])
+#        aout[4] = ain[0]*ain[4]/aout[0]
         return aout
     info.unscaleaf = unscaleaf
 
     if XX is None:
         return info
 
+    info.XX = _np.copy(XX)
+#    XX = _np.abs(XX)
     prof = qparab(XX, af)
     gvec = partial_qparab(XX, af)
     info.dprofdx = deriv_qparab(XX, af)
@@ -1184,6 +1907,10 @@ def model_qparab(XX, af=None, **kwargs):
 #    XI = _np.copy(XX)
 #    if (XI>=1).any():
 #        # Linearly interpolate derivative to zero from last valid point
+#        xsort, _ = argsort(XX, iunsort=True)
+#        isort, iunsort = argsort(XI, iunsort=True)
+#        deriv = interp(XX[xsort], deriv[xsort], None, XI[isort] )
+#        deriv = deriv[iunsort]
 #        prof = interp(XX[XX<1], prof, None, XX )
 #        gvec = interp(XX[XX<1], gvec, None, XX )
 #        info.dprofdx = interp(XX[XX<1], info.dprofdx, None, XX )
@@ -1192,6 +1919,8 @@ def model_qparab(XX, af=None, **kwargs):
     info.prof = prof
     info.gvec = gvec
 
+    info.model = model_qparab
+#    info.model = lambda _x, _a: model_qparab(_x, _a, **kwargs)
     info.func = lambda _x, _a: qparab(_x, _a)
     info.dfunc = lambda _x, _a: deriv_qparab(_x, _a)
     info.gfunc = lambda _x, _a: partial_qparab(_x, _a)
@@ -1994,26 +2723,41 @@ def flattop(XX, af):
     A flat-top plasma parameter profile with three free parameters:
         a, b, c
     prof ~ f(x) = a / (1 + (x/b)^c)
+
     """
     XX = clean_XX(XX)
 #    XI = _np.copy(XX)
 #    XX = XX[_np.abs(XX)<1]
-    temp = (XX/af[1])**af[2]
+    temp = _np.power(XX/af[1], af[2])
     return af[0] / (1.0 + temp)
 
 def deriv_flattop(XX, af):
+    """
+    prof ~ f(x) = a / (1 + (x/b)^c)
+    dfdx = -1*c*x^(c-1)*b^-c* a/(1+(x/b)^c)^2
+         = -a*c*(x/b)^c/(x*(1+(x/b)^c)^2)
+    """
     XX = clean_XX(XX)
 #    XI = _np.copy(XX)
 #    XX = XX[_np.abs(XX)<1]
-    temp = (XX/af[1])**af[2]
+    temp = _np.power(XX/af[1], af[2])
     return -1.0*af[0]*af[2]*temp/(XX*(1.0+temp)**2.0)
 
 def partial_flattop(XX, af):
+    """
+    prof ~ f(x) = a / (1 + (x/b)^c)
+    dfdx = -1*c*x^(c-1)*b^-c* a/(1+(x/b)^c)^2
+         = -a*c*(x/b)^c/(x*(1+(x/b)^c)^2)
+
+    dfda = 1.0/(1+_np.power(x/b, c))
+    dfdb = a*c*(x/b)^c/(b*(1+(x/b)^c)^2)            # check math
+    dfdc = a*_np.log(x/b)*(x/b)^c / (1+(x/b)^c)^2   # check math
+    """
     XX = clean_XX(XX)
 #    XI = _np.copy(XX)
 #    XX = XX[_np.abs(XX)<1]
     nx = len(XX)
-    temp = (XX/af[1])**af[2]
+    temp = _np.power(XX/af[1], af[2])
     prof = flattop(XX, af)
 
     gvec = _np.zeros((3, nx), dtype=_np.float64)
@@ -2023,19 +2767,33 @@ def partial_flattop(XX, af):
     return gvec
 
 def partial_deriv_flattop(XX, af):
+    """
+    prof ~ f(x) = a / (1 + (x/b)^c)
+    dfdx = -1*c*x^(c-1)*b^-c* a/(1+(x/b)^c)^2
+         = -a*c*(x/b)^c/(x*(1+(x/b)^c)^2)
+
+    dfda = 1.0/(1+_np.power(x/b, c))
+    dfdb = a*c*(x/b)^c/(b*(1+(x/b)^c)^2)            # check math
+    dfdc = a*_np.log(x/b)*(x/b)^c / (1+(x/b)^c)^2   # check math
+
+    d2fdxda
+    d2fdxdb
+    d2fdxdc
+    """
     XX = clean_XX(XX)
 #    XI = _np.copy(XX)
 #    XX = XX[_np.abs(XX)<1]
     nx = len(XX)
-    temp = (XX/af[1])**af[2]
+    temp = _np.power(XX/af[1], af[2])
     prof = flattop(XX, af)
+    dprofdx = deriv_flattop(XX, af)
 
     dgdx = _np.zeros((3, nx), dtype=_np.float64)
-    dgdx[0, :] = info.dprofddx / af[0]
-    dgdx[1, :] = prof * info.dprofdx * (XX/temp) * (af[2]/af[0]) * (temp-1.0) / (af[1]*af[1])
-    dgdx[2, :] = info.dprofdx/af[2]
-    dgdx[2, :] += info.dprofdx*_np.log(_np.abs(XX/af[1]))
-    dgdx[2, :] -= 2.0*(info.dprofdx**2.0)*(_np.log(_np.abs(XX/af[1]))/prof)
+    dgdx[0, :] = dprofdx / af[0]
+    dgdx[1, :] = prof * dprofdx * (XX/temp) * (af[2]/af[0]) * (temp-1.0) / (af[1]*af[1])
+    dgdx[2, :] = dprofdx/af[2]
+    dgdx[2, :] += dprofdx*_np.log(_np.abs(XX/af[1]))
+    dgdx[2, :] -= 2.0*(dprofdx**2.0)*(_np.log(_np.abs(XX/af[1]))/prof)
     return dgdx
 
 def model_flattop(XX, af, **kwargs):
@@ -2905,7 +3663,7 @@ def rescale_problem(pdat=0, vdat=0, info=None, nargout=1):
 
         if hasattr(info,'prof'):
             info.prof = slope*info.prof+offset
-            info.varp = (slope**2.0)*info.varp
+            info.varprof = (slope**2.0)*info.varprof
         # end if
 
 #        info.af = info.unscaleaf(info.af, info.slope, info.offset, info.xslope)
