@@ -3102,7 +3102,7 @@ def model_2power(XX, af=None, **kwargs):
 
     info.prof = prof
     info.gvec = gvec
-    info.dprofdx *= deriv_2power(XX, af)
+    info.dprofdx = deriv_2power(XX, af)
     info.dgdx = partial_deriv_2power(XX, af)
 
     info.func = lambda _x, _a: _2power(_x, _a)
