@@ -350,7 +350,7 @@ def model_gaussian(XX, af=None, **kwargs):
              +'Remember the offset is now included in the models!')
         return aout
     info.unscaleaf = unscaleaf
-    offset = 0.0 if not hasattr('_secretoffset',info) else info._secretoffset    # end if
+    offset = 0.0 if not hasattr(info, '_secretoffset') else info._secretoffset    # end if
     if XX is None:
         return info
     # end if
@@ -513,7 +513,7 @@ def model_loggaussian(XX, af=None, **kwargs):
         ain = _checkbounds(ain, LB=LB, UB=UB)
 
         dat = _np.copy(dat)
-        if (dat<0.0).any() dat[dat<0] = min((1e-10, 1e-3*_np.min(dat[dat>0]))) # end if
+        if (dat<0.0).any():  dat[dat<0] = min((1e-10, 1e-3*_np.min(dat[dat>0]))) # end if
         return dat, ain
     info.checkbounds = checkbounds
     def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
@@ -632,7 +632,7 @@ def model_lorentzian(XX, af=None, **kwargs):
              +'Remember the offset is now included in the models!')
         return aout
     info.unscaleaf = unscaleaf
-    offset = 0.0 if not hasattr('_secretoffset',info) else info._secretoffset    # end if
+    offset = 0.0 if not hasattr(info, '_secretoffset') else info._secretoffset    # end if
     if XX is None:
         return info
     # end if
@@ -785,7 +785,7 @@ def model_loglorentzian(XX, af=None, **kwargs):
         ain = _checkbounds(ain, LB=LB, UB=UB)
 
         dat = _np.copy(dat)
-        if (dat<0.0).any() dat[dat<0] = min((1e-10, 1e-3*_np.min(dat[dat>0]))) # end if
+        if (dat<0.0).any(): dat[dat<0] = min((1e-10, 1e-3*_np.min(dat[dat>0]))) # end if
         return dat, ain
     info.checkbounds = checkbounds
     def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
@@ -1006,17 +1006,17 @@ def _model_doppler_lindata(XX, af=None, **kwargs):
     def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
         a0, a1, a2 = _parse_noshift(ain, model_order=model_order)
         aout = _np.copy(ain)
-        aout = i0.unscaleaf(a0, slope, offset=0.0, xslope, xoffset)
+        aout = i0.unscaleaf(a0, slope, offset=0.0, xslope=1.0, xoffset=0.0)
         if model_order>0:
-            aout = _np.append(aout, i1.unscaleaf(a1, slope, offset=0.0, xslope, xoffset), axis=0)
+            aout = _np.append(aout, i1.unscaleaf(a1, slope, offset=0.0, xslope=xslope, xoffset=xoffset), axis=0)
         if model_order>1:
-            aout = _np.append(aout, i2.unscaleaf(a2, slope, offset=0.0, xslope, xoffset), axis=0)
+            aout = _np.append(aout, i2.unscaleaf(a2, slope, offset=0.0, xslope=xslope, xoffset=xoffset), axis=0)
         info._secretoffset = offset
         print('Data offsets do not work with the lorentzian/normal models:\n'
              +'Remember the offset is now included in the model calls!')
         return aout
     info.unscaleaf = unscaleaf
-    offset = 0.0 if not hasattr('_secretoffset',info) else info._secretoffset    # end if
+    offset = 0.0 if not hasattr(info, '_secretoffset') else info._secretoffset    # end if
     if XX is None:
         return info
     # end if
@@ -1056,7 +1056,7 @@ def _model_doppler_logdata(XX, af=None, **kwargs):
         ain = _checkbounds(ain, LB=LB, UB=UB)
 
         dat = _np.copy(dat)
-        if (dat<0.0).any() dat[dat<0] = min((1e-10, 1e-3*_np.min(dat[dat>0]))) # end if
+        if (dat<0.0).any(): dat[dat<0] = min((1e-10, 1e-3*_np.min(dat[dat>0]))) # end if
         return dat, ain
     info.checkbounds = checkbounds
     def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):  # check this ... leaving noshift to user
@@ -1523,7 +1523,7 @@ def _model_doppler_logdata(XX, af=None, **kwargs):
 
 # ========================================================================== #
 
-def _twopower_base(XX, af)
+def _twopower_base(XX, af):
     """
         f = (1.0 - x**c)**d
     non-trival domain:  c>0 and 0<=x<1  or   c<0 and x>1
@@ -1615,6 +1615,20 @@ def twopower(XX, af):
     a, b, c, d = tuple(af)
     return (1.0-b)*_twopower(XX, [a, c, d]) + a*b
 
+#def _2power(XX, af):
+#    """
+#     f(x) = (Core-Edge)*(1-x^pow1)^pow2 + Edge
+#        (a-b)*(1- x^c)^d + b
+#    """
+#    XX = clean_XX(XX)
+##    XI = _np.copy(XX)
+##    XX = XX[_np.abs(XX)<1]
+#    a = af[0]
+#    b = af[1]
+#    c = af[2]
+#    d = af[3]
+#    return (a-b)*_np.power(1.0-_np.power(XX, c), d) + b
+
 def deriv_twopower(XX, af):
     """
     f/a = (1-b)*(1-x^c)^d + b
@@ -1625,6 +1639,25 @@ def deriv_twopower(XX, af):
     a, b, c, d = tuple(af)
     return (1.0-b)*_deriv_twopower(XX, [a, c, d])
 
+#def deriv_2power(XX, af):
+#    """
+#        (a-b)*(1- x^c)^d + b
+#
+#
+#                   d(b^x) = b^x *ln(b)
+#     dfdx = -(a0-a1)*a2*a3*x^(a2-1)*(1-x^a2)^(a3-1)
+#    """
+#    XX = clean_XX(XX)
+##    XI = _np.copy(XX)
+##    XX = XX[_np.abs(XX)<1]
+#    a = af[0]
+#    b = af[1]
+#    c = af[2]
+#    d = af[3]
+##    dprofdx = -1.0*(a-b)*c*d*_np.power(XX, c-1.0)
+##    dprofdx *= _np.power(1.0-_np.power(XX, c), d-1.0)
+#    return -1.0*(a-b)*c*d*_np.power(XX, c-1.0)*_np.power(1.0-_np.power(XX, c), d-1.0)
+#
 def partial_twopower(XX, af):
     """
     f/a = (1-b)*(1-x^c)^d + b
@@ -1647,6 +1680,27 @@ def partial_twopower(XX, af):
     gvec[2, :] = -d*_np.log(_np.abs(XX))*_np.power(_np.abs(XX), c)*twopower(XX, [a, b, c, d-1.0])
     gvec[3, :] = (1.0-b)*_twopower(XX, [a, c, d])*_np.log(_np.abs(_twopower(XX, [1.0, c, 1.0])))
     return gvec
+
+#def partial_2power(XX, af):
+#    """
+#     dfda0 = (1-x^a2)^a3
+#     dfda1 = 1-(1-x^a2)^a3 = 1-dfda0
+#     dfda2 = -(a0-a1)*(ln(x)*x^a2)*a3*(1-x^a2)^(a3-1)
+#     dfda3 = (a0-a1)*(1-x^a2)^a3*ln(1-x^a2)
+#    """
+#    XX = clean_XX(XX)
+##    XI = _np.copy(XX)
+##    XX = XX[_np.abs(XX)<1]
+#    nx = len(XX)
+#    prof = _2power(XX, af)
+#
+#    gvec = _np.zeros((4, nx), dtype=_np.float64)
+#    gvec[0, :] = (prof-af[1])/(af[0]-af[1])
+#    gvec[1, :] = 1.0-gvec[0, :].copy()
+#    gvec[2, :] = -1.0*af[3]*(af[0]-af[1])*(1.0-XX**af[2])**(af[3]-1.0)
+#    gvec[2, :] *= XX**(af[2])*_np.log(_np.abs(XX))
+#    gvec[3, :] = (af[0]-af[1])*_np.log(_np.abs(1.0-XX**af[2]))
+#    gvec[3, :] *= (1.0-XX**af[2])**af[3]
 
 def _partial_deriv_twopower(XX, af):
     """
@@ -1681,6 +1735,24 @@ def _partial_deriv_twopower(XX, af):
             - (d-1.0)*_np.power(XX, c)*_np.log(_np.abs(XX))/_twopower_base(XX,[c, 1.0]))
     dgdx[3, :] = dfdx*( 1.0/d + _np.log(_np.abs(_twopower_base(XX, [c, 1.0]))) )
     return dgdx
+
+
+#def partial_deriv_2power(XX, af):
+#    XX = clean_XX(XX)
+##    XI = _np.copy(XX)
+##    XX = XX[_np.abs(XX)<1]
+#    dprofdx = deriv_2power(XX, af)
+#
+#    nx = len(XX)
+#    dgdx = _np.zeros((4, nx), dtype=_np.float64)
+#    dgdx[0, :] = -af[2]*af[3]*(XX**(af[2]-1.0))*(1.0-XX**af[2])**(af[3]-1.0)
+#    dgdx[1, :] = -1.0*dgdx[0, :].copy()
+#    dgdx[2, :] = af[3]*(af[0]-af[1])*XX**(af[2]-1.0)*(1.0-XX**af[2])**af[3]
+#    dgdx[2, :] *= af[2]*af[3]*XX**af[2]+_np.log(_np.abs(XX))+XX**af[2]-af[2]*_np.log(_np.abs(XX))-1.0
+#    dgdx[2, :] /= (XX**af[2] - 1.0)**2.0
+#    dgdx[3, :] = dprofdx / af[3]
+#    dgdx[3, :] *= 1.0 + af[3]*_np.log(_np.abs(1.0-XX**af[2]))
+#    return dgdx
 
 def model_twopower(XX, af=None, **kwargs):
     """
@@ -3241,6 +3313,7 @@ def model_massberg(XX, af, **kwargs):
     info.gfunc = lambda _x, _a: partial_massberg(_x, _a)
     info.dgfunc = lambda _x, _a: partial_deriv_massberg(_x, _a)
     return prof, gvec, info
+
 
 # ========================================================================== #
 # ========================================================================== #
