@@ -1182,27 +1182,29 @@ def gaussian_peak_width(tt,sig_in,param):
 
 
 def test_fit(func=_ms.model_qparab, **fkwargs):
-
+    profile_dat = fkwargs.pop('profile_dat', True)
     aa = gen_random_init_conds(func, **fkwargs)
 
-    xdat = _np.linspace(0.05, 0.95, 10)
-    XX = _np.linspace( 1e-6, 1.0, 99)
+    if profile_dat:
+        xdat = _np.linspace(0.05, 0.95, 10)
+        XX = _np.linspace( 1e-6, 1.0, 99)
+    else:
+        Fs = 1.0
+        xdat = _np.linspace(-0.5*Fs, 0.5*Fs, num=int(1.5*10e-3*10e6/8))
+        XX = _np.linspace(-0.5*Fs, 0.5*Fs, 18750)
+    # end if
     ydat, _, temp = func(xdat, af=aa, **fkwargs)
 
-#    yerr = 0.00*ydat
-#    yerr = 0.000001
-    yerr = 0.1*_np.min(ydat)
+    yerr = 0.1*_np.mean(ydat)
     yerr = yerr*_np.ones_like(ydat)
     yxx, _, _ = func(XX, af=aa, **fkwargs)
 
-#    info = fit_mpfit(xdat, ydat, yerr, XX, func)
-#    info = fit_mpfit(xdat, ydat, yerr, XX, func, fkwargs)
     info = modelfit(xdat, ydat, yerr, XX, func, fkwargs)
 #    assert _np.allclose(info.params, aa)
 #    assert info.dof==len(xdat)-len(aa)
 
     ydat += 0.05*_np.mean(ydat)*_np.random.normal(0.0, 1.0, len(ydat))
-#    info = fit_mpfit(xdat, ydat, yerr, XX, func)
+#    ydat, _ = _ms.check_bounds(dat=ydat, af=aa, LB=temp.Lbounds, UB=temp.Ubounds, magind=temp.)
     info = modelfit(xdat, ydat, yerr, XX, func, fkwargs)
 
     _plt.figure()
@@ -1943,10 +1945,10 @@ if __name__=="__main__":
 #    test_fit(_ms.model_gaussian)    # check initial conditions
 #    test_fit(_ms.model_normal)    # check initial conditions
 #    test_fit(_ms.model_lorentzian)
-# #    test_fit(_ms.model_doppler, noshift=1, Fs=1, model_order=0)  # nan in model params!
-#    test_fit(_ms.model_doppler, noshift=1, Fs=1, model_order=1)
-#    test_fit(_ms.model_doppler, noshift=1, Fs=1, model_order=2)
-#    test_fit(_ms.model_doppler, noshift=0, Fs=1, model_order=2)
+    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=0, profile_dat=False)  # nan in model params!
+    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=1, profile_dat=False)
+    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=2, profile_dat=False)
+    test_fit(_ms.model_doppler, noshift=0, Fs=1.0, model_order=2, profile_dat=False)
 #    test_fit(_ms.model_edgepower)
 #    test_fit(_ms.model_twopower)
 #    test_fit(_ms.model_expedge)
@@ -1969,9 +1971,9 @@ if __name__=="__main__":
 
     # double check math! --- put in abs(XX) where necessary,
     # use subfunctions/ chain rule for derivatives
-    test_fit(_ms.model_flattop)    # check
-    test_fit(_ms.model_massberg)   # check
-    test_fit(_ms.model_2power)     # check
+#    test_fit(_ms.model_flattop)    # check
+#    test_fit(_ms.model_massberg)   # check
+#    test_fit(_ms.model_2power)     # check
 
     # need to be reformatted still (2 left!)
 #    test_fit(_ms.model_Heaviside, npoly=3, rinits=[0.30, 0.35])
