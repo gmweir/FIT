@@ -2647,7 +2647,7 @@ def _partial_deriv_twopower(XX, aa):
     return _ModelTwoPower.derivative_jacobian(XX, aa)
 
 
-def model_2power(XX, af=None, **kwargs):
+def _model_twopower(XX, af=None, **kwargs):
     return _model(_ModelTwoPower, XX, af, **kwargs)
 
 class _ModelTwoPower(ModelClass):
@@ -3643,6 +3643,54 @@ def model_Heaviside(XX, af=None, **kwargs):
     return prof, gvec, info
 # end def model_Heaviside()
 
+
+#class ModelHeaviside(ModelClass):
+#    """
+#
+#    """
+#    _af = _np.asarray([1.0], dtype=_np.float64)
+#    _LB = _np.asarray([0.0], dtype=_np.float64)
+#    _UB = _np.asarray([_np.inf], dtype=_np.float64)
+#    _fixed = _np.zeros( (1,), dtype=int)
+#    def __init__(self, XX, af=None, **kwargs):
+#        super(ModelHeaviside, self).__init__(XX, af, **kwargs)
+#        if XX is None:
+#            return self
+#        # end if
+#    # end def __init__
+#
+#    @staticmethod
+#    def _model(XX, aa):
+#
+#    @staticmethod
+#    def _deriv(XX, aa):
+#
+#    @staticmethod
+#    def _partial(XX, aa):
+#
+#    @staticmethod
+#    def _partial_deriv(XX, aa):
+#
+##    @staticmethod
+##    def _hessian(XX, aa):
+#
+#    # ====================================== #
+#
+##    @staticmethod
+##    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
+##        """
+##        """
+##        aout = _np.copy(ain)
+##        return aout
+#
+#    # ====================================== #
+#
+##    def checkbounds(self, dat):
+##        return super(ModelHeaviside, self).checkbounds(dat, self.aa, mag=None)
+#
+#    # ====================================== #
+## end def ModelHeaviside
+
 # ========================================================================== #
 # ========================================================================== #
 
@@ -3721,6 +3769,53 @@ def model_StepSeries(XX, af=None, **kwargs):
     return prof, gvec, info
 # end def model_StepSeries()
 
+
+#class ModelStepSeries(ModelClass):
+#    """
+#
+#    """
+#    _af = _np.asarray([1.0], dtype=_np.float64)
+#    _LB = _np.asarray([0.0], dtype=_np.float64)
+#    _UB = _np.asarray([_np.inf], dtype=_np.float64)
+#    _fixed = _np.zeros( (1,), dtype=int)
+#    def __init__(self, XX, af=None, **kwargs):
+#        super(ModelStepSeries, self).__init__(XX, af, **kwargs)
+#        if XX is None:
+#            return self
+#        # end if
+#    # end def __init__
+#
+#    @staticmethod
+#    def _model(XX, aa):
+#
+#    @staticmethod
+#    def _deriv(XX, aa):
+#
+#    @staticmethod
+#    def _partial(XX, aa):
+#
+#    @staticmethod
+#    def _partial_deriv(XX, aa):
+#
+##    @staticmethod
+##    def _hessian(XX, aa):
+#
+#    # ====================================== #
+#
+##    @staticmethod
+##    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
+##        """
+##        """
+##        aout = _np.copy(ain)
+##        return aout
+#
+#    # ====================================== #
+#
+##    def checkbounds(self, dat):
+##        return super(ModelStepSeries, self).checkbounds(dat, self.aa, mag=None)
+#
+#    # ====================================== #
+## end def ModelStepSeries
 
 # ========================================================================== #
 # ========================================================================== #
@@ -3803,8 +3898,8 @@ def model_profile(af=None, XX=None, model_number=7, npoly=4, nargout=1, verbose=
 
     elif model_number == 9:  # Two power fit
         if verbose: print('Modeling with a 2-power profile')  # endif
-        [prof, gvec, info] = model_2power(XX, af)
-        info.func = model_2power
+        [prof, gvec, info] = _model_twopower(XX, af)
+        info.func = _model_twopower
 
     elif model_number == 10:
         if verbose: print('Modeling with a parabolic profile')  # endif
@@ -3938,7 +4033,7 @@ def model_chieff(af=None, XX=None, model_number=1, npoly=4, nargout=1, verbose=F
     elif model_number == 9:
         if verbose: print('Modeling with a 2-power profile')  # endif
         def tfunc(XX, af, npoly=None):
-            return model_2power(XX, af)
+            return _model_twopower(XX, af)
         [chi_eff, gvec, info] = tfunc(XX, af)
         info.func = tfunc
 
