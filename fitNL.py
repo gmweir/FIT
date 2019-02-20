@@ -11,11 +11,13 @@ Created on Thu Mar 22 20:23:49 2018
 from __future__ import absolute_import, with_statement, absolute_import, \
                        division, print_function, unicode_literals
 
+# ========================================================================== #
+# ========================================================================== #
 
 import numpy as _np
 import matplotlib.pyplot as _plt
-from pybaseutils.Struct import Struct
 from pybaseutils import utils as _ut
+from pybaseutils.Struct import Struct
 from FIT import model_spec as _ms, derivatives as _dd
 
 # Ideally, we'll use the straight python implementation of LMFIT.
@@ -1945,12 +1947,12 @@ if __name__=="__main__":
 #    test_fit(_ms.model_gaussian)    # check initial conditions
 #    test_fit(_ms.model_normal)    # check initial conditions
 #    test_fit(_ms.model_lorentzian)
-    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=0, profile_dat=False)  # nan in model params!
-    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=1, profile_dat=False)
-    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=2, profile_dat=False)
-    test_fit(_ms.model_doppler, noshift=0, Fs=1.0, model_order=2, profile_dat=False)
+#    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=0, profile_dat=False)  # nan in model params!
+#    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=1, profile_dat=False)
+#    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=2, profile_dat=False)
+#    test_fit(_ms.model_doppler, noshift=0, Fs=1.0, model_order=2, profile_dat=False)
 #    test_fit(_ms.model_edgepower)
-#    test_fit(_ms.model_twopower)
+# #    test_fit(_ms.model_twopower)
 #    test_fit(_ms.model_expedge)
 #    test_fit(_ms.model_qparab, nohollow=False) # broken
 #    test_fit(_ms.model_qparab, nohollow=True)
