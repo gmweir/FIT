@@ -1793,6 +1793,7 @@ class ModelNormal(ModelClass):
 # =========================================================================== #
 # =========================================================================== #
 
+
 def model_gaussian(XX, af=None, **kwargs):
     """
     """
@@ -2123,6 +2124,71 @@ class ModelLorentzian(ModelClass):
     # ====================================== #
 # end def ModelLorentzian
 
+# =========================================================================== #
+# =========================================================================== #
+
+
+class ModelPseudoVoigt(ModelClass):
+    """
+    A Voigt pfunction is the convolution of a lorentzian / gaussian
+
+    The pseudo-Voigt function is a numerical approximation:
+        https://en.wikipedia.org/wiki/Voigt_profile
+    """
+    _af = _np.concatenate(([0.5], ModelLorentzian._af, ModelNormal._af), axis=0)
+    _LB = _np.concatenate(([0.0], ModelLorentzian._LB, ModelNormal._LB), axis=0)
+    _UB = _np.concatenate(([1.0], ModelLorentzian._UB, ModelNormal._UB), axis=0)
+    _fixed = _np.zeros( (7,), dtype=int)
+    def __init__(self, XX, af=None, **kwargs):
+        super(ModelPseudoVoigt, self).__init__(XX, af, **kwargs)
+        if XX is None:
+            return self
+        # end if
+    # end def __init__
+
+    @staticmethod
+    def _model(XX, aa):
+        return (aa[0]*ModelLorentzian.model(XX, aa[1:4])
+                (1.0-aa[0])*ModelNormal.model(XX, aa[4:]))
+
+    @staticmethod
+    def _deriv(XX, aa):
+        return (aa[0]*ModelLorentzian.derivative(XX, aa[1:4])
+                (1.0-aa[0])*ModelNormal.derivative(XX, aa[4:]))
+
+    @staticmethod
+    def _partial(XX, aa):
+        gvec = _np.concatenate( (ModelPseudoVoigt.model/aa[0],
+                                 aa[0]*ModelLorentzian.jacobian(XX, aa[1:4]),
+                           (1.0-aa[0])*ModelNormal.jacobian(XX, aa[4:])), axis=0)
+        return gvec
+
+    @staticmethod
+    def _partial_deriv(XX, aa):
+        dgdx = _np.concatenate( (ModelPseudoVoigt.derivative/aa[0],
+                                 aa[0]*ModelLorentzian.derivative_jacobian(XX, aa[1:4]),
+                           (1.0-aa[0])*ModelNormal.derivative_jacobian(XX, aa[4:])), axis=0)
+        return dgdx
+
+#    @staticmethod
+#    def _hessian(XX, aa):
+
+    # ====================================== #
+
+#    @staticmethod
+#    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
+#        """
+#        """
+#        aout = _np.copy(ain)
+#        return aout
+
+    # ====================================== #
+
+#    def checkbounds(self, dat):
+#        return super(ModelPseudoVoigt, self).checkbounds(dat, self.aa, mag=None)
+
+    # ====================================== #
+# end def ModelPseudoVoigt
 
 # ========================================================================== #
 # ========================================================================== #
