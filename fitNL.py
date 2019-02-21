@@ -1252,16 +1252,19 @@ def gaussian_peak_width(tt,sig_in,param):
 
 
 def test_fit(func=_ms.model_qparab, **fkwargs):
-    profile_dat = fkwargs.pop('profile_dat', True)
     aa = gen_random_init_conds(func, **fkwargs)
 
-    if profile_dat:
+    if 'Fs' in fkwargs:
+        Fs = fkwargs.pop('Fs', 10.0e3)
+        tstart, tend = tuple(fkwargs.pop('tbds', [0.0, 6.0/33.0]))
+        numpts = fkwargs.pop('num', int((tend-tstart)*Fs))
+        xdat = _np.linspace(tstart, tend, num=numpts)
+        XX = _np.linspace(tstart, tend, num=numpts)
+#        xdat = _np.linspace(-0.5*Fs, 0.5*Fs, num=int(1.5*10e-3*10e6/8))
+#        XX = _np.linspace(-0.5*Fs, 0.5*Fs, 18750)
+    else:
         xdat = _np.linspace(0.05, 0.95, 10)
         XX = _np.linspace( 1e-6, 1.0, 99)
-    else:
-        Fs = 1.0
-        xdat = _np.linspace(-0.5*Fs, 0.5*Fs, num=int(1.5*10e-3*10e6/8))
-        XX = _np.linspace(-0.5*Fs, 0.5*Fs, 18750)
     # end if
     ydat, _, temp = func(xdat, af=aa, **fkwargs)
 #    ydat, _, func = func(xdat, af=aa, **fkwargs)
@@ -2008,6 +2011,10 @@ if __name__=="__main__":
 #        out, ft = doppler_test(scale_by_data=False, logdata=False, Fs=1.0, fmax=None)
 #    print(out)
 
+    test_fit(_ms.model_sines, nfreqs=1,  Fs=10e3, numpts=int(6.0*1e3/33.0))
+    test_fit(_ms.model_sines, nfreqs=3, Fs=10e3, numpts=int(6.0*2e3/33.0))
+
+
     test_qparab_fit(nohollow=False)
     test_qparab_fit(nohollow=True)
     ft = test_fitNL(False)
@@ -2017,10 +2024,10 @@ if __name__=="__main__":
     test_fit(_ms.model_gaussian)    # check initial conditions
     test_fit(_ms.model_normal)    # check initial conditions♣
     test_fit(_ms.model_lorentzian)
-#    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=0, profile_dat=False)  # nan in model params!
-#    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=1, profile_dat=False)
-#    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=2, profile_dat=False)
-#    test_fit(_ms.model_doppler, noshift=0, Fs=1.0, model_order=2, profile_dat=False)
+#    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=0, tbnds=[-0.5,0.5], numpts=18750)  # nan in model params!
+#    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=1, tbnds=[-0.5,0.5], numpts=18750)
+#    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=2, tbnds=[-0.5,0.5], numpts=18750)
+#    test_fit(_ms.model_doppler, noshift=0, Fs=1.0, model_order=2, tbnds=[-0.5,0.5], numpts=18750)
     test_fit(_ms._model_twopower)
     test_fit(_ms.model_twopower)
     test_fit(_ms.model_expedge)

@@ -201,6 +201,16 @@ class ModelClass(Struct):
 # end def class
 
 
+
+#class MultiModel(ModelClass):
+#    """
+#
+#    """
+#    def __init__(self, XX, af=None, **kwargs):
+#        super(MultiModel, self).__init__(XX, af, **kwargs)
+#    # end def __init__
+
+
 #class ModelExample(ModelClass):
 #    """
 #
@@ -379,6 +389,376 @@ class ModelLine(ModelClass):
 
     # ====================================== #
 # end def ModelLine
+
+# ========================================================================== #
+# ========================================================================== #
+
+def sines(XX, aa):
+    return ModelSines._model(XX, aa)
+
+def partial_sines(XX, aa):
+    return ModelSines._partial(XX, aa)
+
+def deriv_sines(XX, aa):
+    return ModelSines._deriv(XX, aa)
+
+def partial_deriv_sines(XX, aa):
+    return ModelSines._partial_deriv(XX, aa)
+
+def model_sines(XX, af=None, **kwargs):
+    return _model(ModelSines, XX, af, **kwargs)
+
+# =========================================== #
+
+
+class ModelSines(ModelClass):
+    """
+
+    """
+    _af = _np.asarray([1.0, 33.0, _np.pi/3], dtype=_np.float64)
+    _LB = _np.asarray([-_np.inf,     0.0, -2*_np.pi], dtype=_np.float64)
+    _UB = _np.asarray([ _np.inf, _np.inf,  2*_np.pi], dtype=_np.float64)
+    _fixed = _np.zeros( (3,), dtype=int)
+    def __init__(self, XX, af=None, **kwargs):
+
+        # ================================ #
+
+        # Tile defaults to the number of frequencies requested
+        if af is not None:
+            self.nfreqs = self.getnfreqs(af)
+        else:
+            self.nfreqs = kwargs.setdefault('nfreqs', 1)
+            self.fmod = kwargs.setdefault('fmod', 33.0)
+            self._af[1] = _np.copy(self.fmod)
+        # end if
+        self._af = _np.asarray( self.nfreqs*self._af.tolist(), dtype=_np.float64)
+        self._LB = _np.asarray( self.nfreqs*self._LB.tolist(), dtype=_np.float64)
+        self._UB = _np.asarray( self.nfreqs*self._UB.tolist(), dtype=_np.float64)
+        self._fixed = _np.asarray( self.nfreqs*self._fixed.tolist(), dtype=int)
+        # shift the frequencies of each sine by a harmonic for defults
+        for ii in range(self.nfreqs):
+            self._af[3*ii + 0] = self._af[0]/(ii+1)  # amplitudes
+            self._af[3*ii + 1] = self._af[1]*(ii+1)  # i'th harm. of default
+            self._af[3*ii + 2] = _np.random.normal(0.0, _np.pi, size=1)  # phase of i'th harm. of default
+        # end for
+
+        # ================================ #
+
+        super(ModelSines, self).__init__(XX, af, **kwargs)
+    # end def __init__
+
+    def sine(XX, a, f, p):
+        return a*_np.sin((2*_np.pi*f)*XX+p)
+
+    def cosine(XX, a, f, p):
+        return a*_np.cos((2*_np.pi*f)*XX+p)
+
+    @staticmethod
+    def getnfreqs(aa):
+        if _np.mod(3, len(aa)) == 0:
+            nfreqs = 1
+        else:
+            nfreqs = len(aa)/_np.mod(3, len(aa))
+        # end if
+        return int(nfreqs)
+
+    @staticmethod
+    def _model(XX, aa):
+        nfreqs = ModelSines.getnfreqs(aa)
+
+        ysum = _np.zeros( (len(XX),), dtype=_np.float64)
+        for ii in range(nfreqs):
+            a = _np.copy(aa[3*ii+0])
+            f = _np.copy(aa[3*ii+1])
+            p = _np.copy(aa[3*ii+2])
+#            ysum += a*_np.sin((2.0*_np.pi*f)*XX+p)
+            ysum += ModelSines.sine(XX, a, f, p)
+        # end for
+        return ysum
+
+    @staticmethod
+    def _deriv(XX, aa):
+        nfreqs = ModelSines.getnfreqs(aa)
+        dfdx = _np.zeros( (len(XX),), dtype=_np.float64)
+        for ii in range(nfreqs):
+            a = _np.copy(aa[3*ii+0])
+            f = _np.copy(aa[3*ii+1])
+            p = _np.copy(aa[3*ii+2])
+#            dfdx += (2.0*_np.pi*f)*a*_np.cos((2.0*_np.pi*f)*XX+p)
+            dfdx += (2.0*_np.pi*f)*ModelSines.cosine(XX, a, f, p)
+        # end for
+        return dfdx
+
+    @staticmethod
+    def _partial(XX, aa):
+        nfreqs = ModelSines.getnfreqs(aa)
+        gvec = _np.zeros( (len(aa), len(XX)), dtype=_np.float64)
+        for ii in range(nfreqs):
+            a = _np.copy(aa[3*ii+0])
+            f = _np.copy(aa[3*ii+1])
+            p = _np.copy(aa[3*ii+2])
+            gvec[3*ii+0, :] = ModelSines.sine(XX, 1.0, f, p)
+            gvec[3*ii+1, :] = (2.0*_np.pi*XX)*ModelSines.cosine(XX, a, f, p)
+            gvec[3*ii+2, :] = ModelSines.cosine(XX, a, f, p)
+        # end for
+        return gvec
+
+    @staticmethod
+    def _partial_deriv(XX, aa):
+        nfreqs = ModelSines.getnfreqs(aa)
+        dgdx = _np.zeros( (len(aa), len(XX)), dtype=_np.float64)
+        for ii in range(nfreqs):
+            a = _np.copy(aa[3*ii+0])
+            f = _np.copy(aa[3*ii+1])
+            p = _np.copy(aa[3*ii+2])
+            dgdx[3*ii+0, :] = (2.0*_np.pi*f)*ModelSines.cosine(XX, 1.0, f, p)
+            dgdx[3*ii+1, :] = (2.0*_np.pi)*(  ModelSines.cosine(XX, a, f, p)
+                                 - (2.0*_np.pi*f*XX)*ModelSines.sine(XX, a, f, p)  )
+            dgdx[3*ii+2, :] = (-2.0*_np.pi*f)*ModelSines.sine(XX, a, f, p)
+        # end for
+        return dgdx
+
+#    @staticmethod
+#    def _hessian(XX, aa):
+
+    # ====================================== #
+
+#    @staticmethod
+#    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
+#        """
+#        """
+#        aout = _np.copy(ain)
+#        return aout
+
+    # ====================================== #
+
+#    def checkbounds(self, dat):
+#        return super(ModelSines, self).checkbounds(dat, self.aa, mag=None)
+
+    # ====================================== #
+# end def ModelSines
+
+
+# ========================================================================== #
+# ========================================================================== #
+
+def fourier(XX, aa):
+    return ModelFourier._model(XX, aa)
+
+def partial_fourier(XX, aa):
+    return ModelFourier._partial(XX, aa)
+
+def deriv_fourier(XX, aa):
+    return ModelFourier._deriv(XX, aa)
+
+def partial_deriv_fourier(XX, aa):
+    return ModelFourier._partial_deriv(XX, aa)
+
+def model_fourier(XX, af=None, **kwargs):
+    return _model(ModelFourier, XX, af, **kwargs)
+
+# =========================================== #
+
+
+class ModelFourier(ModelClass):
+    """
+    y = ao + sum_ii( a_ii*cos((2*pi*f*ii)*x) + b_ii*sin((2*pi*f*ii)*x))
+      = ao + a1*cos(2pif*x) + b1*sin(2pif*x) + a2*cos(4pif*x) + b2*sin(4pif*x) + ...
+        af - [fundamental frequency, offset,
+              a_ii, b_ii, a_ii+1, b_ii+1, ...]
+    """
+    _af = _np.asarray([   33.0,     1.0,     0.5,     0.5,    0.25,    0.25], dtype=_np.float64)
+    _LB = _np.asarray([  1e-18,-_np.inf,-_np.inf,-_np.inf,-_np.inf,-_np.inf], dtype=_np.float64)
+    _UB = _np.asarray([_np.inf, _np.inf, _np.inf, _np.inf, _np.inf, _np.inf], dtype=_np.float64)
+    _fixed = _np.zeros( (6,), dtype=int)
+    def __init__(self, XX, af=None, **kwargs):
+
+        # ================================ #
+
+        # Tile defaults to the number of frequencies requested
+        if af is not None:
+            self.nfreqs = self.getnfreqs(af)
+        else:
+            self.nfreqs = kwargs.setdefault('nfreqs', 2)
+            self.fmod = kwargs.setdefault('fmod', 33.0)
+            self._af[0] = _np.copy(self.fmod)
+        # end if
+        # shift the frequencies of each sine by a harmonic for defults
+        for ii in range(self.nfreqs):
+            self._af[3*ii + 2 + 0 ] = 0.5*self._af[1]/(ii+1)  # amplitudes
+            self._af[3*ii + 2 + 1 ] = 0.5*self._af[1]/(ii+1)  # i'th harm. of default
+            self._LB = _np.asarray(self._LB.tolist()+[-_np.inf,-_np.inf], dtype=_np.float64)
+            self._UB = _np.asarray(self._UB.tolist()+[ _np.inf, _np.inf], dtype=_np.float64)
+            self._fixed = _np.asarray(self._fixed.tolist()+[ 0, 0], dtype=_np.float64)
+        # end for
+
+        # ================================ #
+
+        super(ModelFourier, self).__init__(XX, af, **kwargs)
+    # end def __init__
+
+    def sine(XX, a, f):
+        return a*_np.sin((2*_np.pi*f)*XX)
+
+    def cosine(XX, a, f):
+        return a*_np.cos((2*_np.pi*f)*XX)
+
+    @staticmethod
+    def getnfreqs(aa):
+        if _np.mod(2, len(aa)-2) == 0:
+            nfreqs = 1
+        else:
+            nfreqs = (len(aa)-2)/_np.mod(2, len(aa)-2)
+        # end if
+        return int(nfreqs)
+
+    @staticmethod
+    def _model(XX, aa):
+        """
+         f = ao + sum_ii( a_ii*cos((2*pi*f*ii)*x) + b_ii*sin((2*pi*f*ii)*x))
+        """
+        nfreqs = ModelFourier.getnfreqs(aa)
+        f  = aa[0]
+        ao = aa[1]
+        ysum = ao*_np.ones( (len(XX),), dtype=_np.float64)
+        for ii in range(nfreqs):
+            a = _np.copy(aa[2*ii+2+0])
+            b = _np.copy(aa[2*ii+2+1])
+            ysum += ModelFourier.cosine(XX, a, (ii+1)*f)
+            ysum += ModelFourier.sine(XX, b, (ii+1)*f)
+        # end for
+        return ysum
+
+    @staticmethod
+    def _deriv(XX, aa):
+        """
+         f = ao + sum_ii( a_ii*cos((2*pi*f*ii)*x) + b_ii*sin((2*pi*f*ii)*x))
+
+         dfdx = (2*pi*f)*sum_ii( ii*a_ii*cos((2*pi*f*ii)*x) + ii*b_ii*sin((2*pi*f*ii)*x))
+        """
+        nfreqs = ModelFourier.getnfreqs(aa)
+
+        f  = aa[0]
+        ao = aa[1]
+        dfdx = ao*_np.zeros( (len(XX),), dtype=_np.float64)
+        for ii in range(nfreqs):
+            a = _np.copy(aa[2*ii+2+0])
+            b = _np.copy(aa[2*ii+2+1])
+            dfdx += (2.0*_np.pi*ii*f)*ModelFourier.cosine(XX, b, (ii+1)*f)
+            dfdx -= (2.0*_np.pi*ii*f)*ModelFourier.sine(XX, a, (ii+1)*f)
+        # end for
+        return dfdx
+
+    @staticmethod
+    def _partial(XX, aa):
+        """
+         f = ao + sum_ii( a_ii*cos((2*pi*f*ii)*x) + b_ii*sin((2*pi*f*ii)*x))
+
+         dfdx = (2*pi*f)*sum_ii( ii*a_ii*cos((2*pi*f*ii)*x) + ii*b_ii*sin((2*pi*f*ii)*x))
+
+         dfdf = (2*pi*x)*sum_ii( ii*a_ii*cos((2*pi*f*ii)*x) + ii*b_ii*sin((2*pi*f*ii)*x))
+         dfdao = ones
+         dfdai ~ cos or dfdbi ~ sin
+        """
+        nfreqs = ModelFourier.getnfreqs(aa)
+
+        f  = aa[0]
+        ao = aa[1]
+        gvec = ao*_np.zeros( (len(aa), len(XX)), dtype=_np.float64)
+
+        # frequency derivative
+        for ii in range(nfreqs):
+            a = _np.copy(aa[2*ii+2+0])
+            b = _np.copy(aa[2*ii+2+1])
+            gvec[0, :] += (2.0*_np.pi*ii*XX)*ModelFourier.cosine(XX, b, (ii+1)*f)
+            gvec[0, :] -= (2.0*_np.pi*ii*XX)*ModelFourier.sine(XX, a, (ii+1)*f)
+        # end for
+
+        # offset derivative
+        gvec[1, :] = 1.0   # dfdao
+
+        # amplitude derivatives
+        for ii in range(nfreqs):
+            a = _np.copy(aa[2*ii+2+0])
+            b = _np.copy(aa[2*ii+2+1])
+            gvec[2*ii+2+0, :] = ModelFourier.cosine(XX, 1.0, (ii+1)*f)
+            gvec[2*ii+2+1, :] = ModelFourier.sine(XX, 1.0, (ii+1)*f)
+        # end for
+        return gvec
+
+    @staticmethod
+    def _partial_deriv(XX, aa):
+        """
+         f = ao + sum_ii( a_ii*cos((2*pi*f*ii)*x) + b_ii*sin((2*pi*f*ii)*x))
+
+         dfdx = (2*pi*f)*sum_ii( ii*a_ii*cos((2*pi*f*ii)*x) + ii*b_ii*sin((2*pi*f*ii)*x))
+
+         dfdf = (2*pi*x)*sum_ii( ii*a_ii*cos((2*pi*f*ii)*x) + ii*b_ii*sin((2*pi*f*ii)*x))
+         dfdao = ones
+         dfdai ~ cos or dfdbi ~ sin
+        """
+#        nfreqs = ModelFourier.getnfreqs(aa)
+#
+#        f  = aa[0]
+#        ao = aa[1]
+#        dgdx = ao*_np.zeros( (len(aa), len(XX)), dtype=_np.float64)
+#
+#        # frequency derivative
+#        for ii in range(nfreqs):
+#            a = _np.copy(aa[2*ii+2+0])
+#            b = _np.copy(aa[2*ii+2+1])
+#            gvec[0, :] += (2.0*_np.pi*ii*)*ModelFourier.cosine(XX, b, (ii+1)*f)
+#            gvec[0, :] -= (2.0*_np.pi*ii*XX)*ModelFourier.sine(XX, a, (ii+1)*f)
+#        # end for
+#
+#        # offset derivative
+#        gvec[1, :] = 1.0   # dfdao
+#
+#        # amplitude derivatives
+#        for ii in range(nfreqs):
+#            a = _np.copy(aa[2*ii+2+0])
+#            b = _np.copy(aa[2*ii+2+1])
+#            gvec[2*ii+2+0, :] = ModelFourier.cosine(XX, 1.0, (ii+1)*f)
+#            gvec[2*ii+2+1, :] = ModelFourier.sine(XX, 1.0, (ii+1)*f)
+#        # end for
+#
+#
+#
+#
+#
+#
+#
+#
+#        for ii in range(nfreqs):
+#            a = _np.copy(aa[2*ii+2+0])
+#            b = _np.copy(aa[2*ii+2+1])
+#            dgdx[3*ii+0, :] = (2.0*_np.pi*f)*ModelSines.cosine(XX, 1.0, f, p)
+#            dgdx[3*ii+1, :] = (2.0*_np.pi)*(  ModelSines.cosine(XX, a, f, p)
+#                                 - (2.0*_np.pi*f*XX)*ModelSines.sine(XX, a, f, p)  )
+#            dgdx[3*ii+2, :] = (-2.0*_np.pi*f)*ModelSines.sine(XX, a, f, p)
+#        # end for
+#        return dgdx
+
+#    @staticmethod
+#    def _hessian(XX, aa):
+
+    # ====================================== #
+
+#    @staticmethod
+#    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
+#        """
+#        """
+#        aout = _np.copy(ain)
+#        return aout
+
+    # ====================================== #
+
+#    def checkbounds(self, dat):
+#        return super(ModelFourier, self).checkbounds(dat, self.aa, mag=None)
+
+    # ====================================== #
+# end def ModelFourier
+
 
 # ========================================================================== #
 # ========================================================================== #
