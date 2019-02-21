@@ -25,18 +25,18 @@ from pybaseutils.utils import sech, interp_irregularities, interp, argsort # ana
 
 class ModelClass(Struct):
     def __init__(self, XX, af=None, **kwargs):
-        if af is None:
-            af, LB, UB, fixed = self.defaults(**kwargs)
-        # endif
+        LB, UB, fixed = self.defaults(**kwargs)
+        if af is None:   af = _np.copy(self._af)    # end if
         self.af = _np.copy(af)
         self.Lbounds = _np.copy(LB)
         self.Ubounds = _np.copy(UB)
         self.fixed = _np.copy(fixed)
+        self.__dict__.update(kwargs)
         self.kwargs = kwargs
     # end def __init__
 
     def parse_in(self, XX, aa):
-        if aa is None: aa = _np.copy(self.aa)  # end if
+        if aa is None: aa = _np.copy(self.af)  # end if
         if XX is None: XX = _np.copy(self.XX)  # end if
         XX = _np.copy(XX)
         aa = _np.copy(aa)
@@ -89,19 +89,22 @@ class ModelClass(Struct):
     # ====================================================== #
 
     def update(self, XX, af):
-        self.prof = self.model(XX, af)
-        self.gvec = self.jacobian(XX, af)
-        self.dprofdx = self.derivative(XX, af)
-        self.dgdx = self.derivative_jacobian(XX, af)
+        self.prof = self.model(XX, aa=af)
+        self.gvec = self.jacobian(XX, aa=af)
+        self.dprofdx = self.derivative(XX, aa=af)
+        self.dgdx = self.derivative_jacobian(XX, aa=af)
         return self.prof, self.gvec, self.dprofdx, self.dgdx
     # end def
 
     def defaults(self, **kwargs):
-        af = kwargs.setdefault('af', self._a0)
-        LB = kwargs.setdefault('LB', self._LB)
-        UB = kwargs.setdefault('UB', self._UB)
+        if 'Lbounds' in kwargs:
+            LB = kwargs.setdefault('Lbounds', self._LB)
+            UB = kwargs.setdefault('Ubounds', self._UB)
+        else:
+            LB = kwargs.setdefault('LB', self._LB)
+            UB = kwargs.setdefault('UB', self._UB)
         fixed = kwargs.setdefault('fixed', self._fixed)
-        return af, LB, UB, fixed
+        return LB, UB, fixed
 
     # ====================================================== #
     # ====================================================== #
@@ -207,10 +210,7 @@ class ModelClass(Struct):
 #    _UB = _np.asarray([_np.inf], dtype=_np.float64)
 #    _fixed = _np.zeros( (1,), dtype=int)
 #    def __init__(self, XX, af=None, **kwargs):
-#        super(ModelDoppler, self).__init__(XX, af, **kwargs)
-#        if XX is None:
-#            return self
-#        # end if
+#        super(ModelExample, self).__init__(XX, af, **kwargs)
 #    # end def __init__
 #
 #    @staticmethod
@@ -250,19 +250,19 @@ class ModelClass(Struct):
 # ========================================================================== #
 
 def line(XX, a):
-    return ModelLine.model(XX, a)
+    return ModelLine._model(XX, a)
 
 def line_gvec(XX, a):
-    return ModelLine.jacobian(XX, a)
+    return ModelLine._partial(XX, a)
 
 def deriv_line(XX, a):
-    return ModelLine.derivative(XX, a)
+    return ModelLine._deriv(XX, a)
 
 def partial_deriv_line(XX, a):
-    return ModelLine.derivative_jacobian(XX, a)
+    return ModelLine._partial_deriv(XX, a)
 
 def hessian_line(XX, a):
-    return ModelLine.hessian(XX, a)
+    return ModelLine._hessian(XX, a)
 
 def model_line(XX, af=None, **kwargs):
     """
@@ -284,9 +284,6 @@ class ModelLine(ModelClass):
     _fixed = _np.array([0, 0], dtype=int)
     def __init__(self, XX, af=None, **kwargs):
         super(ModelLine, self).__init__(XX, af, **kwargs)
-        if XX is None:
-            return self
-        # end if
     # end def __init__
 
     @staticmethod
@@ -388,16 +385,16 @@ class ModelLine(ModelClass):
 
 
 def poly(XX, aa):
-    return ModelPoly.model(XX, aa)
+    return ModelPoly._model(XX, aa)
 
 def partial_poly(XX, aa):
-    return ModelPoly.jacobian(XX, aa)
+    return ModelPoly._partial(XX, aa)
 
 def deriv_poly(XX, aa):
-    return ModelPoly.derivative(XX, aa)
+    return ModelPoly._deriv(XX, aa)
 
 def partial_deriv_poly(XX, aa):
-    return ModelPoly.derivative_jacobian(XX, aa)
+    return ModelPoly._partial_deriv(XX, aa)
 
 def model_poly(XX, af=None, **kwargs):
     return _model(ModelPoly, XX, af, **kwargs)
@@ -423,9 +420,6 @@ class ModelPoly(ModelClass):
         self._UB = _np.inf*_np.ones((npoly+1,), dtype=_np.float64)
         self._fixed = _np.zeros( _np.shape(self._LB), dtype=int)
         super(ModelPoly, self).__init__(XX, af, **kwargs)
-        if XX is None:
-            return self
-        # end if
     # end def __init__
 
     @staticmethod
@@ -542,16 +536,16 @@ class ModelPoly(ModelClass):
 # ========================================================================== #
 
 def prodexp(XX, aa):
-    return ModelProdExp.model(XX, aa)
+    return ModelProdExp._model(XX, aa)
 
 def deriv_prodexp(XX, aa):
-    return ModelProdExp.derivative(XX, aa)
+    return ModelProdExp._deriv(XX, aa)
 
 def partial_prodexp(XX, aa):
-    return ModelProdExp.jacobian(XX, aa)
+    return ModelProdExp._partial(XX, aa)
 
 def partial_deriv_prodexp(XX, aa):
-    return ModelProdExp.derivative_jacobian(XX, aa)
+    return ModelProdExp._partial_deriv(XX, aa)
 
 def model_ProdExp(XX, af=None, **kwargs):
     """
@@ -586,9 +580,6 @@ class ModelProdExp(ModelClass):
         self._UB = _np.inf*_np.ones_like(self._af)
         self._fixed = _np.zeros(_np.shape(self._LB), dtype=int)
         super(ModelProdExp, self).__init__(XX, af, **kwargs)
-        if XX is None:
-            return self
-        # end if
     # end def __init__
 
     @staticmethod
@@ -705,16 +696,16 @@ class ModelProdExp(ModelClass):
 # ========================================================================== #
 
 def evenpoly(XX, aa):
-    return ModelEvenPoly.model(XX, aa)
+    return ModelEvenPoly._model(XX, aa)
 
 def deriv_evenpoly(XX, aa):
-    return ModelEvenPoly.derivative(XX, aa)
+    return ModelEvenPoly._deriv(XX, aa)
 
 def partial_evenpoly(XX, aa):
-    return ModelEvenPoly.jacobian(XX, aa)
+    return ModelEvenPoly._partial(XX, aa)
 
 def partial_deriv_evenpoly(XX, aa):
-    return ModelEvenPoly.derivative_jacobian(XX, aa)
+    return ModelEvenPoly._partial_deriv(XX, aa)
 
 def model_evenpoly(XX, af=None, **kwargs):
     return _model(ModelEvenPoly, XX, af, **kwargs)
@@ -740,9 +731,6 @@ class ModelEvenPoly(ModelClass):
         self._UB = _np.inf*_np.ones((npoly//2+1,), dtype=_np.float64)
         self._fixed = _np.zeros( _np.shape(self._LB), dtype=int)
         super(ModelEvenPoly, self).__init__(XX, af, **kwargs)
-        if XX is None:
-            return self
-        # end if
     # end def __init__
 
     @staticmethod
@@ -857,16 +845,16 @@ class ModelEvenPoly(ModelClass):
 
 
 def powerlaw(XX, aa):
-    return ModelPowerLaw.model(XX, aa)
+    return ModelPowerLaw._model(XX, aa)
 
 def deriv_powerlaw(XX, aa):
-    return ModelPowerLaw.derivative(XX, aa)
+    return ModelPowerLaw._deriv(XX, aa)
 
 def partial_powerlaw(XX, aa):
-    return ModelPowerLaw.jacobian(XX, aa)
+    return ModelPowerLaw._partial(XX, aa)
 
 def partial_deriv_powerlaw(XX, aa):
-    return ModelPowerLaw.derivative_jacobian(XX, aa)
+    return ModelPowerLaw._partial_deriv(XX, aa)
 
 def model_PowerLaw(XX, af=None, **kwargs):
     return _model(ModelPowerLaw, XX, af, **kwargs)
@@ -897,9 +885,6 @@ class ModelPowerLaw(ModelClass):
         self._UB = _np.inf*_np.ones((npoly+2,), dtype=_np.float64)
         self._fixed = _np.zeros( _np.shape(self._LB), dtype=int)
         super(ModelPowerLaw, self).__init__(XX, af, **kwargs)
-        if XX is None:
-            return self
-        # end if
     # end def __init__
 
     @staticmethod
@@ -1101,16 +1086,16 @@ class ModelPowerLaw(ModelClass):
 
 
 def parabolic(XX, aa):
-    return ModelParabolic.model(XX, aa)
+    return ModelParabolic._model(XX, aa)
 
 def deriv_parabolic(XX, aa):
-    return ModelParabolic.derivative(XX, aa)
+    return ModelParabolic._deriv(XX, aa)
 
 def partial_parabolic(XX, aa):
-    return ModelParabolic.jacobian(XX, aa)
+    return ModelParabolic._partial(XX, aa)
 
 def partial_deriv_parabolic(XX, aa):
-    return ModelParabolic.derivative_jacobian(XX, aa)
+    return ModelParabolic._partial_deriv(XX, aa)
 
 def model_parabolic(XX, af, **kwargs):
     return _model(ModelParabolic, XX, af, **kwargs)
@@ -1132,9 +1117,6 @@ class ModelParabolic(ModelClass):
     _fixed = _np.zeros( (1,), dtype=int)
     def __init__(self, XX, af=None, **kwargs):
         super(ModelParabolic, self).__init__(XX, af, **kwargs)
-        if XX is None:
-            return self
-        # end if
     # end def __init__
 
     @staticmethod
@@ -1193,19 +1175,19 @@ class ModelParabolic(ModelClass):
 
 
 def expcutoff(XX, aa):
-    return ModelExponential.model(XX, aa)
+    return ModelExponential._model(XX, aa)
 
 def deriv_expcutoff(XX, aa):
-    return ModelExponential.derivative(XX, aa)
+    return ModelExponential._deriv(XX, aa)
 
 def partial_expcutoff(XX, aa):
-    return ModelExponential.jacobian(XX, aa)
+    return ModelExponential._partial(XX, aa)
 
 def partial_deriv_expcutoff(XX, aa):
-    return ModelExponential.derivative_jacobian(XX, aa)
+    return ModelExponential._partial_deriv(XX, aa)
 
-def model_Exponential(XX, aa=None, **kwargs):
-    return _model(ModelExponential, XX, aa, **kwargs)
+def model_Exponential(XX, af=None, **kwargs):
+    return _model(ModelExponential, XX, af, **kwargs)
 
 # =========================================== #
 
@@ -1223,9 +1205,6 @@ class ModelExponential(ModelClass):
     _fixed = _np.zeros( (4,), dtype=int)
     def __init__(self, XX, af=None, **kwargs):
         super(ModelExponential, self).__init__(XX, af, **kwargs)
-        if XX is None:
-            return self
-        # end if
     # end def __init__
 
     @staticmethod
@@ -1317,16 +1296,16 @@ class ModelExponential(ModelClass):
 
 
 def gaussian(XX, aa):
-    return ModelGaussian.model(XX, aa)
+    return ModelGaussian._model(XX, aa)
 
 def partial_gaussian(XX, aa):
-    return ModelGaussian.jacobian(XX, aa)
+    return ModelGaussian._partial(XX, aa)
 
 def deriv_gaussian(XX, aa):
-    return ModelGaussian.derivative(XX, aa)
+    return ModelGaussian._deriv(XX, aa)
 
 def partial_deriv_gaussian(XX, aa):
-    return ModelGaussian.derivative_jacobian(XX, aa)
+    return ModelGaussian._partial_deriv(XX, aa)
 
 def _model_gaussian(XX, af=None, **kwargs):
     """
@@ -1354,9 +1333,6 @@ class ModelGaussian(ModelClass):
     _fixed = _np.array([0, 0, 0], dtype=int)
     def __init__(self, XX, af=None, **kwargs):
         super(ModelGaussian, self).__init__(XX, af, **kwargs)
-        if XX is None:
-            return self
-        # end if
     # end def __init__
 
     @staticmethod
@@ -1503,18 +1479,18 @@ class ModelGaussian(ModelClass):
 
 
 def offsetgaussian(XX, aa):
-    return ModelGaussian.model(XX, aa[1:]) + aa[0]
+    return ModelGaussian._model(XX, aa[1:]) + aa[0]
 
 def partial_offsetgaussian(XX, aa):
     return _np.concatenate( (_np.ones((1,_np.size(XX)), dtype=_np.float64),
-                             ModelGaussian.jacobian(XX, aa[1:])), axis=0)
+                             ModelGaussian._partial(XX, aa[1:])), axis=0)
 
 def deriv_offsetgaussian(XX, aa):
-    return ModelGaussian.derivative(XX, aa[1:])
+    return ModelGaussian._deriv(XX, aa[1:])
 
 def partial_deriv_offsetgaussian(XX, aa):
     return _np.concatenate( (_np.zeros((1,_np.size(XX)), dtype=_np.float64),
-                             ModelGaussian.derivative_jacobian(XX, aa[1:])), axis=0)
+                             ModelGaussian._partial_deriv(XX, aa[1:])), axis=0)
 
 def _model_offsetgaussian(XX, af=None, **kwargs):
     """
@@ -1541,9 +1517,6 @@ class ModelOffsetGaussian(ModelClass):
     _fixed = _np.array([0, 0, 0, 0], dtype=int)
     def __init__(self, XX, af=None, **kwargs):
         super(ModelOffsetGaussian, self).__init__(XX, af, **kwargs)
-        if XX is None:
-            return self
-        # end if
     # end def __init__
 
     @staticmethod
@@ -1617,16 +1590,16 @@ class ModelOffsetGaussian(ModelClass):
 
 
 def normal(XX, aa):
-    return ModelNormal.model(XX, aa)
+    return ModelNormal._model(XX, aa)
 
 def partial_normal(XX, aa):
-    return ModelNormal.jacobian(XX, aa)
+    return ModelNormal._partial(XX, aa)
 
 def deriv_normal(XX, aa):
-    return ModelNormal.derivative(XX, aa)
+    return ModelNormal._deriv(XX, aa)
 
 def partial_deriv_normal(XX, aa):
-    return ModelNormal.derivative_jacobian(XX, aa)
+    return ModelNormal._partial_deriv(XX, aa)
 
 def model_normal(XX, af, **kwargs):
     norm = kwargs.pop('norm', True)  # analysis:ignore
@@ -1652,9 +1625,6 @@ class ModelNormal(ModelClass):
     _fixed = _np.array([0, 0, 0], dtype=int)
     def __init__(self, XX, af=None, **kwargs):
         super(ModelNormal, self).__init__(XX, af, **kwargs)
-        if XX is None:
-            return self
-        # end if
     # end def __init__
 
     @staticmethod
@@ -1833,16 +1803,16 @@ def _parse_gaussian_inputs(af, **kwargs):
 
 
 def loggaussian(XX, aa):
-    return ModelLogGaussian.model(XX, aa)
+    return ModelLogGaussian._model(XX, aa)
 
 def partial_loggaussian(XX, aa):
-    return ModelLogGaussian.jacobian(XX, aa)
+    return ModelLogGaussian._partial(XX, aa)
 
 def deriv_loggaussian(XX, aa):
-    return ModelLogGaussian.derivative(XX, aa)
+    return ModelLogGaussian._deriv(XX, aa)
 
 def partial_deriv_loggaussian(XX, aa):
-    return ModelLogGaussian.derivative_jacobian(XX, aa)
+    return ModelLogGaussian._partial_deriv(XX, aa)
 
 def model_loggaussian(XX, af=None, **kwargs):
     return _model(ModelLogGaussian, XX, af, **kwargs)
@@ -1865,9 +1835,6 @@ class ModelLogGaussian(ModelClass):
     _fixed = _np.zeros( (3,), dtype=int)
     def __init__(self, XX, af=None, **kwargs):
         super(ModelLogGaussian, self).__init__(XX, af, **kwargs)
-        if XX is None:
-            return self
-        # end if
     # end def __init__
 
     @staticmethod
@@ -2008,16 +1975,16 @@ class ModelLogGaussian(ModelClass):
 
 
 def lorentzian(XX, aa):
-    return ModelLorentzian.model(XX, aa)
+    return ModelLorentzian._model(XX, aa)
 
 def deriv_lorentzian(XX, aa):
-    return ModelLorentzian.derivative(XX, aa)
+    return ModelLorentzian._deriv(XX, aa)
 
 def partial_lorentzian(XX, aa):
-    return ModelLorentzian.jacobian(XX, aa)
+    return ModelLorentzian._partial(XX, aa)
 
 def partial_deriv_lorentzian(XX, aa):
-    return ModelLine.derivative_jacobian(XX, aa)
+    return ModelLine._partial_deriv(XX, aa)
 
 def model_lorentzian(XX, af=None, **kwargs):
     return _model(ModelLorentzian, XX, af, **kwargs)
@@ -2038,10 +2005,7 @@ class ModelLorentzian(ModelClass):
     _UB = _np.asarray([_np.inf, _np.inf, _np.inf], dtype=_np.float64)
     _fixed = _np.zeros( (3,), dtype=int)
     def __init__(self, XX, af=None, **kwargs):
-        super(ModelParabolic, self).__init__(XX, af, **kwargs)
-        if XX is None:
-            return self
-        # end if
+        super(ModelLorentzian, self).__init__(XX, af, **kwargs)
     # end def __init__
 
     @staticmethod
@@ -2141,33 +2105,30 @@ class ModelPseudoVoigt(ModelClass):
     _fixed = _np.zeros( (7,), dtype=int)
     def __init__(self, XX, af=None, **kwargs):
         super(ModelPseudoVoigt, self).__init__(XX, af, **kwargs)
-        if XX is None:
-            return self
-        # end if
     # end def __init__
 
     @staticmethod
     def _model(XX, aa):
-        return (aa[0]*ModelLorentzian.model(XX, aa[1:4])
-                (1.0-aa[0])*ModelNormal.model(XX, aa[4:]))
+        return (aa[0]*ModelLorentzian._model(XX, aa[1:4])
+                (1.0-aa[0])*ModelNormal._model(XX, aa[4:]))
 
     @staticmethod
     def _deriv(XX, aa):
-        return (aa[0]*ModelLorentzian.derivative(XX, aa[1:4])
-                (1.0-aa[0])*ModelNormal.derivative(XX, aa[4:]))
+        return (aa[0]*ModelLorentzian._deriv(XX, aa[1:4])
+                (1.0-aa[0])*ModelNormal._deriv(XX, aa[4:]))
 
     @staticmethod
     def _partial(XX, aa):
         gvec = _np.concatenate( (ModelPseudoVoigt.model/aa[0],
-                                 aa[0]*ModelLorentzian.jacobian(XX, aa[1:4]),
-                           (1.0-aa[0])*ModelNormal.jacobian(XX, aa[4:])), axis=0)
+                                 aa[0]*ModelLorentzian._partial(XX, aa[1:4]),
+                           (1.0-aa[0])*ModelNormal._partial(XX, aa[4:])), axis=0)
         return gvec
 
     @staticmethod
     def _partial_deriv(XX, aa):
         dgdx = _np.concatenate( (ModelPseudoVoigt.derivative/aa[0],
-                                 aa[0]*ModelLorentzian.derivative_jacobian(XX, aa[1:4]),
-                           (1.0-aa[0])*ModelNormal.derivative_jacobian(XX, aa[4:])), axis=0)
+                                 aa[0]*ModelLorentzian._partial_deriv(XX, aa[1:4]),
+                           (1.0-aa[0])*ModelNormal._partial_deriv(XX, aa[4:])), axis=0)
         return dgdx
 
 #    @staticmethod
@@ -2195,16 +2156,16 @@ class ModelPseudoVoigt(ModelClass):
 
 
 def loglorentzian(XX, aa):
-    return ModelLogLorentzian.model(XX, aa)
+    return ModelLogLorentzian._model(XX, aa)
 
 def deriv_loglorentzian(XX, aa):
-    return ModelLogLorentzian.derivative(XX, aa)
+    return ModelLogLorentzian._deriv(XX, aa)
 
 def partial_loglorentzian(XX, aa):
-    return ModelLogLorentzian.jacobian(XX, aa)
+    return ModelLogLorentzian._partial(XX, aa)
 
 def partial_deriv_loglorentzian(XX, aa):
-    return ModelLogLorentzian.derivative_jacobian(XX, aa)
+    return ModelLogLorentzian._partial_deriv(XX, aa)
 
 def model_loglorentzian(XX, af=None, **kwargs):
     return _model(ModelLogLorentzian, XX, af, **kwargs)
@@ -2231,9 +2192,6 @@ class ModelLogLorentzian(ModelClass):
     _fixed = _np.zeros( (3,), dtype=int)
     def __init__(self, XX, af=None, **kwargs):
         super(ModelLogLorentzian, self).__init__(XX, af, **kwargs)
-        if XX is None:
-            return self
-        # end if
     # end def __init__
 
     @staticmethod
@@ -2658,9 +2616,6 @@ class ModelLogLorentzian(ModelClass):
 #    _fixed = _np.zeros( (1,), dtype=int)
 #    def __init__(self, XX, af=None, **kwargs):
 #        super(ModelDoppler, self).__init__(XX, af, **kwargs)
-#        if XX is None:
-#            return self
-#        # end if
 #    # end def __init__
 #
 #    @staticmethod
@@ -2701,16 +2656,16 @@ class ModelLogLorentzian(ModelClass):
 
 
 def _twopower(XX, aa):
-    return _ModelTwoPower.model(XX, aa)
+    return _ModelTwoPower._model(XX, aa)
 
 def _deriv_twopower(XX, aa):
-    return _ModelTwoPower.derivative(XX, aa)
+    return _ModelTwoPower._deriv(XX, aa)
 
 def _partial_twopower(XX, aa):
-    return _ModelTwoPower.jacobian(XX, aa)
+    return _ModelTwoPower._partial(XX, aa)
 
 def _partial_deriv_twopower(XX, aa):
-    return _ModelTwoPower.derivative_jacobian(XX, aa)
+    return _ModelTwoPower._partial_deriv(XX, aa)
 
 
 def _model_twopower(XX, af=None, **kwargs):
@@ -2721,19 +2676,16 @@ class _ModelTwoPower(ModelClass):
     A two power profile fit with three free parameters:
     prof ~ f(x) = a*(1-x^pow1)^pow2
     """
-    _af = _np.asarray([1.0, 0.0, 2.0, 1.0], dtype=_np.float64)
-    _LB = _np.asarray([0.0, 0.0, -_np.inf, -_np.inf], dtype=_np.float64)
-    _UB = _np.asarray([_np.inf, _np.inf, _np.inf, _np.inf], dtype=_np.float64)
-    _fixed = _np.zeros( (4,), dtype=int)
+    _af = _np.asarray([1.0, 2.0, 1.0], dtype=_np.float64)
+    _LB = _np.asarray([0.0, -_np.inf, -_np.inf], dtype=_np.float64)
+    _UB = _np.asarray([_np.inf, _np.inf, _np.inf], dtype=_np.float64)
+    _fixed = _np.zeros( (3,), dtype=int)
     def __init__(self, XX, af=None, **kwargs):
         super(_ModelTwoPower, self).__init__(XX, af, **kwargs)
-        if XX is None:
-            return self
-        # end if
     # end def __init__
 
     @staticmethod
-    def _twopower_base(XX, aa):
+    def _model_base(XX, aa):
         """
             f = (1.0 - x**c)**d
         non-trival domain:  c>0 and 0<=x<1  or   c<0 and x>1
@@ -2753,7 +2705,7 @@ class _ModelTwoPower(ModelClass):
             d = power scaling factor 2
         """
         a, c, d = tuple(aa)
-        return a*_ModelTwoPower._twopower_base(XX, [c,d])
+        return a*_ModelTwoPower._model_base(XX, [c,d])
 
     @staticmethod
     def _deriv(XX, aa):
@@ -2764,7 +2716,7 @@ class _ModelTwoPower(ModelClass):
        """
         XX = _np.copy(_np.abs(XX))
         a, c, d = tuple(aa)
-        return -1.0*c*d*_np.power(XX, c-1.0)*_ModelTwoPower._twopower(XX, [a, c, d-1.0])
+        return -1.0*c*d*_np.power(XX, c-1.0)*_ModelTwoPower._model(XX, [a, c, d-1.0])
     #    return -1.0*a*c*d*_np.power(XX, c-1.0)*_np.power(1.0-_np.power(XX,c), d-1.0)
 
     @staticmethod
@@ -2783,9 +2735,9 @@ class _ModelTwoPower(ModelClass):
         a, c, d = tuple(aa)
 
         gvec = _np.zeros((3,_np.size(XX)), dtype=_np.float64)
-        gvec[0,:] = _ModelTwoPower._twopower_base(XX, [c, d])
-        gvec[1,:] = -1.0*d*_np.power(XX, c)*_np.log(_np.abs(XX))*_ModelTwoPower._twopower(XX, [a, c, d-1.0])
-        gvec[2,:] = _ModelTwoPower._twopower(XX, aa)*_np.log(_np.abs(_ModelTwoPower._twopower(XX, [1.0, c, 1.0])))
+        gvec[0,:] = _ModelTwoPower._model_base(XX, [c, d])
+        gvec[1,:] = -1.0*d*_np.power(XX, c)*_np.log(_np.abs(XX))*_ModelTwoPower._model(XX, [a, c, d-1.0])
+        gvec[2,:] = _ModelTwoPower._model(XX, aa)*_np.log(_np.abs(_ModelTwoPower._model(XX, [1.0, c, 1.0])))
         return gvec
 
     @staticmethod
@@ -2809,13 +2761,13 @@ class _ModelTwoPower(ModelClass):
        """
         XX = _np.copy(XX)
         a, c, d = tuple(aa)
-        dfdx = _ModelTwoPower._deriv_twopower(XX, aa)
+        dfdx = _ModelTwoPower._deriv(XX, aa)
 
         dgdx = _np.zeros((3,_np.size(XX)), dtype=_np.float64)
         dgdx[0,:] = dfdx/a
         dgdx[1,:] = dfdx*(_np.power(c, -1.0) + _np.log(_np.abs(XX))
-            - (d-1.0)*_np.power(XX, c)*_np.log(_np.abs(XX))*_ModelTwoPower._twopower(XX, [1.0, c, -1.0]))
-        dgdx[2,:] = dfdx*(_np.power(d, -1.0) + _np.log(_np.abs(_ModelTwoPower._twopower_base(XX, [c, d-1.0]))))
+            - (d-1.0)*_np.power(XX, c)*_np.log(_np.abs(XX))*_ModelTwoPower._model(XX, [1.0, c, -1.0]))
+        dgdx[2,:] = dfdx*(_np.power(d, -1.0) + _np.log(_np.abs(_ModelTwoPower._model_base(XX, [c, d-1.0]))))
         return dgdx
 
 #    @staticmethod
@@ -2834,7 +2786,7 @@ class _ModelTwoPower(ModelClass):
     # ====================================== #
 
 #    def checkbounds(self, dat):
-#        return super(ModelTwoPower, self).checkbounds(dat, self.aa, mag=None)
+#        return super(_ModelTwoPower, self).checkbounds(dat, self.aa, mag=None)
 
     # ====================================== #
 # end def _ModelTwoPower
@@ -2844,13 +2796,13 @@ class _ModelTwoPower(ModelClass):
 
 
 def twopower(XX, aa):
-    return ModelTwoPower.model(XX, aa)
+    return ModelTwoPower._model(XX, aa)
 
 def deriv_twopower(XX, aa):
-    return ModelTwoPower.derivative(XX, aa)
+    return ModelTwoPower._deriv(XX, aa)
 
 def partial_twopower(XX, aa):
-    return ModelTwoPower.derivative_jacobian(XX, aa)
+    return ModelTwoPower._partial_deriv(XX, aa)
 
 def model_twopower(XX, af=None, **kwargs):
     return _model(ModelTwoPower, XX, af, **kwargs)
@@ -2870,12 +2822,9 @@ class ModelTwoPower(ModelClass):
     _af = _np.asarray([1.0, 0.0, 12.0, 3.0], dtype=_np.float64)
     _LB = _np.asarray([0.0, 0.0, -20.0, -20.0], dtype=_np.float64)
     _UB = _np.asarray([20, 1.0, 20.0, 20.0], dtype=_np.float64)
-    _fixed = _np.zeros( (1,), dtype=int)
+    _fixed = _np.zeros( (4,), dtype=int)
     def __init__(self, XX, af=None, **kwargs):
         super(ModelTwoPower, self).__init__(XX, af, **kwargs)
-        if XX is None:
-            return self
-        # end if
     # end def __init__
 
     @staticmethod
@@ -2955,8 +2904,8 @@ class ModelTwoPower(ModelClass):
         dgdx[0, :] = dfdx/a
         dgdx[1, :] = -dfdx/(1.0-b)
         dgdx[2, :] = dfdx*( 1.0/c + _np.log(_np.abs(XX))
-                - (d-1.0)*_np.power(XX, c)*_np.log(_np.abs(XX))/_ModelTwoPower._twopower_base(XX,[c, 1.0]))
-        dgdx[3, :] = dfdx*( 1.0/d + _np.log(_np.abs(_ModelTwoPower._twopower_base(XX, [c, 1.0]))) )
+                - (d-1.0)*_np.power(XX, c)*_np.log(_np.abs(XX))/_ModelTwoPower._model_base(XX,[c, 1.0]))
+        dgdx[3, :] = dfdx*( 1.0/d + _np.log(_np.abs(_ModelTwoPower._model_base(XX, [c, 1.0]))) )
         return dgdx
 
 #    @staticmethod
@@ -3001,24 +2950,20 @@ class ModelTwoPower(ModelClass):
 
 
 def expedge(XX, aa):
-    return ModelExpEdge.model(XX, aa)
+    return ModelExpEdge._model(XX, aa)
 
 def partial_expedge(XX, aa):
-    return ModelExpEdge.jacobian(XX, aa)
+    return ModelExpEdge._partial(XX, aa)
 
 def deriv_expedge(XX, aa):
-    return ModelExpEdge.derivative(XX, aa)
+    return ModelExpEdge._deriv(XX, aa)
 
 def partial_deriv_expedge(XX, aa):
-    return ModelExpEdge.derivative_jacobian(XX, aa)
+    return ModelExpEdge._partial_deriv(XX, aa)
 
 def model_expedge(XX, af, **kwargs):
     """
     """
-    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
-        aout = _np.copy(ain)
-
-        return aout
     return _model(ModelExpEdge, XX, af, **kwargs)
 
 # ============================================== #
@@ -3038,9 +2983,6 @@ class ModelExpEdge(ModelClass):
     _fixed = _np.zeros( (2,), dtype=int)
     def __init__(self, XX, af=None, **kwargs):
         super(ModelExpEdge, self).__init__(XX, af, **kwargs)
-        if XX is None:
-            return self
-        # end if
     # end def __init__
 
     @staticmethod
@@ -3126,16 +3068,16 @@ class ModelExpEdge(ModelClass):
 # ========================================================================== #
 
 def qparab(XX, aa):
-    return ModelQuasiParabolic.model(XX, aa)
+    return ModelQuasiParabolic._model(XX, aa)
 
 def deriv_qparab(XX, aa):
-    return ModelQuasiParabolic.derivative(XX, aa)
+    return ModelQuasiParabolic._deriv(XX, aa)
 
 def partial_qparab(XX, aa):
-    return ModelQuasiParabolic.jacobian(XX, aa)
+    return ModelQuasiParabolic._partial(XX, aa)
 
 def partial_deriv_qparab(XX, aa):
-    return ModelQuasiParabolic.derivative_jacobian(XX, aa)
+    return ModelQuasiParabolic._partial_deriv(XX, aa)
 
 def deriv2_qparab(XX, aa):
     """
@@ -3231,43 +3173,45 @@ class ModelQuasiParabolic(ModelClass):
     _UB = _np.asarray([ 20.0, 1.0, 10, 10, 1, 1], dtype=_np.float64)
     _fixed = _np.zeros( (6,), dtype=int)
     def __init__(self, XX, af=None, **kwargs):
+        nohollow = kwargs.setdefault('nohollow', False)
+        if nohollow:
+            self._af[4] = 0.0
+            self._af[5] = 1.0
+            self._fixed[4:] = int(1)
         super(ModelQuasiParabolic, self).__init__(XX, af, **kwargs)
-        if XX is None:
-            return self
-        # end if
     # end def __init__
 
     @staticmethod
     def _model(XX, aa):
         a, b, c, d, e, f = tuple(aa)
-        prof = a*( ModelTwoPower.model(XX, [b-e, c, d])
-                 + ModelExpEdge.model(XX, [e, f]) )
+        prof = ( ModelTwoPower._model(XX, [a, b-e, c, d])
+                 + a*ModelExpEdge._model(XX, [e, f]) )
         return prof
 
     @staticmethod
     def _deriv(XX, aa):
         a, b, c, d, e, f = tuple(aa)
-        return a*( ModelTwoPower.derivative(XX, [b-e, c, d])
-                 + ModelExpEdge.derivative(XX, [e, f]) )
+        return ( ModelTwoPower._deriv(XX, [a, b-e, c, d])
+                 + a*ModelExpEdge._deriv(XX, [e, f]) )
 
     @staticmethod
     def _partial(XX, aa):
         a, b, c, d, e, f = tuple(aa)
         gvec = _np.zeros((6,len(XX)), dtype=_np.float64)
-        gvec[0, :] = ModelQuasiParabolic.model(XX, aa)/a
-        gvec[1:4,:] = a*ModelTwoPower.jacobian(XX, [b-e, c, d])
-        gvec[4:, :] = a*ModelExpEdge.jacobian(XX, [e, f])
-    #    gvec = _np.append(gvec, a*ModelTwoPower.jacobian(XX, [b-e, c, d]), axis=0)
-    #    gvec = _np.append(gvec, a*ModelExpEdge.jacobian(XX, [e, f]), axis=0)
+        gvec[0, :] = ModelQuasiParabolic._model(XX, aa)/a
+        gvec[1:4,:] = ModelTwoPower._partial(XX, [a, b-e, c, d])[1:,:]
+        gvec[4:, :] = a*ModelExpEdge._partial(XX, [e, f])
+    #    gvec = _np.append(gvec, ModelTwoPower._partial(XX, [a, b-e, c, d]), axis=0)
+    #    gvec = _np.append(gvec, a*ModelExpEdge._partial(XX, [e, f]), axis=0)
         return gvec
 
     @staticmethod
     def _partial_deriv(XX, aa):
         a, b, c, d, e, f = tuple(aa)
         gvec = _np.zeros((6,len(XX)), dtype=_np.float64)
-        gvec[0, :] = ModelQuasiParabolic.derivative(XX, aa)/a
-        gvec[1:4,:] = a*ModelTwoPower.derivative_jacobian(XX, [b-e, c, d])
-        gvec[4:,:] = a*ModelExpEdge.derivative_jacobian(XX, [e, f])
+        gvec[0, :] = ModelQuasiParabolic._deriv(XX, aa)/a
+        gvec[1:4,:] = ModelTwoPower._partial_deriv(XX, [a, b-e, c, d])[1:,:]
+        gvec[4:,:] = a*ModelExpEdge._partial_deriv(XX, [e, f])
     #    gvec = _np.append(gvec, a*partial_deriv_edgepower(XX, [b-e, c, d]), axis=0)
     #    gvec = _np.append(gvec, a*partial_deriv_expedge(XX, [e, f]), axis=0)
         return gvec
@@ -3351,16 +3295,16 @@ class ModelQuasiParabolic(ModelClass):
 
 
 def flattop(XX, aa):
-    return ModelFlattop.model(XX, aa)
+    return ModelFlattop._model(XX, aa)
 
 def deriv_flattop(XX, aa):
-    return ModelFlattop.derivative(XX, aa)
+    return ModelFlattop._deriv(XX, aa)
 
 def partial_flattop(XX, aa):
-    return ModelFlattop.jacobian(XX, aa)
+    return ModelFlattop._partial(XX, aa)
 
 def partial_deriv_flattop(XX, aa):
-    return ModelFlattop.derivative_jacobian(XX, aa)
+    return ModelFlattop._partial_deriv(XX, aa)
 
 def model_flattop(XX, af, **kwargs):
     """
@@ -3384,9 +3328,6 @@ class ModelFlattop(ModelClass):
     _fixed = _np.zeros( (3,), dtype=int)
     def __init__(self, XX, af=None, **kwargs):
         super(ModelFlattop, self).__init__(XX, af, **kwargs)
-        if XX is None:
-            return self
-        # end if
     # end def __init__
 
     @staticmethod
@@ -3397,8 +3338,9 @@ class ModelFlattop(ModelClass):
         prof ~ f(x) = a / (1 + (x/b)^c)
 
         """
-        temp = _np.power(XX/aa[1], aa[2])
-        return aa[0] / (1.0 + temp)
+        a, b, c = tuple(aa)
+        temp = _np.power(XX/b, c)
+        return a / (1.0 + temp)
 
     @staticmethod
     def _deriv(XX, aa):
@@ -3407,8 +3349,9 @@ class ModelFlattop(ModelClass):
         dfdx = -1*c*x^(c-1)*b^-c* a/(1+(x/b)^c)^2
              = -a*c*(x/b)^c/(x*(1+(x/b)^c)^2)
         """
-        temp = _np.power(XX/aa[1], aa[2])
-        return -1.0*aa[0]*aa[2]*temp/(XX*(1.0+temp)**2.0)
+        a, b, c = tuple(aa)
+        temp = _np.power(XX/b, c)
+        return -1.0*a*c*temp/(XX*_np.power(1.0+temp,2.0))
 
     @staticmethod
     def _partial(XX, aa):
@@ -3422,13 +3365,14 @@ class ModelFlattop(ModelClass):
         dfdc = a*_np.log(x/b)*(x/b)^c / (1+(x/b)^c)^2   # check math
         """
         nx = len(XX)
-        temp = _np.power(XX/aa[1], aa[2])
+        a, b, c = tuple(aa)
+        temp = _np.power(XX/b, c)
         prof = flattop(XX, aa)
 
         gvec = _np.zeros((3, nx), dtype=_np.float64)
-        gvec[0, :] = prof / aa[0]
-        gvec[1, :] = aa[0]*aa[2]*temp / (aa[1]*(1.0+temp)**2.0)
-        gvec[2, :] = aa[0]*temp*_np.log(_np.abs(XX/aa[1])) / (1.0+temp)**2.0
+        gvec[0, :] = prof / a
+        gvec[1, :] = a*c*temp / (b*_np.power(1.0+temp,2.0) )
+        gvec[2, :] = a*temp*_np.log(_np.abs(XX/b)) / _np.power(1.0+temp,2.0)
         return gvec
 
     @staticmethod
@@ -3447,16 +3391,17 @@ class ModelFlattop(ModelClass):
         d2fdxdc
         """
         nx = len(XX)
-        temp = _np.power(XX/aa[1], aa[2])
+        a, b, c = tuple(aa)
+        temp = _np.power(XX/b, c)
         prof = flattop(XX, aa)
         dprofdx = deriv_flattop(XX, aa)
 
         dgdx = _np.zeros((3, nx), dtype=_np.float64)
-        dgdx[0, :] = dprofdx / aa[0]
-        dgdx[1, :] = prof * dprofdx * (XX/temp) * (aa[2]/aa[0]) * (temp-1.0) / (aa[1]*aa[1])
-        dgdx[2, :] = dprofdx/aa[2]
-        dgdx[2, :] += dprofdx*_np.log(_np.abs(XX/aa[1]))
-        dgdx[2, :] -= 2.0*(dprofdx**2.0)*(_np.log(_np.abs(XX/aa[1]))/prof)
+        dgdx[0, :] = dprofdx / a
+        dgdx[1, :] = prof * dprofdx * (XX/temp) * (c/a) * (temp-1.0) / (b*b)
+        dgdx[2, :] = dprofdx/c
+        dgdx[2, :] += dprofdx*_np.log(_np.abs(XX/b))
+        dgdx[2, :] -= 2.0*(dprofdx**2.0)*(_np.log(_np.abs(XX/b))/prof)
         return dgdx
 
 #    @staticmethod
@@ -3504,16 +3449,16 @@ class ModelFlattop(ModelClass):
 
 
 def massberg(XX, aa):
-    return ModelMassberg.model(XX, aa)
+    return ModelMassberg._model(XX, aa)
 
 def deriv_massberg(XX, aa):
-    return ModelMassberg.derivative(XX, aa)
+    return ModelMassberg._deriv(XX, aa)
 
 def partial_massberg(XX, aa):
-    return ModelMassberg.jacobian(XX, aa)
+    return ModelMassberg._partial(XX, aa)
 
 def partial_deriv_massberg(XX, aa):
-    return ModelMassberg.derivative_jacobian(XX, aa)
+    return ModelMassberg._partial_deriv(XX, aa)
 
 def model_massberg(XX, af, **kwargs):
     return _model(ModelMassberg, XX, af, **kwargs)
@@ -3533,65 +3478,72 @@ class ModelMassberg(ModelClass):
     The slope can be positive (hollow profile, h < 0) or
                      negative (peaked profile, h > 0).
     """
-    _af = _np.asarray([1.0, 0.4, 5.0, 2.0], dtype=_np.float64)
-    _LB = _np.asarray([0.0, 0.0, 1.0, -_np.inf], dtype=_np.float64)
-    _UB = _np.asarray([_np.inf, 1.0, _np.inf, _np.inf], dtype=_np.float64)
+    _af = _np.asarray([1.0, 0.4, 5.0, 0.5], dtype=_np.float64)
+    _LB = _np.asarray([0.0, 0.0, 1.0, -1], dtype=_np.float64)
+    _UB = _np.asarray([_np.inf, 1.0, _np.inf, 1], dtype=_np.float64)
     _fixed = _np.zeros( (4,), dtype=int)
     def __init__(self, XX, af=None, **kwargs):
         super(ModelMassberg, self).__init__(XX, af, **kwargs)
-        if XX is None:
-            return self
-        # end if
     # end def __init__
+
+#    @staticmethod
+#    def _model(XX, aa):
+#        a, b, c, h = tuple(aa)
+#        return a*(1.0-h*(XX/b)) / (1+_np.power(XX/b, c))
 
     @staticmethod
     def _model(XX, aa):
-        prft = flattop(XX, aa)
-        temp = XX/aa[1]
-        return prft * (1-aa[3]*temp)
+        a, b, c, h = tuple(aa)
+        prft = flattop(XX, [a, b, c])
+        temp = XX/b
+        return prft * (1-h*temp)
 
     @staticmethod
     def _deriv(XX, aa):
-        prft = flattop(XX, aa)
-        drft = deriv_flattop(XX, aa)
+        a, b, c, h = tuple(aa)
+        prft = flattop(XX,[a, b, c])
+        drft = deriv_flattop(XX, [a, b, c])
 
-        temp = XX/aa[1]
-        return drft*(1-aa[3]*temp) - prft*aa[3]/aa[1]
+        temp = XX/b
+        return drft*(1-h*temp) - prft*h/b
 
     @staticmethod
     def _partial(XX, aa):
         nx = len(XX)
-        prft = flattop(XX, aa)
-        gft = partial_flattop(XX, aa)
+        a, b, c, h = tuple(aa)
+        prft = flattop(XX, [a, b, c])
+        gft = partial_flattop(XX, [a, b, c])
 
-        temp = XX/aa[1]
+        temp = XX/b
         prof = massberg(XX, aa)
 
         gvec = _np.zeros((4, nx), dtype=_np.float64)
-        gvec[0, :] = prof / aa[0]
-        gvec[1, :] = gft[1,:]*(1.0-aa[3]*temp) + prft*aa[3]*XX/_np.power(aa[1], 2.0)
-        gvec[2, :] = gft[2,:]*(1.0-aa[3]*temp)
-        gvec[3, :] = (-1.0*XX / aa[1])*prft
+        gvec[0, :] = prof / a
+        gvec[1, :] = gft[1,:]*(1.0-h*temp) + prft*h*XX/_np.power(b, 2.0)
+        gvec[2, :] = gft[2,:]*(1.0-h*temp)
+        gvec[3, :] = (-1.0*XX / b)*prft
         return gvec
 
     @staticmethod
     def _partial_deriv(XX, aa):
         nx = len(XX)
-        temp = XX/aa[1]
+        a, b, c, h = tuple(aa)
     #    prof = massberg(XX, af)
         dprofdx = deriv_massberg(XX, aa)
 
-        prft = flattop(XX, aa)
-        dflatdx = deriv_flattop(XX, aa)
-        gft = partial_flattop(XX, aa)
-        dgft = partial_deriv_flattop(XX, aa)
+        temp = XX/b
+
+        prft = flattop(XX, [a, b, c])
+        dflatdx = deriv_flattop(XX, [a, b, c])
+        gft = partial_flattop(XX, [a, b, c])
+        dgft = partial_deriv_flattop(XX, [a, b, c])
 
         dgdx = _np.zeros((4, nx), dtype= float)
-        dgdx[0,:] = dprofdx / aa[0]
-        dgdx[1,:] = dgft[1,:]*(1.0-aa[3]*temp) + dflatdx * aa[3]*XX/_np.power(aa[1], 2.0)
-        dgdx[1,:] += prft*aa[3]/(aa[1]**2.0) - (aa[3]/aa[1])*gft[1,:]
-        dgdx[2,:] = dgft[2,:]*(1.0-aa[3]*temp) - gft[2, :]*aa[3]/aa[1]
-        dgdx[3,:] = -1.0*(XX/aa[1])*prft
+        dgdx[0,:] = dprofdx / a
+        dgdx[1,:] = dgft[1,:]*(1.0-h*temp) + dflatdx * h*XX/_np.power(b, 2.0)
+        dgdx[1,:] += prft*h/_np.power(b, 2.0) - (h/b)*gft[1,:]
+        dgdx[2,:] = dgft[2,:]*(1.0-h*temp) - gft[2, :]*h/b
+        dgdx[3,:] = -1.0*(XX/b)*prft
         return dgdx
 
 #    @staticmethod
@@ -3720,9 +3672,6 @@ def model_Heaviside(XX, af=None, **kwargs):
 #    _fixed = _np.zeros( (1,), dtype=int)
 #    def __init__(self, XX, af=None, **kwargs):
 #        super(ModelHeaviside, self).__init__(XX, af, **kwargs)
-#        if XX is None:
-#            return self
-#        # end if
 #    # end def __init__
 #
 #    @staticmethod
@@ -3846,9 +3795,6 @@ def model_StepSeries(XX, af=None, **kwargs):
 #    _fixed = _np.zeros( (1,), dtype=int)
 #    def __init__(self, XX, af=None, **kwargs):
 #        super(ModelStepSeries, self).__init__(XX, af, **kwargs)
-#        if XX is None:
-#            return self
-#        # end if
 #    # end def __init__
 #
 #    @staticmethod
@@ -4385,14 +4331,14 @@ def _model(mod, XX, af=None, **kwargs):
     """
     mod = mod(XX, af, **kwargs)
     if XX is None:
-        return info
+        return mod
     offset = 0.0 if not hasattr(mod, '_secretoffset') else mod._secretoffset    # end if
     mod.update(XX, af)
 
-    info.func = lambda _x, _a: mod.model(_x, _a) + offset
-    info.dfunc = lambda _x, _a: mod.derivative(_x, _a)
-    info.gfunc = lambda _x, _a: mod.jacobian(_x, _a)
-    info.dgfunc = lambda _x, _a: mod.derivative_jacobian(_x, _a)
+    mod.modfunc = lambda _x, _a: mod.model(_x, _a) + offset
+    mod.moddfunc = lambda _x, _a: mod.derivative(_x, _a)
+    mod.modgfunc = lambda _x, _a: mod.jacobian(_x, _a)
+    mod.moddgfunc = lambda _x, _a: mod.derivative_jacobian(_x, _a)
     return mod.prof, mod.gvec, mod
 
 

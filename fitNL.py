@@ -212,10 +212,14 @@ def gen_random_init_conds(func, **fkwargs):
     # Differentiate base data set from default starting positions by randomly
     # setting the profile to be within the upper / lower bounds (or reasonable values)
     # aa = _ms.randomize_initial_conditions(LB=temp.Lbounds, UB=temp.Ubounds, af0=af0, varaf0=varaf0)
-
     aa = _np.copy(temp.af)
-#    aa += 0.5*aa*_np.random.normal(0.0, 1.0, len(aa))
-    aa += 0.5*aa*_np.random.uniform(0.0, 1.0, len(aa))
+##    aa += 0.5*aa*_np.random.normal(0.0, 1.0, len(aa))
+#    aa += 0.5*aa*_np.random.uniform(0.0, 1.0, len(aa))
+    for ii in range(len(aa)):
+        if temp.fixed[ii] == 0:
+            aa[ii] += 0.5*aa[ii]*_np.random.uniform(0.0, 1.0, 1)
+        # end if
+    # end for
 
     # Doesn't work super well:
 #    aa = _np.zeros_like(temp.af)
@@ -252,10 +256,29 @@ def modelfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     kwargs.setdefault('debug', 0)
     return fit_mpfit(x, y, ey, XX, func, fkwargs, **kwargs)
 
+def _clean_mpfit_kwargs(kwargs):
+    mwargs = {}
+    if 'xtol' in kwargs:        mwargs['xtol'] = kwargs['xtol']   # end if
+    if 'ftol' in kwargs:        mwargs['ftol'] = kwargs['ftol']   # end if
+    if 'gtol' in kwargs:        mwargs['gtol'] = kwargs['gtol']   # end if
+    if 'damp' in kwargs:        mwargs['damp'] = kwargs['damp']   # end if
+    if 'maxiter' in kwargs:     mwargs['maxiter'] = kwargs['maxiter']   # end if
+    if 'factor' in kwargs:      mwargs['factor'] = kwargs['factor']   # end if
+    if 'nprint' in kwargs:      mwargs['nprint'] = kwargs['nprint']   # end if
+    if 'iterfunct' in kwargs:   mwargs['iterfunct'] = kwargs['iterfunct']   # end if
+    if 'iterkw' in kwargs:      mwargs['iterkw'] = kwargs['iterkw']   # end if
+    if 'nocovar' in kwargs:     mwargs['nocovar'] = kwargs['nocovar']   # end if
+    if 'rescale' in kwargs:     mwargs['rescale'] = kwargs['rescale']   # end if
+    if 'autoderivative' in kwargs:  mwargs['autoderivative'] = kwargs['autoderivative']   # end if
+    if 'quiet' in kwargs:       mwargs['quiet'] = kwargs['quiet']   # end if
+    if 'diag' in kwargs:        mwargs['diag'] = kwargs['diag']   # end if
+    if 'epsfcn' in kwargs:      mwargs['epsfcn'] = kwargs['epsfcn']   # end if        :
+    if 'debug' in kwargs:       mwargs['debug'] = kwargs['debug']   # end if
+    return mwargs
 def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
 
     # subfunction kwargs
-    scale_by_data = kwargs.pop('scale_problem',True)
+    scale_by_data = kwargs.pop('scale_problem',False)
 
     # fitter kwargs
     LB = kwargs.pop('LB', None)
@@ -263,21 +286,21 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     p0 = kwargs.pop('af0', None)
     fixed = kwargs.pop('fixed', None)
 
+    # check for alternative names
+    if LB is None: LB = kwargs.pop('Lbounds', None)  # end if
+    if UB is None: UB = kwargs.pop('Ubounds', None)  # end if
+    if p0 is None: p0 = kwargs.pop('af', None)       # end if
+
     skipwithnans = kwargs.pop('PassBadFit', False)
     plotit = kwargs.pop('plotit', False)
 
     # default initial conditions come directly from the model functions
     _, _, info = func(XX, af=None, **fkwargs)
     info.success = False
-    if p0 is None:
-        p0 = info.af
-    if LB is None:
-        LB = info.Lbounds
-    if UB is None:
-        UB = info.Ubounds
-    if fixed is None:
-        fixed = info.fixed
-    # end if
+    if p0 is None:        p0 = info.af          # end if
+    if LB is None:        LB = info.Lbounds     # end if
+    if UB is None:        UB = info.Ubounds     # end if
+    if fixed is None:     fixed = info.fixed    # end if
     numfit = len(p0)
 
     if numfit != LB.shape[0]:
@@ -341,7 +364,9 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
 
     # Call mpfit
 #    kwargs['nprint'] = kwargs.get('nprint',10)
-    m = LMFIT(mymodel, p0, parinfo=parinfo, residual_keywords=fa, **kwargs)
+    mpwargs = _clean_mpfit_kwargs(kwargs)
+#    m = LMFIT(mymodel, p0, parinfo=parinfo, residual_keywords=fa, **kwargs)
+    m = LMFIT(mymodel, p0, parinfo=parinfo, residual_keywords=fa, **mpwargs)
     #  m - object
     #   m.status   - there are more than 12 return codes (see mpfit documentation)
     #   m.errmsg   - a string error or warning message
@@ -1196,18 +1221,21 @@ def test_fit(func=_ms.model_qparab, **fkwargs):
         XX = _np.linspace(-0.5*Fs, 0.5*Fs, 18750)
     # end if
     ydat, _, temp = func(xdat, af=aa, **fkwargs)
+#    ydat, _, func = func(xdat, af=aa, **fkwargs)
+    kwargs = temp.dict_from_class()
 
     yerr = 0.1*_np.mean(ydat)
     yerr = yerr*_np.ones_like(ydat)
     yxx, _, _ = func(XX, af=aa, **fkwargs)
 
-    info = modelfit(xdat, ydat, yerr, XX, func, fkwargs)
+    info = modelfit(xdat, ydat, yerr, XX, func, fkwargs, **kwargs)
 #    assert _np.allclose(info.params, aa)
 #    assert info.dof==len(xdat)-len(aa)
 
     ydat += 0.05*_np.mean(ydat)*_np.random.normal(0.0, 1.0, len(ydat))
 #    ydat, _ = _ms.check_bounds(dat=ydat, af=aa, LB=temp.Lbounds, UB=temp.Ubounds, magind=temp.)
-    info = modelfit(xdat, ydat, yerr, XX, func, fkwargs)
+#    info = modelfit(xdat, ydat, yerr, XX, func, fkwargs)
+    info = modelfit(xdat, ydat, yerr, XX, func, fkwargs, **kwargs)
 
     _plt.figure()
     ax1 = _plt.subplot(3, 1, 1)
@@ -1227,7 +1255,6 @@ def test_fit(func=_ms.model_qparab, **fkwargs):
 #    _plt.ylim((_np.min((0,1.2*_np.min(info.dprofdx))), 1.2*_np.max(info.dprofdx)))
 
     _plt.subplot(3, 1, 3)
-    tst, _, _ = _ms.model_ProdExp(xdat, info.params)
     _plt.bar(left=_np.asarray(range(len(aa))), height=aa-info.params, width=1.0)
 # end
 
@@ -1941,7 +1968,7 @@ if __name__=="__main__":
 #    test_qparab_fit(nohollow=False)
 #    test_qparab_fit(nohollow=True)
 #    ft = test_fitNL(False)
-#    ft = test_fitNL(True)  # issue with interpolation when x>1 and x<0?
+    ft = test_fitNL(True)  # issue with interpolation when x>1 and x<0?
 
 #    test_fit(_ms.model_line)
 #    test_fit(_ms.model_gaussian)    # check initial conditions
@@ -1951,8 +1978,8 @@ if __name__=="__main__":
 #    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=1, profile_dat=False)
 #    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=2, profile_dat=False)
 #    test_fit(_ms.model_doppler, noshift=0, Fs=1.0, model_order=2, profile_dat=False)
-#    test_fit(_ms.model_edgepower)
-# #    test_fit(_ms.model_twopower)
+#    test_fit(_ms._model_twopower)
+#    test_fit(_ms.model_twopower)
 #    test_fit(_ms.model_expedge)
 #    test_fit(_ms.model_qparab, nohollow=False) # broken
 #    test_fit(_ms.model_qparab, nohollow=True)
@@ -1965,6 +1992,7 @@ if __name__=="__main__":
 #    test_fit(_ms.model_evenpoly, npoly=2)
 #    test_fit(_ms.model_evenpoly, npoly=3)
 #    test_fit(_ms.model_evenpoly, npoly=6)
+#    test_fit(_ms.model_evenpoly, npoly=10)
 #    test_fit(_ms.model_PowerLaw, npoly=2)   # check derivatives, uncertainty wrong
 #    test_fit(_ms.model_PowerLaw, npoly=3)   # check derivatives, uncertainty wrong
 #    test_fit(_ms.model_PowerLaw, npoly=4)   # check derivatives, uncertainty wrong
@@ -1973,9 +2001,8 @@ if __name__=="__main__":
 
     # double check math! --- put in abs(XX) where necessary,
     # use subfunctions/ chain rule for derivatives
-#    test_fit(_ms.model_flattop)    # check
-#    test_fit(_ms.model_massberg)   # check
-#    test_fit(_ms.model_2power)     # check
+#    test_fit(_ms.model_flattop)    # check math, looks good
+#    test_fit(_ms.model_massberg)   # check, looks good
 
     # need to be reformatted still (2 left!)
 #    test_fit(_ms.model_Heaviside, npoly=3, rinits=[0.30, 0.35])
