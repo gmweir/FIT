@@ -3392,8 +3392,8 @@ class ModelFlattop(ModelClass):
              = -a*c*(x/b)^c/(x*(1+(x/b)^c)^2)
 
         dfda = 1.0/(1+_np.power(x/b, c))
-        dfdb = a*c*(x/b)^c/(b*(1+(x/b)^c)^2)            # check math
-        dfdc = a*_np.log(x/b)*(x/b)^c / (1+(x/b)^c)^2   # check math
+        dfdb = a*c*(x/b)^c/(b*(1+(x/b)^c)^2)
+        dfdc = a*_np.log(x/b)*(x/b)^c / (1+(x/b)^c)^2
         """
         nx = len(XX)
         a, b, c = tuple(aa)
@@ -3403,7 +3403,7 @@ class ModelFlattop(ModelClass):
         gvec = _np.zeros((3, nx), dtype=_np.float64)
         gvec[0, :] = prof / a
         gvec[1, :] = a*c*temp / (b*_np.power(1.0+temp,2.0) )
-        gvec[2, :] = a*temp*_np.log(_np.abs(XX/b)) / _np.power(1.0+temp,2.0)
+        gvec[2, :] = a*temp*_np.log(_np.abs(XX/b)) / _np.power(1.0+temp, 2.0)
         return gvec
 
     @staticmethod
@@ -3414,12 +3414,19 @@ class ModelFlattop(ModelClass):
              = -a*c*(x/b)^c/(x*(1+(x/b)^c)^2)
 
         dfda = 1.0/(1+_np.power(x/b, c))
-        dfdb = a*c*(x/b)^c/(b*(1+(x/b)^c)^2)            # check math
-        dfdc = a*_np.log(x/b)*(x/b)^c / (1+(x/b)^c)^2   # check math
+        dfdb = a*c*(x/b)^c/(b*(1+(x/b)^c)^2)
+        dfdc = a*_np.log(x/b)*(x/b)^c / (1+(x/b)^c)^2
 
-        d2fdxda
-        d2fdxdb
-        d2fdxdc
+        d2fdxda = -1 * c*(x/b)^c / ( x* ( 1+(x/b)^c )^2 )
+                = dfdx / a
+        d2fdxdb = -1 * a * c^2 * (x/b)^(c-1) * ((x/b)^c-1.0) / (b^2*( 1+(x/b)^c )^3 )
+                = prof * -1 * c^2 * (x/b)^(c-1) * ((x/b)^c-1.0) / (b^2*( 1+(x/b)^c )^2 )
+                = prof * x*dprofdx * c/a * (x/b)^(-1) * ((x/b)^c-1.0) / (b^2)
+                = prof * dprofdx * c/a * ((x/b)^c-1.0) / b
+        d2fdxdc = a * (x/b)^c * ( -(x/b)^c + c*(x/b)^c*ln|x/b| - c*ln|x/b| - 1.0  )
+                 / ( x*( (x/b)^c + 1 )^3  )
+                = prof*dfdx/(a*c) * ( -(x/b)^c + c*(x/b)^c*ln|x/b| - c*ln|x/b| - 1.0  )
+
         """
         nx = len(XX)
         a, b, c = tuple(aa)
@@ -3429,10 +3436,12 @@ class ModelFlattop(ModelClass):
 
         dgdx = _np.zeros((3, nx), dtype=_np.float64)
         dgdx[0, :] = dprofdx / a
-        dgdx[1, :] = prof * dprofdx * (XX/temp) * (c/a) * (temp-1.0) / (b*b)
-        dgdx[2, :] = dprofdx/c
-        dgdx[2, :] += dprofdx*_np.log(_np.abs(XX/b))
-        dgdx[2, :] -= 2.0*(dprofdx**2.0)*(_np.log(_np.abs(XX/b))/prof)
+        dgdx[1, :] = prof * dprofdx * (c/a)*(temp-1.0)/b
+        dgdx[2, :] = prof*dprofdx/(a*c) *(
+            -1.0*temp + c*temp*_np.log(_np.abs(XX/b)) - c*_np.log(_np.abs(XX/b)) - 1.0 )
+#        dgdx[2, :] = dprofdx/c
+#        dgdx[2, :] += dprofdx*_np.log(_np.abs(XX/b))
+#        dgdx[2, :] -= 2.0*(dprofdx**2.0)*(_np.log(_np.abs(XX/b))/prof)
         return dgdx
 
 #    @staticmethod
@@ -3524,6 +3533,10 @@ class ModelMassberg(ModelClass):
 
     @staticmethod
     def _model(XX, aa):
+        """
+        f = a*(1-h*x/b)/(1+(x/b)^c)
+          = flattop*(1-h*x/b)
+        """
         a, b, c, h = tuple(aa)
         prft = flattop(XX, [a, b, c])
         temp = XX/b
@@ -3531,6 +3544,12 @@ class ModelMassberg(ModelClass):
 
     @staticmethod
     def _deriv(XX, aa):
+        """
+        f = a*(1-h*x/b)/(1+(x/b)^c)
+          = flattop*(1-h*x/b)
+
+        dfdx = dflattopdx*(1-h*x/b) - flattop*h/b
+        """
         a, b, c, h = tuple(aa)
         prft = flattop(XX,[a, b, c])
         drft = deriv_flattop(XX, [a, b, c])
@@ -3540,6 +3559,18 @@ class ModelMassberg(ModelClass):
 
     @staticmethod
     def _partial(XX, aa):
+        """
+        f = a*(1-h*x/b)/(1+(x/b)^c)
+          = flattop*(1-h*x/b)
+
+        dfdx = dflattopdx*(1-h*x/b) - flattop*h/b
+
+        dfda = (1-h*x/b)/(1+(x/b)^c) = flattop*(1-h*x/b) / a
+        dfdb = dflattop/db *(1-h*x/b) + flattop * h*x/(b*b)
+        dfdc = dflattop/dc *(1-h*x/b)
+        dfdh = dflattop/dh *(1-h*x/b) - flattop*x/b
+             = -flattop*x/b
+        """
         nx = len(XX)
         a, b, c, h = tuple(aa)
         prft = flattop(XX, [a, b, c])
@@ -3557,10 +3588,28 @@ class ModelMassberg(ModelClass):
 
     @staticmethod
     def _partial_deriv(XX, aa):
+        """
+        f = a*(1-h*x/b)/(1+(x/b)^c)
+          = flattop*(1-h*x/b)
+
+        dfdx = dflattopdx*(1-h*x/b) - flattop*h/b
+
+        dfda = (1-h*x/b)/(1+(x/b)^c) = flattop*(1-h*x/b) / a
+        dfdb = dflattop/db *(1-h*x/b) + flattop * h*x/(b*b)
+        dfdc = dflattop/dc *(1-h*x/b)
+        dfdh = dflattop/dh *(1-h*x/b) - flattop*x/b
+             = -flattop*x/b
+
+        d2fdxda = d2flattopdxda * (1-h*x/b) - dflattopda*h/b
+        d2fdxdb = d2flattopdxdb*(1-h*x/b) - dflattopdb*h/b
+                 + dflattopdx*(h*x/b^2) + flattop*h/b^2
+        d2fdxdc = d2flattopdxdc*(1-h*x/b) - dflattopdc*h/b
+        d2fdxdh = dflattopdx*(-x/b) - flattop/b
+        """
         nx = len(XX)
         a, b, c, h = tuple(aa)
     #    prof = massberg(XX, af)
-        dprofdx = deriv_massberg(XX, aa)
+#        dprofdx = deriv_massberg(XX, aa)
 
         temp = XX/b
 
@@ -3570,11 +3619,16 @@ class ModelMassberg(ModelClass):
         dgft = partial_deriv_flattop(XX, [a, b, c])
 
         dgdx = _np.zeros((4, nx), dtype= float)
-        dgdx[0,:] = dprofdx / a
-        dgdx[1,:] = dgft[1,:]*(1.0-h*temp) + dflatdx * h*XX/_np.power(b, 2.0)
-        dgdx[1,:] += prft*h/_np.power(b, 2.0) - (h/b)*gft[1,:]
-        dgdx[2,:] = dgft[2,:]*(1.0-h*temp) - gft[2, :]*h/b
-        dgdx[3,:] = -1.0*(XX/b)*prft
+        dgdx[0, :] = dgft[0,:]*(1.0-h*temp) - gft[0,:]*h/b
+        dgdx[1, :] = ( dgft[1,:]*(1.0-h*temp) - gft[1,:]*h/b
+                     + dflatdx*h*XX/_np.power(b,2.0) + prft*h/_np.power(b,2.0) )
+        dgdx[2, :] = dgft[2,:]*(1.0-h*temp) - gft[2,:]*h/b
+        dgdx[3, :] = dflatdx*(-1.0*XX/b) - prft/b
+
+#        dgdx[1,:] = dgft[1,:]*(1.0-h*temp) + dflatdx * h*XX/_np.power(b, 2.0)
+#        dgdx[1,:] += prft*h/_np.power(b, 2.0) - (h/b)*gft[1,:]
+#        dgdx[2,:] = dgft[2,:]*(1.0-h*temp) - gft[2, :]*h/b
+#        dgdx[3,:] = -1.0*(XX/b)*prft
         return dgdx
 
 #    @staticmethod
