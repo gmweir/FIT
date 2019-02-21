@@ -324,11 +324,7 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
         # If fjac==None then partial derivatives should not be
         # computed.  It will always be None if MPFIT is called with default
         # flag.
-#        if fjac is None:
-#            model, _, _ = func(x, p, **fkwargs)
-#        else:
-        if 1:
-            model, gvec, info = func(x, p, **fkwargs)
+        model, gvec, info = func(x, p, **fkwargs)
 #        model = _ut.interp_irregularities(model, corezero=False)
 #        gvec = _ut.interp_irregularities(gvec, corezero=False)
         if nargout>1:
@@ -368,7 +364,6 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
 
         if autoderivative == 0 and nargout == 1:
             fjac = gvec.copy().T   # use analytic jacobian  # TODO!: transpose is from weird reshape in mpfit
-#            fjac = gvec[_np.where(fjac),:].copy().T   # use analytic jacobian  # TODO!: transpose is from weird reshape in mpfit
             if _np.isnan(fjac).any():
                 raise Exception('Nan detected in jacobian. Check model parameters and bounds \n %s'%(str(fjac),))
             return {'status':status, 'residual':residual, 'jacobian':fjac}
