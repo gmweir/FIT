@@ -237,23 +237,24 @@ def gen_random_init_conds(func, **fkwargs):
 
 # Fitting using the Levenberg-Marquardt algorithm.    #
 def modelfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
-    kwargs.setdefault('xtol', 1e-16)  # 1e-16
-    kwargs.setdefault('ftol', 1e-16)
-    kwargs.setdefault('gtol', 1e-16)
-    kwargs.setdefault('damp', 0)
-    kwargs.setdefault('maxiter', 1200)
-    kwargs.setdefault('factor', 100)  # 100
-    kwargs.setdefault('nprint', 100) # 100
-    kwargs.setdefault('iterfunct', 'default')
-    kwargs.setdefault('iterkw', {})
-    kwargs.setdefault('nocovar', 0)
-    kwargs.setdefault('rescale', 0)
-    kwargs.setdefault('autoderivative', 1)
-    kwargs.setdefault('quiet', 1)
-    kwargs.setdefault('diag', None)
-    kwargs.setdefault('epsfcn', max((_np.nanmean(_np.diff(x.copy())),1e-2))) #5e-4) #1e-3
+#    kwargs.setdefault('xtol', 1e-16)  # 1e-16
+#    kwargs.setdefault('ftol', 1e-16)
+#    kwargs.setdefault('gtol', 1e-16)
+#    kwargs.setdefault('damp', 0)
+#    kwargs.setdefault('maxiter', 1200)
+#    kwargs.setdefault('factor', 100)  # 100
+#    kwargs.setdefault('nprint', 100) # 100
+#    kwargs.setdefault('iterfunct', 'default')
+#    kwargs.setdefault('iterkw', {})
+#    kwargs.setdefault('nocovar', 0)
+#    kwargs.setdefault('rescale', 0)
+#    kwargs.setdefault('autoderivative', 1)
+#    kwargs.setdefault('quiet', 1)
+#    kwargs.setdefault('diag', None)
+#    kwargs.setdefault('epsfcn', max((_np.nanmean(_np.diff(x.copy())),1e-2))) #5e-4) #1e-3
 #    kwargs.pop('epsfcn')
-    kwargs.setdefault('debug', 0)
+#    kwargs.setdefault('debug', 0)
+#    kwargs.setdefault('debug', 1)
     return fit_mpfit(x, y, ey, XX, func, fkwargs, **kwargs)
 
 def _clean_mpfit_kwargs(kwargs):
@@ -275,10 +276,12 @@ def _clean_mpfit_kwargs(kwargs):
     if 'epsfcn' in kwargs:      mwargs['epsfcn'] = kwargs['epsfcn']   # end if        :
     if 'debug' in kwargs:       mwargs['debug'] = kwargs['debug']   # end if
     return mwargs
+
 def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
 
     # subfunction kwargs
     scale_by_data = kwargs.pop('scale_problem',False)
+    use_perpendicular_distance = kwargs.pop('perpchi2', True)
 
     # fitter kwargs
     LB = kwargs.pop('LB', None)
@@ -311,6 +314,8 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
         y, ey2, slope, offset = _ms.rescale_problem(_np.copy(y), _np.copy(ey)**2.0)
         ey = _np.sqrt(ey2)
     # end if
+#    autoderivative = kwargs.setdefault('autoderivative', 1)
+    autoderivative = kwargs.setdefault('autoderivative', 0)
 
     # ============================================= #
 
@@ -319,9 +324,18 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
         # If fjac==None then partial derivatives should not be
         # computed.  It will always be None if MPFIT is called with default
         # flag.
-        model, gvec, info = func(x, p, **fkwargs)
-        model = _ut.interp_irregularities(model, corezero=False)
-        gvec = _ut.interp_irregularities(gvec, corezero=False)
+#        if fjac is None:
+#            model, _, _ = func(x, p, **fkwargs)
+#        else:
+        if 1:
+            model, gvec, info = func(x, p, **fkwargs)
+#        model = _ut.interp_irregularities(model, corezero=False)
+#        gvec = _ut.interp_irregularities(gvec, corezero=False)
+        if nargout>1:
+            info.prof = model.copy()
+            info.gvec = gvec.copy()
+            info.dprofdx = _ut.interp_irregularities(info.dprofdx, corezero=False) # assumes cylindrical if True
+            return model, gvec, info
 
         # Non-negative status value means MPFIT should continue, negative means
         # stop the calculation.
@@ -333,17 +347,34 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
             print('All the model parameters are NaNs!')
             status = -3
         # end if
-        if kwargs['autoderivative'] == 0 and nargout == 1:
-            fjac = gvec.copy()   # use analytic jacobian
-            return {'status':status, 'residual':(y-model)/err, 'jacobian':fjac}
-        elif kwargs['autoderivative'] == 1 and nargout == 1:
-            fjac = None
-            return {'status':status, 'residual':(y-model)/err}
+        if use_perpendicular_distance:    #perp_distance
+            xmp = _np.linspace(x.min()-1e-3, x.max()+1e-3, num=201)
+            ymp, _, _ = func(xmp, p, **fkwargs)
+            npts = len(x)
+            residual = _np.zeros((npts,), dtype=_np.float64)
+            for ii in range(npts):
+                perp2 = _np.power(y[ii]-ymp,2) + _np.power(x[ii]-xmp,2)
+                imin = _np.argmin( _np.sqrt(_np.abs(perp2)) )
+                residual[ii] = _np.sqrt(_np.abs(perp2[imin]))
+                residual[ii] *= _np.sign(y[ii]-ymp[imin])
+                residual[ii] /= err[ii]
+            # end for
         else:
-            info.prof = model.copy()
-            info.gvec = gvec.copy()
-            info.dprofdx = _ut.interp_irregularities(info.dprofdx, corezero=False) # assumes cylindrical if True
-            return model, gvec, info
+            # vertical distance
+            residual = (y-model)/err
+        # end if
+        if _np.isnan(residual).any():
+            raise Exception('Nan detected in chi2. Check model parameters and bounds \n %s'%(str(residual),))
+
+        if autoderivative == 0 and nargout == 1:
+            fjac = gvec.copy().T   # use analytic jacobian  # TODO!: transpose is from weird reshape in mpfit
+#            fjac = gvec[_np.where(fjac),:].copy().T   # use analytic jacobian  # TODO!: transpose is from weird reshape in mpfit
+            if _np.isnan(fjac).any():
+                raise Exception('Nan detected in jacobian. Check model parameters and bounds \n %s'%(str(fjac),))
+            return {'status':status, 'residual':residual, 'jacobian':fjac}
+        elif autoderivative == 1 and nargout == 1:
+            fjac = None
+            return {'status':status, 'residual':residual}
         # end if
     # end def mymodel
 
@@ -704,30 +735,30 @@ class fitNL_base(Struct):
         # ========================== #
 
         solver_options = {}
-        solver_options['xtol'] = kwargs.pop('xtol', 1e-14) # 1e-10
-        solver_options['ftol'] = kwargs.pop('ftol', 1e-14) # 1e-10
-        solver_options['gtol'] = kwargs.pop('gtol', 1e-14) # 1e-10
-        solver_options['maxiter'] = kwargs.pop('maxiter', 1200) # 200
-        solver_options['factor'] = kwargs.pop('factor', 100) # 100 without rescale, scales the chi2? or the parameters?
-        solver_options['nprint'] = kwargs.pop('nprint', 10)    # debug info
-        solver_options['iterfunct'] = kwargs.pop('iterfunct', 'default')
-        solver_options['iterkw'] = kwargs.pop('iterkw', {})
-        solver_options['nocovar'] = kwargs.pop('nocovar', 0)
-        solver_options['rescale'] = kwargs.pop('rescale', 0)
-        solver_options['quiet'] = kwargs.pop('quiet', 0)
-        solver_options['diag'] = kwargs.pop('diag', None) # with rescale: positive scale factor for variables
-        solver_options['epsfcn'] = kwargs.pop('epsfcn', max((_np.nanmean(_np.diff(xdat.copy())),1e-2))) # 0.001
-        solver_options['debug'] = kwargs.pop('debug', 0)
+#        solver_options['xtol'] = kwargs.pop('xtol', 1e-14) # 1e-10
+#        solver_options['ftol'] = kwargs.pop('ftol', 1e-14) # 1e-10
+#        solver_options['gtol'] = kwargs.pop('gtol', 1e-14) # 1e-10
+#        solver_options['maxiter'] = kwargs.pop('maxiter', 1200) # 200
+#        solver_options['factor'] = kwargs.pop('factor', 100) # 100 without rescale, scales the chi2? or the parameters?
+#        solver_options['nprint'] = kwargs.pop('nprint', 10)    # debug info
+#        solver_options['iterfunct'] = kwargs.pop('iterfunct', 'default')
+#        solver_options['iterkw'] = kwargs.pop('iterkw', {})
+#        solver_options['nocovar'] = kwargs.pop('nocovar', 0)
+#        solver_options['rescale'] = kwargs.pop('rescale', 0)
+#        solver_options['quiet'] = kwargs.pop('quiet', 0)
+#        solver_options['diag'] = kwargs.pop('diag', None) # with rescale: positive scale factor for variables
+#        solver_options['epsfcn'] = kwargs.pop('epsfcn', max((_np.nanmean(_np.diff(xdat.copy())),1e-2))) # 0.001
+#        solver_options['debug'] = kwargs.pop('debug', 0)
 #        if fjac is None:
-        if 1:  # the other way doesn't work yet
-            # default to finite differencing in mpfit for jacobian
-            solver_options['autoderivative'] = kwargs.pop('autoderivative', 1)
-            solver_options['damp'] = kwargs.pop('damp', 0)
-        else:
-            # use the user-defined function to calculate analytic partial derivatives
-            solver_options['autoderivative'] = kwargs.pop('autoderivative', 0)
-            solver_options['damp'] = kwargs.pop('damp', 0) # damp doesn't work with autoderivative = 0
-        # end if
+#        if 1:  # the other way doesn't work yet
+#            # default to finite differencing in mpfit for jacobian
+#            solver_options['autoderivative'] = kwargs.pop('autoderivative', 1)
+#            solver_options['damp'] = kwargs.pop('damp', 0)
+#        else:
+#            # use the user-defined function to calculate analytic partial derivatives
+#            solver_options['autoderivative'] = kwargs.pop('autoderivative', 0)
+#            solver_options['damp'] = kwargs.pop('damp', 0) # damp doesn't work with autoderivative = 0
+#        # end if
 
         # ========================== #
 
@@ -736,6 +767,7 @@ class fitNL_base(Struct):
         self.LB = kwargs.pop("LB", -_np.Inf*_np.ones_like(self.af0))
         self.UB = kwargs.pop("UB",  _np.Inf*_np.ones_like(self.af0))
         self.fixed = kwargs.pop("fixed", _np.zeros(_np.shape(self.af0), dtype=int))
+        self.use_perpendicular_distance = kwargs.pop('perpdist', True)
 
         # ========================== #
 
@@ -760,11 +792,27 @@ class fitNL_base(Struct):
 
     def calc_chi2(self, af):
 #        try:
-        if 1:
+        if self.use_perpendicular_distance:
+#            # perpendicular distance
+            xmp = _np.linspace(self.xdat.min()-1e-3, self.xdat.max()+1e-3, num=201)
+            ymp = self.func(af, xmp)
+            npts = len(self.ydat)
+            self.chi2 = _np.zeros((npts,), dtype=_np.float64)
+            for ii in range(npts):
+                perp2 = _np.power(self.ydat[ii]-ymp,2) + _np.power(self.xdat[ii]-xmp,2)
+                imin = _np.argmin( _np.sqrt(_np.abs(perp2)) )
+                self.chi2[ii] = _np.sqrt(_np.abs(perp2[imin]))
+                self.chi2[ii] *= _np.sign(self.ydat[ii]-ymp[imin])
+                self.chi2[ii] /= _np.sqrt(_np.abs(self.vary[ii]))
+            # end for
+        else:
+            # vertical distance
             self.chi2 = (self.func(af, self.xdat) - self.ydat)
-            self.chi2 /= _np.sqrt(self.vary)
+            self.chi2 /= _np.sqrt(_np.abs(self.vary))
 #        except:
 #            pass
+        if _np.isnan(self.chi2).any():
+            raise Exception('Nan detected in chi2. Check model parameters and bounds \n %s'%(str(self.chi2),))
         return self.chi2
 
     def bootstrapper(self, xvec=None, **kwargs):
@@ -985,22 +1033,22 @@ class fitNL(fitNL_base):
 
     def run(self):
         if not hasattr(self, 'solver_options'):  self.solver_options = {}  # end if
-        self.solver_options.setdefault('xtol', 1e-14) # 1e-14
-        self.solver_options.setdefault('ftol', 1e-14) # 1e-14
-        self.solver_options.setdefault('gtol', 1e-14) # 1e-14
-        self.solver_options.setdefault('damp', 0)   # a number above which residuals are damped with hyperbolic tangent
-        self.solver_options.setdefault('maxiter', 600)  # 600
-        self.solver_options.setdefault('factor', 100)  # 100
-        self.solver_options.setdefault('nprint', 10)
-        self.solver_options.setdefault('iterfunct', 'default')
-        self.solver_options.setdefault('iterkw', {})
-        self.solver_options.setdefault('nocovar', 0)
-        self.solver_options.setdefault('rescale', 0)
-        self.solver_options.setdefault('autoderivative', 1)
-        self.solver_options.setdefault('quiet', 0)
-        self.solver_options.setdefault('diag', None)
-        self.solver_options.setdefault('epsfcn', max((_np.nanmean(_np.diff(self.xdat.copy())),1e-2))) #5e-4) #1e-3
-        self.solver_options.setdefault('debug', 0)
+#        self.solver_options.setdefault('xtol', 1e-14) # 1e-14
+#        self.solver_options.setdefault('ftol', 1e-14) # 1e-14
+#        self.solver_options.setdefault('gtol', 1e-14) # 1e-14
+#        self.solver_options.setdefault('damp', 0)   # a number above which residuals are damped with hyperbolic tangent
+#        self.solver_options.setdefault('maxiter', 600)  # 600
+#        self.solver_options.setdefault('factor', 100)  # 100
+#        self.solver_options.setdefault('nprint', 10)
+#        self.solver_options.setdefault('iterfunct', 'default')
+#        self.solver_options.setdefault('iterkw', {})
+#        self.solver_options.setdefault('nocovar', 0)
+#        self.solver_options.setdefault('rescale', 0)
+#        self.solver_options.setdefault('autoderivative', 1)
+#        self.solver_options.setdefault('quiet', 0)
+#        self.solver_options.setdefault('diag', None)
+#        self.solver_options.setdefault('epsfcn', max((_np.nanmean(_np.diff(self.xdat.copy())),1e-2))) #5e-4) #1e-3
+#        self.solver_options.setdefault('debug', 0)
 #        # default to finite differencing in mpfit for jacobian
 #        self.solver_options.setdefault('autoderivative', 1)
 
@@ -1049,10 +1097,10 @@ class fitNL(fitNL_base):
             self.gvec = None
             return {'status':status, 'residual':chi2}
 
-        if self.autoderivative:
-            mymodel = model_ad
-        else:
+        if hasattr(self, 'autoderivative') and (not self.autoderivative):
             mymodel = model_ud
+        else:
+            mymodel = model_ad
         # end if
         # default initial conditions come directly from the model functions
         self.success = False
@@ -1270,7 +1318,7 @@ def qparabfit(x, y, ey, XX, **kwargs):
     """
     # subfunction kwargs
     nohol = kwargs.pop("nohollow", False)
-    scale_by_data = kwargs.pop('scale_problem',True)
+    scale_by_data = kwargs.pop('scale_problem',False)
 
     # solver kwargs
 #    kwargs.setdefault('scale_problem', True)
@@ -1337,23 +1385,23 @@ def qparabfit(x, y, ey, XX, **kwargs):
     xin = x.copy()
     yin = y.copy()
     eyin = ey.copy()
-    if _np.min(xin) != 0:
-        xin = _np.insert(xin,0,0.0)
-        yin = _np.insert(yin,0,yin[0])
-        eyin = _np.insert(eyin,0,eyin[0])
-    # end if
-    isort = _np.argsort(_np.abs(xin))
-    xin = xin[isort]
-    yin = yin[isort]
-    eyin = eyin[isort]
-
-    if xin[0] != -1*xin[-1] and xin[1] != -1*xin[-2]:
-        _, eyin = _ut.cylsym(xin, eyin)
-        xin, yin = _ut.cylsym(xin, yin)
-#        xin = _ut.cylsym_odd(xin)   # repeated zeros at axis
-#        yin = _ut.cylsym_even(yin)
-#        eyin = _ut.cylsym_even(eyin)
-    # end if
+#    if _np.min(xin) != 0:
+#        xin = _np.insert(xin,0,0.0)
+#        yin = _np.insert(yin,0,yin[0])
+#        eyin = _np.insert(eyin,0,eyin[0])
+#    # end if
+#    isort = _np.argsort(_np.abs(xin))
+#    xin = xin[isort]
+#    yin = yin[isort]
+#    eyin = eyin[isort]
+#
+#    if xin[0] != -1*xin[-1] and xin[1] != -1*xin[-2]:
+#        _, eyin = _ut.cylsym(xin, eyin)
+#        xin, yin = _ut.cylsym(xin, yin)
+##        xin = _ut.cylsym_odd(xin)   # repeated zeros at axis
+##        yin = _ut.cylsym_even(yin)
+##        eyin = _ut.cylsym_even(eyin)
+#    # end if
 
     # Call mpfit
 #    info = fit_mpfit(xin, yin, eyin, XX, myqparab, fkwargs={"nohollow":nohol}, **kwargs)
@@ -1461,23 +1509,23 @@ def test_qparab_fit(nohollow=False):
     # ============================================== #
 
     solver_options = {}  # end if
-    solver_options.setdefault('xtol', 1e-14)
-    solver_options.setdefault('ftol', 1e-14)
-    solver_options.setdefault('gtol', 1e-14)
-    solver_options.setdefault('damp', 0)
-    solver_options.setdefault('maxiter', 1200)
-    solver_options.setdefault('factor', 100)  # 100
-    solver_options.setdefault('nprint', 10)
-    solver_options.setdefault('iterfunct', 'default')
-    solver_options.setdefault('iterkw', {})
-    solver_options.setdefault('nocovar', 0)
-    solver_options.setdefault('rescale', 0)
-    solver_options.setdefault('autoderivative', 1)
-    solver_options.setdefault('quiet', 0)
-    solver_options.setdefault('diag', None)
-    solver_options.setdefault('epsfcn', max((_np.nanmean(_np.diff(xdat.copy())),1e-2))) #5e-4) #1e-3
-#    solver_options.pop('epsfcn')
-    solver_options.setdefault('debug', 0)
+#    solver_options.setdefault('xtol', 1e-14)
+#    solver_options.setdefault('ftol', 1e-14)
+#    solver_options.setdefault('gtol', 1e-14)
+#    solver_options.setdefault('damp', 0)
+#    solver_options.setdefault('maxiter', 1200)
+#    solver_options.setdefault('factor', 100)  # 100
+#    solver_options.setdefault('nprint', 10)
+#    solver_options.setdefault('iterfunct', 'default')
+#    solver_options.setdefault('iterkw', {})
+#    solver_options.setdefault('nocovar', 0)
+#    solver_options.setdefault('rescale', 0)
+#    solver_options.setdefault('autoderivative', 1)
+#    solver_options.setdefault('quiet', 0)
+#    solver_options.setdefault('diag', None)
+#    solver_options.setdefault('epsfcn', max((_np.nanmean(_np.diff(xdat.copy())),1e-2))) #5e-4) #1e-3
+# #    solver_options.pop('epsfcn')
+#    solver_options.setdefault('debug', 0)
     # default to finite differencing in mpfit for jacobian
     # solver_options.setdefault('autoderivative', 1)
 
@@ -1965,44 +2013,44 @@ if __name__=="__main__":
 #        out, ft = doppler_test(scale_by_data=False, logdata=False, Fs=1.0, fmax=None)
 #    print(out)
 
-#    test_qparab_fit(nohollow=False)
-#    test_qparab_fit(nohollow=True)
-#    ft = test_fitNL(False)
-    ft = test_fitNL(True)  # issue with interpolation when x>1 and x<0?
+    test_qparab_fit(nohollow=False)
+    test_qparab_fit(nohollow=True)
+    ft = test_fitNL(False)
+#    ft = test_fitNL(True)  # issue with interpolation when x>1 and x<0?
 
-#    test_fit(_ms.model_line)
-#    test_fit(_ms.model_gaussian)    # check initial conditions
-#    test_fit(_ms.model_normal)    # check initial conditions
-#    test_fit(_ms.model_lorentzian)
+    test_fit(_ms.model_line)
+    test_fit(_ms.model_gaussian)    # check initial conditions
+    test_fit(_ms.model_normal)    # check initial conditions♣
+    test_fit(_ms.model_lorentzian)
 #    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=0, profile_dat=False)  # nan in model params!
 #    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=1, profile_dat=False)
 #    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=2, profile_dat=False)
 #    test_fit(_ms.model_doppler, noshift=0, Fs=1.0, model_order=2, profile_dat=False)
-#    test_fit(_ms._model_twopower)
-#    test_fit(_ms.model_twopower)
-#    test_fit(_ms.model_expedge)
-#    test_fit(_ms.model_qparab, nohollow=False) # broken
-#    test_fit(_ms.model_qparab, nohollow=True)
-#    test_fit(_ms.model_poly, npoly=2)
-#    test_fit(_ms.model_poly, npoly=3)
-#    test_fit(_ms.model_poly, npoly=6)
-#    test_fit(_ms.model_ProdExp, npoly=2)
-#    test_fit(_ms.model_ProdExp, npoly=3)
-#    test_fit(_ms.model_ProdExp, npoly=4)
-#    test_fit(_ms.model_evenpoly, npoly=2)
-#    test_fit(_ms.model_evenpoly, npoly=3)
-#    test_fit(_ms.model_evenpoly, npoly=6)
-#    test_fit(_ms.model_evenpoly, npoly=10)
-#    test_fit(_ms.model_PowerLaw, npoly=2)   # check derivatives, uncertainty wrong
-#    test_fit(_ms.model_PowerLaw, npoly=3)   # check derivatives, uncertainty wrong
-#    test_fit(_ms.model_PowerLaw, npoly=4)   # check derivatives, uncertainty wrong
-#    test_fit(_ms.model_Exponential)
-#    test_fit(_ms.model_parabolic)
+    test_fit(_ms._model_twopower)
+    test_fit(_ms.model_twopower)
+    test_fit(_ms.model_expedge)
+    test_fit(_ms.model_qparab, nohollow=False) # broken
+    test_fit(_ms.model_qparab, nohollow=True)
+    test_fit(_ms.model_poly, npoly=2)
+    test_fit(_ms.model_poly, npoly=3)
+    test_fit(_ms.model_poly, npoly=6)
+    test_fit(_ms.model_ProdExp, npoly=2)
+    test_fit(_ms.model_ProdExp, npoly=3)
+    test_fit(_ms.model_ProdExp, npoly=4)
+    test_fit(_ms.model_evenpoly, npoly=2)
+    test_fit(_ms.model_evenpoly, npoly=3)
+    test_fit(_ms.model_evenpoly, npoly=6)
+    test_fit(_ms.model_evenpoly, npoly=10)
+    test_fit(_ms.model_PowerLaw, npoly=2)   # check derivatives, uncertainty wrong
+    test_fit(_ms.model_PowerLaw, npoly=3)   # check derivatives, uncertainty wrong
+    test_fit(_ms.model_PowerLaw, npoly=4)   # check derivatives, uncertainty wrong
+    test_fit(_ms.model_Exponential)
+    test_fit(_ms.model_parabolic)
 
     # double check math! --- put in abs(XX) where necessary,
     # use subfunctions/ chain rule for derivatives
-#    test_fit(_ms.model_flattop)    # check math, looks good
-#    test_fit(_ms.model_massberg)   # check, looks good
+    test_fit(_ms.model_flattop)    # check math, looks good
+    test_fit(_ms.model_massberg)   # check, looks good
 
     # need to be reformatted still (2 left!)
 #    test_fit(_ms.model_Heaviside, npoly=3, rinits=[0.30, 0.35])

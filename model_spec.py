@@ -1112,7 +1112,7 @@ class ModelParabolic(ModelClass):
 
     """
     _af = _np.asarray([1.0], dtype=_np.float64)
-    _LB = _np.asarray([0.0], dtype=_np.float64)
+    _LB = _np.asarray([1e-18], dtype=_np.float64)
     _UB = _np.asarray([_np.inf], dtype=_np.float64)
     _fixed = _np.zeros( (1,), dtype=int)
     def __init__(self, XX, af=None, **kwargs):
@@ -1196,11 +1196,12 @@ class ModelExponential(ModelClass):
     """
     --- Exponential on Background ---
     Model - y = a1*(exp(a2*XX^a3) + XX^a4)
+
     af    - estimate of fitting parameters
     XX    - independent variables
     """
     _af = 0.1*_np.ones((4,), dtype=_np.float64)
-    _LB = _np.array([0.0, -_np.inf, -_np.inf, -_np.inf], dtype=_np.float64)
+    _LB = _np.array([1e-18, -_np.inf, -_np.inf, -_np.inf], dtype=_np.float64)
     _UB = _np.array([_np.inf, _np.inf, _np.inf, _np.inf], dtype=_np.float64)
     _fixed = _np.zeros( (4,), dtype=int)
     def __init__(self, XX, af=None, **kwargs):
@@ -1210,21 +1211,24 @@ class ModelExponential(ModelClass):
     @staticmethod
     def _model(XX, aa, separate=False):
         """
-         f     = a1*(exp(a2*XX^a3) + XX^a4) = f1+f2;
+         f     = a*(exp(b*XX^c) + XX^d) = f1+f2;
         """
         prof1, prof2 = ModelExponential._separate_model(XX, aa)
         return prof1 + prof2
 
     @staticmethod
     def _separate_model(XX, aa):
-        prof1 = aa[0]*_np.exp(aa[1]* _np.power(XX, aa[2]))
-        prof2 = aa[0]*_np.power(XX, aa[3])
+        a, b, c, d = tuple(aa)
+        prof1 = a*_np.exp(b* _np.power(XX, c))
+        prof2 = a*_np.power(XX, d)
         return prof1, prof2
 
     @staticmethod
     def _deriv(XX, aa):
         """
-         dfdx  = a1*(a2*a3*XX^(a3-1)*exp(a2*XX^a3) + a4*XX^(a4-1));
+         dfdx  = a*(b*c*XX^(c-1)*exp(b*XX^c) + d*XX^(d-1))
+               = b*c*XX^(c-1) * (a*exp(b*XX^c))  + a*d*XX^(d-1)
+               = b*c*XX^(c-1) * prof1 + dprof2dx
         """
         dprof1dx, dprof2dx = ModelExponential._separate_deriv(XX, aa)
         return dprof1dx+dprof2dx
@@ -1232,17 +1236,22 @@ class ModelExponential(ModelClass):
     @staticmethod
     def _separate_deriv(XX, aa):
         prof1, prof2 = ModelExponential._separate_model(XX, aa)
-        dprof1dx = aa[1]*aa[2]*XX**(aa[2]-1.0)*prof1
-        dprof2dx = aa[0]*aa[3]*(XX**(aa[3]-1))
+
+        a, b, c, d = tuple(aa)
+        dprof1dx = b*c*_np.power(XX, c-1.0)*prof1
+        dprof2dx = a*d*_np.power(XX, d-1.0)
         return dprof1dx, dprof2dx
 
     @staticmethod
     def _partial(XX, aa):
         """
-         dfda1 = f/a1;
-         dfda2 = XX^a3*f1;
-         dfda3 = f1*XX^a3*log10(XX)
-         dfda4 = a1*XX^a4*log10(XX) = log10(XX)*f2;
+         f     = a*(exp(b*XX^c) + XX^d) = f1+f2;
+         dfdx  = a*(b*c*XX^(c-1)*exp(b*XX^c) + d*XX^(d-1))
+
+         dfda = f/a
+         dfdb = XX^c*f1;
+         dfdc = f1*XX^c*log10(XX)
+         dfdd = a*XX^d*log10(XX) = log10(XX)*f2;
         """
         nx = _np.size(XX)
         num_fit = _np.size(aa)
@@ -1250,14 +1259,35 @@ class ModelExponential(ModelClass):
 
         prof1, prof2 = ModelExponential._separate_model(XX, aa)
         prof = prof1 + prof2
-        gvec[0, :] = prof/aa[0]
-        gvec[1, :] = prof1*_np.power(XX, aa[2])
-        gvec[2, :] = prof1*aa[1]*_np.log(_np.abs(XX))*_np.power(XX, aa[2])
-        gvec[3, :] = aa[0]*_np.log(_np.abs(XX))*_np.power(XX, aa[3])
+
+        a, b, c, d = tuple(aa)
+        gvec[0, :] = prof/a
+        gvec[1, :] = prof1*_np.power(XX, c)
+        gvec[2, :] = _np.log10(_np.abs(XX))*_np.power(XX, c)*prof1
+        gvec[3, :] = _np.log10(_np.abs(XX))*prof2
+#        gvec[2, :] = b*prof1*_np.log(_np.abs(XX))*_np.power(XX, c)
+#        gvec[3, :] = a*_np.log(_np.abs(XX))*_np.power(XX, d)
         return gvec
 
     @staticmethod
     def _partial_deriv(XX, aa):
+        """
+         f     = a*(exp(b*XX^c) + XX^d) = f1+f2;
+         dfdx  = a*(b*c*XX^(c-1)*exp(b*XX^c) + d*XX^(d-1))
+
+         dfda = f/a
+         dfdb = XX^c*f1;
+         dfdc = f1*XX^c*log10(XX)
+         dfdd = a*XX^d*log10(XX) = log10(XX)*f2
+
+         d2fdxda = dprofdx / a
+         d2fdxdb = a*c*XX^(c-1)*exp(b*XX^c) + a*b*c*XX^(c-1)*XX^c*exp(b*XX^c)
+                 = dprof1dx/b + dprof1dx * XX^c = dprof1dx*( 1/b + XX^c )
+         d2fdxdc = a*b*XX^(c-1)*exp(b*XX^c)  * ( b*c*XX^c*ln|x|+c*ln|x| + 1 )
+                 = dprof1dx * ( b*XX^c*ln|x| + ln|x| + 1.0/c )
+         d2fdxdd = a*XX^(d-1) + a*d*XX^(d-1)*ln|x|
+                 = dprof2dx/d + dprof2dx * ln|x|
+        """
         nx = _np.size(XX)
         num_fit = _np.size(aa)
         dgdx = _np.zeros( (num_fit,nx), dtype=float)
@@ -1265,10 +1295,11 @@ class ModelExponential(ModelClass):
         dprof1dx, dprof2dx = ModelExponential._separate_deriv(XX, aa)
         dprofdx = dprof1dx + dprof2dx
 
-        dgdx[0, :] = dprofdx / aa[0]
-        dgdx[1, :] = dprof1dx*_np.power(XX, aa[2]) + dprof1dx/aa[1]
-        dgdx[2, :] = dprof1dx*(aa[1]*_np.log(_np.abs(XX))*_np.power(XX, aa[2]) + _np.log(_np.abs(XX)) + 1.0/aa[2] )
-        dgdx[3, :] = dprof2dx*_np.log(_np.abs(XX)) + aa[0]*_np.power(XX, aa[3]-1.0)
+        a, b, c, d = tuple(aa)
+        dgdx[0, :] = dprofdx / a
+        dgdx[1, :] = dprof1dx*( _np.power(XX, c) + 1.0/b )
+        dgdx[2, :] = dprof1dx*( b*_np.log(_np.abs(XX))*_np.power(XX, c) + _np.log(_np.abs(XX)) + 1.0/c )
+        dgdx[3, :] = a*_np.power(XX, d-1.0)*( 1.0 + d*_np.log(_np.abs(XX)) )
         return dgdx
 
 #    @staticmethod
@@ -2677,7 +2708,7 @@ class _ModelTwoPower(ModelClass):
     prof ~ f(x) = a*(1-x^pow1)^pow2
     """
     _af = _np.asarray([1.0, 2.0, 1.0], dtype=_np.float64)
-    _LB = _np.asarray([0.0, -_np.inf, -_np.inf], dtype=_np.float64)
+    _LB = _np.asarray([1e-18, -_np.inf, -_np.inf], dtype=_np.float64)
     _UB = _np.asarray([_np.inf, _np.inf, _np.inf], dtype=_np.float64)
     _fixed = _np.zeros( (3,), dtype=int)
     def __init__(self, XX, af=None, **kwargs):
@@ -2820,7 +2851,7 @@ class ModelTwoPower(ModelClass):
         d = power scaling factor 2
     """
     _af = _np.asarray([1.0, 0.0, 12.0, 3.0], dtype=_np.float64)
-    _LB = _np.asarray([0.0, 0.0, -20.0, -20.0], dtype=_np.float64)
+    _LB = _np.asarray([1e-18, 0.0, -20.0, -20.0], dtype=_np.float64)
     _UB = _np.asarray([20, 1.0, 20.0, 20.0], dtype=_np.float64)
     _fixed = _np.zeros( (4,), dtype=int)
     def __init__(self, XX, af=None, **kwargs):
@@ -3169,7 +3200,7 @@ class ModelQuasiParabolic(ModelClass):
 
     """
     _af = _np.asarray([1.0, 0.002, 2.0, 0.7, -0.24, 0.30], dtype=_np.float64)
-    _LB = _np.asarray([  0.0, 0.0,  0,-10,-1, 0], dtype=_np.float64)
+    _LB = _np.asarray([1e-18, 0.0,  1e-18,-10,-1, 0], dtype=_np.float64)
     _UB = _np.asarray([ 20.0, 1.0, 10, 10, 1, 1], dtype=_np.float64)
     _fixed = _np.zeros( (6,), dtype=int)
     def __init__(self, XX, af=None, **kwargs):
@@ -3323,7 +3354,7 @@ class ModelFlattop(ModelClass):
     gradient near (x/b)=1 and tends to zero for (x/b)>>1
     """
     _af = _np.asarray([1.0, 0.4, 5.0], dtype=_np.float64)
-    _LB = _np.asarray([0.0, 0.0, 1.0], dtype=_np.float64)
+    _LB = _np.asarray([1e-18, 0.0, 1.0], dtype=_np.float64)
     _UB = _np.asarray([_np.inf, 1.0, _np.inf], dtype=_np.float64)
     _fixed = _np.zeros( (3,), dtype=int)
     def __init__(self, XX, af=None, **kwargs):
@@ -3479,7 +3510,7 @@ class ModelMassberg(ModelClass):
                      negative (peaked profile, h > 0).
     """
     _af = _np.asarray([1.0, 0.4, 5.0, 0.5], dtype=_np.float64)
-    _LB = _np.asarray([0.0, 0.0, 1.0, -1], dtype=_np.float64)
+    _LB = _np.asarray([1e-18, 0.0, 1.0, -1], dtype=_np.float64)
     _UB = _np.asarray([_np.inf, 1.0, _np.inf, 1], dtype=_np.float64)
     _fixed = _np.zeros( (4,), dtype=int)
     def __init__(self, XX, af=None, **kwargs):
