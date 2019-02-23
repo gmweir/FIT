@@ -42,45 +42,45 @@ class ModelClass(Struct):
         aa = _np.copy(aa)
         return XX, aa
 
-    def model(self, XX, aa=None):
+    def model(self, XX, aa=None, **kwargs):
         """
         Returns the derivative of the model.
             f(x) = f(x, a, b, c, ...)
             out: f(x)
         """
         XX, aa = self.parse_in(XX, aa)
-        return self._model(XX, aa)
+        return self._model(XX, aa, **kwargs)
 
-    def derivative(self, XX, aa=None):
+    def derivative(self, XX, aa=None, **kwargs):
         """
         Returns the derivative of the model.
             f(x) = f(x, a, b, c, ...)
             out: dfdx
         """
         XX, aa = self.parse_in(XX, aa)
-        return self._deriv(XX, aa)
+        return self._deriv(XX, aa, **kwargs)
 
-    def jacobian(self, XX, aa=None):
+    def jacobian(self, XX, aa=None, **kwargs):
         """
         Returns the jacobian of the model.
             f(x) = f(x, a, b, c)
             out: [dfda(x), dfdb(x), dfdc(x), ...]
         """
         XX, aa = self.parse_in(XX, aa)
-        return self._partial(XX, aa)
+        return self._partial(XX, aa, **kwargs)
 
-    def derivative_jacobian(self, XX, aa=None):
+    def derivative_jacobian(self, XX, aa=None, **kwargs):
         """
         Returns the jacobian of the derivative of the model.
             f(x) = f(x, a, b, c)
             out: [d2fdxda(x), d2fdxdb(x), d2fdxdc(x), ...]
         """
         XX, aa = self.parse_in(XX, aa)
-        return self._partial_deriv(XX, aa)
+        return self._partial_deriv(XX, aa, **kwargs)
 
-    def hessian(self, XX, aa=None):
+    def hessian(self, XX, aa=None, **kwargs):
         if hasattr(self, '_hessian'):
-            return self._hessian(XX, aa)
+            return self._hessian(XX, aa, **kwargs)
         else:
             return 0
     # end def
@@ -88,11 +88,11 @@ class ModelClass(Struct):
     # ====================================================== #
     # ====================================================== #
 
-    def update(self, XX, af):
-        self.prof = self.model(XX, aa=af)
-        self.gvec = self.jacobian(XX, aa=af)
-        self.dprofdx = self.derivative(XX, aa=af)
-        self.dgdx = self.derivative_jacobian(XX, aa=af)
+    def update(self, XX, af, **kwargs):
+        self.prof = self.model(XX, aa=af, **kwargs)
+        self.gvec = self.jacobian(XX, aa=af, **kwargs)
+        self.dprofdx = self.derivative(XX, aa=af, **kwargs)
+        self.dgdx = self.derivative_jacobian(XX, aa=af, **kwargs)
         return self.prof, self.gvec, self.dprofdx, self.dgdx
     # end def
 
@@ -378,8 +378,8 @@ class ModelLine(ModelClass):
              b = ys*(b'-xo*a'/xs) + yo
         """
         aout = _np.copy(ain)
-        aout[1] = slope*(aout[1]-xoffset*aout[0]/xslope) + offset
-        aout[0] = slope*aout[0]/xslope
+        aout[0] = slope*ain[0] / xslope
+        aout[1] = slope*(ain[1]-xoffset*ain[0]/xslope) + offset
         return aout
 
     # ====================================== #
@@ -413,7 +413,7 @@ def model_sines(XX, af=None, **kwargs):
 
 class ModelSines(ModelClass):
     """
-
+    f = sum_ii a_ii *sin((2pi*f_ii)*XX+p_ii)
     """
     _af = _np.asarray([1.0, 33.0, _np.pi/3], dtype=_np.float64)
     _LB = _np.asarray([-_np.inf,     0.0, -2*_np.pi], dtype=_np.float64)
@@ -447,9 +447,11 @@ class ModelSines(ModelClass):
         super(ModelSines, self).__init__(XX, af, **kwargs)
     # end def __init__
 
+    @staticmethod
     def sine(XX, a, f, p):
         return a*_np.sin((2*_np.pi*f)*XX+p)
 
+    @staticmethod
     def cosine(XX, a, f, p):
         return a*_np.cos((2*_np.pi*f)*XX+p)
 
@@ -464,6 +466,9 @@ class ModelSines(ModelClass):
 
     @staticmethod
     def _model(XX, aa):
+        """
+        f = sum_ii a_ii *sin((2pi*f_ii)*XX+p_ii)
+        """
         nfreqs = ModelSines.getnfreqs(aa)
 
         ysum = _np.zeros( (len(XX),), dtype=_np.float64)
@@ -478,6 +483,10 @@ class ModelSines(ModelClass):
 
     @staticmethod
     def _deriv(XX, aa):
+        """
+        f = sum_ii a_ii *sin((2pi*f_ii)*XX+p_ii)
+        dfdx = sum_ii 2*pi*f_ii*a_ii *cos((2pi*f_ii)*XX+p_ii)
+        """
         nfreqs = ModelSines.getnfreqs(aa)
         dfdx = _np.zeros( (len(XX),), dtype=_np.float64)
         for ii in range(nfreqs):
@@ -491,6 +500,14 @@ class ModelSines(ModelClass):
 
     @staticmethod
     def _partial(XX, aa):
+        """
+        f = sum_ii a_ii *sin((2pi*f_ii)*XX+p_ii)
+        dfdx = sum_ii 2*pi*f_ii*a_ii *cos((2pi*f_ii)*XX+p_ii)
+
+        dfdai = sin(2pifii*XX+pii)
+        dfdfi = 2piXX*a*cos(2pifii*XX+pii)
+        dfdpi = a*cos(2pifii*XX+pii)
+        """
         nfreqs = ModelSines.getnfreqs(aa)
         gvec = _np.zeros( (len(aa), len(XX)), dtype=_np.float64)
         for ii in range(nfreqs):
@@ -505,6 +522,18 @@ class ModelSines(ModelClass):
 
     @staticmethod
     def _partial_deriv(XX, aa):
+        """
+        f = sum_ii a_ii *sin((2pi*f_ii)*XX+p_ii)
+        dfdx = sum_ii 2*pi*f_ii*a_ii *cos((2pi*f_ii)*XX+p_ii)
+
+        dfdai = sin(2pifii*XX+pii)
+        dfdfi = 2piXX*a*cos(2pifii*XX+pii)
+        dfdpi = a*cos(2pifii*XX+pii)
+
+        d2fdxdai = 2*pi*f_ii*cos((2pi*f_ii)*XX+p_ii)
+        d2fdxdfi = 2*pi*a_ii *cos((2pi*f_ii)*XX+p_ii) - (2*pi)^2*f_ii*XX*a_ii *sin((2pi*f_ii)*XX+p_ii)
+        d2fdxdpi = -2*pi*f_ii*a_ii *sin((2pi*f_ii)*XX+p_ii)
+        """
         nfreqs = ModelSines.getnfreqs(aa)
         dgdx = _np.zeros( (len(aa), len(XX)), dtype=_np.float64)
         for ii in range(nfreqs):
@@ -562,6 +591,8 @@ def model_fourier(XX, af=None, **kwargs):
 
 class ModelFourier(ModelClass):
     """
+         f = ao + sum_ii( a_ii*cos((2*pi*f*ii)*x) + b_ii*sin((2*pi*f*ii)*x))
+
     y = ao + sum_ii( a_ii*cos((2*pi*f*ii)*x) + b_ii*sin((2*pi*f*ii)*x))
       = ao + a1*cos(2pif*x) + b1*sin(2pif*x) + a2*cos(4pif*x) + b2*sin(4pif*x) + ...
         af - [fundamental frequency, offset,
@@ -597,11 +628,15 @@ class ModelFourier(ModelClass):
         super(ModelFourier, self).__init__(XX, af, **kwargs)
     # end def __init__
 
-    def sine(XX, a, f):
-        return a*_np.sin((2*_np.pi*f)*XX)
-
+    @staticmethod
     def cosine(XX, a, f):
-        return a*_np.cos((2*_np.pi*f)*XX)
+#        return a*_np.cos((2*_np.pi*f)*XX)
+        return ModelSines.cosine(XX, a, f, p=0.0)
+
+    @staticmethod
+    def sine(XX, b, f):
+#        return b*_np.sin((2*_np.pi*f)*XX)
+        return ModelSines.sine(XX, b, f, p=0.0)
 
     @staticmethod
     def getnfreqs(aa):
@@ -613,74 +648,93 @@ class ModelFourier(ModelClass):
         return int(nfreqs)
 
     @staticmethod
+    def _convert2sines(XX, aa):
+        nfreqs = ModelFourier.getnfreqs(aa)
+        f  = aa[0]
+        a1 = _np.zeros([3*nfreqs,], dtype=_np.float64)
+        a2 = _np.zeros_like(a1)
+        for ii in range(nfreqs):
+            a = _np.copy(aa[2*ii+2+0])
+            b = _np.copy(aa[2*ii+2+1])
+
+            a1[3*ii+0] = _np.copy(a)  # amplitude of cosine
+            a1[3*ii+1] = _np.copy((ii+1)*f) # frequency of cosine
+            a1[3*ii+2] = -_np.pi/4.0   # sin(-90) = cos(), phase input to sine to get cosine
+            a2[3*ii+0] = _np.copy(b)  # amplitude of sine
+            a2[3*ii+1] = _np.copy((ii+1)*f) # frequency
+            a2[3*ii+2] =  0.0   # phase
+        # end for
+        return a1, a2
+#        return nfreqs, a1, a2
+
+    @staticmethod
     def _model(XX, aa):
         """
          f = ao + sum_ii( a_ii*cos((2*pi*f*ii)*x) + b_ii*sin((2*pi*f*ii)*x))
         """
-        nfreqs = ModelFourier.getnfreqs(aa)
-        f  = aa[0]
+        a1, a2 = ModelFourier._convert2sines(aa)
         ao = aa[1]
-        ysum = ao*_np.ones( (len(XX),), dtype=_np.float64)
-        for ii in range(nfreqs):
-            a = _np.copy(aa[2*ii+2+0])
-            b = _np.copy(aa[2*ii+2+1])
-            ysum += ModelFourier.cosine(XX, a, (ii+1)*f)
-            ysum += ModelFourier.sine(XX, b, (ii+1)*f)
-        # end for
-        return ysum
+        return ao+ModelSines._model(XX, a1)+ModelSines._model(XX, a2)
+#
+#        ysum = ao*_np.ones( (len(XX),), dtype=_np.float64)
+#        for ii in range(nfreqs):
+#            a = _np.copy(aa[2*ii+2+0])
+#            b = _np.copy(aa[2*ii+2+1])
+#            ysum += ModelFourier.cosine(XX, a, (ii+1)*f)
+#            ysum += ModelFourier.sine(XX, b, (ii+1)*f)
+#        # end for
+#        return ysum
 
     @staticmethod
     def _deriv(XX, aa):
         """
          f = ao + sum_ii( a_ii*cos((2*pi*f*ii)*x) + b_ii*sin((2*pi*f*ii)*x))
 
-         dfdx = (2*pi*f)*sum_ii( ii*a_ii*cos((2*pi*f*ii)*x) + ii*b_ii*sin((2*pi*f*ii)*x))
+         dfdx = (2*pi*f)*sum_ii( -ii*a_ii*sin((2*pi*f*ii)*x) + ii*b_ii*cos((2*pi*f*ii)*x))
         """
-        nfreqs = ModelFourier.getnfreqs(aa)
-
-        f  = aa[0]
-        ao = aa[1]
-        dfdx = ao*_np.zeros( (len(XX),), dtype=_np.float64)
-        for ii in range(nfreqs):
-            a = _np.copy(aa[2*ii+2+0])
-            b = _np.copy(aa[2*ii+2+1])
-            dfdx += (2.0*_np.pi*ii*f)*ModelFourier.cosine(XX, b, (ii+1)*f)
-            dfdx -= (2.0*_np.pi*ii*f)*ModelFourier.sine(XX, a, (ii+1)*f)
-        # end for
-        return dfdx
+        a1, a2 = ModelFourier._convert2sines(aa)
+        return ModelSines._deriv(XX, a1)+ModelSines._deriv(XX, a2)
+#
+#        nfreqs = ModelFourier.getnfreqs(aa)
+#
+#        f  = aa[0]
+#        ao = aa[1]
+#        dfdx = ao*_np.zeros( (len(XX),), dtype=_np.float64)
+#        for ii in range(nfreqs):
+#            a = _np.copy(aa[2*ii+2+0])
+#            b = _np.copy(aa[2*ii+2+1])
+#            dfdx += (2.0*_np.pi*ii*f)*ModelFourier.cosine(XX, b, (ii+1)*f)
+#            dfdx -= (2.0*_np.pi*ii*f)*ModelFourier.sine(XX, a, (ii+1)*f)
+#        # end for
+#        return dfdx
 
     @staticmethod
     def _partial(XX, aa):
         """
          f = ao + sum_ii( a_ii*cos((2*pi*f*ii)*x) + b_ii*sin((2*pi*f*ii)*x))
 
-         dfdx = (2*pi*f)*sum_ii( ii*a_ii*cos((2*pi*f*ii)*x) + ii*b_ii*sin((2*pi*f*ii)*x))
+         dfdx = (2*pi*f)*sum_ii( -ii*a_ii*sin((2*pi*f*ii)*x) + ii*b_ii*cos((2*pi*f*ii)*x))
 
-         dfdf = (2*pi*x)*sum_ii( ii*a_ii*cos((2*pi*f*ii)*x) + ii*b_ii*sin((2*pi*f*ii)*x))
+         dfdf = (2*pi*x)*sum_ii( -ii*a_ii*sin((2*pi*f*ii)*x) + ii*b_ii*cos((2*pi*f*ii)*x))
+              = dfdx*x/f
          dfdao = ones
-         dfdai ~ cos or dfdbi ~ sin
+         dfdai = cos((2*pi*f*ii)*x)
+         dfdbi = sin((2*pi*f*ii)*x)
         """
         nfreqs = ModelFourier.getnfreqs(aa)
-
         f  = aa[0]
         ao = aa[1]
         gvec = ao*_np.zeros( (len(aa), len(XX)), dtype=_np.float64)
 
-        # frequency derivative
-        for ii in range(nfreqs):
-            a = _np.copy(aa[2*ii+2+0])
-            b = _np.copy(aa[2*ii+2+1])
-            gvec[0, :] += (2.0*_np.pi*ii*XX)*ModelFourier.cosine(XX, b, (ii+1)*f)
-            gvec[0, :] -= (2.0*_np.pi*ii*XX)*ModelFourier.sine(XX, a, (ii+1)*f)
-        # end for
-
-        # offset derivative
+#        gvec[0, :] = (XX/f)*ModelFourier._deriv(XX, aa)
         gvec[1, :] = 1.0   # dfdao
-
-        # amplitude derivatives
+#        gvec[2::2, :] = [_np.cos(2*_np.pi*f*XX*(ii+1)) for ii in range(nfreqs)]
+#        gvec[3::2, :] = [_np.sin(2*_np.pi*f*XX*(ii+1)) for ii in range(nfreqs)]
         for ii in range(nfreqs):
             a = _np.copy(aa[2*ii+2+0])
             b = _np.copy(aa[2*ii+2+1])
+            gvec[0, :] -= (2.0*_np.pi*(ii+1)*XX)*ModelFourier.sine(XX, a, (ii+1)*f)
+            gvec[0, :] += (2.0*_np.pi*(ii+1)*XX)*ModelFourier.cosine(XX, b, (ii+1)*f)
             gvec[2*ii+2+0, :] = ModelFourier.cosine(XX, 1.0, (ii+1)*f)
             gvec[2*ii+2+1, :] = ModelFourier.sine(XX, 1.0, (ii+1)*f)
         # end for
@@ -689,55 +743,37 @@ class ModelFourier(ModelClass):
     @staticmethod
     def _partial_deriv(XX, aa):
         """
-         f = ao + sum_ii( a_ii*cos((2*pi*f*ii)*x) + b_ii*sin((2*pi*f*ii)*x))
+          f = ao + sum_ii( a_ii*cos((2*pi*f*ii)*x) + b_ii*sin((2*pi*f*ii)*x))
 
-         dfdx = (2*pi*f)*sum_ii( ii*a_ii*cos((2*pi*f*ii)*x) + ii*b_ii*sin((2*pi*f*ii)*x))
+          dfdx = (2*pi*f)*sum_ii( -ii*a_ii*sin((2*pi*f*ii)*x) + ii*b_ii*cos((2*pi*f*ii)*x))
 
-         dfdf = (2*pi*x)*sum_ii( ii*a_ii*cos((2*pi*f*ii)*x) + ii*b_ii*sin((2*pi*f*ii)*x))
-         dfdao = ones
-         dfdai ~ cos or dfdbi ~ sin
+          dfdf = (2*pi*x)*sum_ii( -ii*a_ii*sin((2*pi*f*ii)*x) + ii*b_ii*cos((2*pi*f*ii)*x))
+               = dfdx*x/f
+          dfdao = ones
+          dfdai = cos((2*pi*f*ii)*x)
+          dfdbi = sin((2*pi*f*ii)*x)
+
+          d2fdxdf = (2*pi)*sum_ii( -ii*a_ii*sin((2*pi*f*ii)*x) + ii*b_ii*cos((2*pi*f*ii)*x))
+           - (2*pi)^2*f*x*sum_ii( ii^2*a_ii*cos((2*pi*f*ii)*x) + ii^2*b_ii*sin((2*pi*f*ii)*x))
+                  = dfdx/f - (2*pi)^2*f*x*sum_ii( ii^2*a_ii*cos((2*pi*f*ii)*x) + ii^2*b_ii*sin((2*pi*f*ii)*x))
+          d2fdxdao = 0.0
+          d2fdxdai = -(2*pi*f)*ii*sin(2*pi*f*ii*x)
+          d2fdxdbi =  (2*pi*f)*ii*cos(2*pi*f*ii*x)
         """
-#        nfreqs = ModelFourier.getnfreqs(aa)
-#
-#        f  = aa[0]
-#        ao = aa[1]
-#        dgdx = ao*_np.zeros( (len(aa), len(XX)), dtype=_np.float64)
-#
-#        # frequency derivative
-#        for ii in range(nfreqs):
-#            a = _np.copy(aa[2*ii+2+0])
-#            b = _np.copy(aa[2*ii+2+1])
-#            gvec[0, :] += (2.0*_np.pi*ii*)*ModelFourier.cosine(XX, b, (ii+1)*f)
-#            gvec[0, :] -= (2.0*_np.pi*ii*XX)*ModelFourier.sine(XX, a, (ii+1)*f)
-#        # end for
-#
-#        # offset derivative
-#        gvec[1, :] = 1.0   # dfdao
-#
-#        # amplitude derivatives
-#        for ii in range(nfreqs):
-#            a = _np.copy(aa[2*ii+2+0])
-#            b = _np.copy(aa[2*ii+2+1])
-#            gvec[2*ii+2+0, :] = ModelFourier.cosine(XX, 1.0, (ii+1)*f)
-#            gvec[2*ii+2+1, :] = ModelFourier.sine(XX, 1.0, (ii+1)*f)
-#        # end for
-#
-#
-#
-#
-#
-#
-#
-#
-#        for ii in range(nfreqs):
-#            a = _np.copy(aa[2*ii+2+0])
-#            b = _np.copy(aa[2*ii+2+1])
-#            dgdx[3*ii+0, :] = (2.0*_np.pi*f)*ModelSines.cosine(XX, 1.0, f, p)
-#            dgdx[3*ii+1, :] = (2.0*_np.pi)*(  ModelSines.cosine(XX, a, f, p)
-#                                 - (2.0*_np.pi*f*XX)*ModelSines.sine(XX, a, f, p)  )
-#            dgdx[3*ii+2, :] = (-2.0*_np.pi*f)*ModelSines.sine(XX, a, f, p)
-#        # end for
-#        return dgdx
+        nfreqs = ModelFourier.getnfreqs(aa)
+        f  = aa[0]
+        ao = aa[1]
+        dgdx = ao*_np.zeros( (len(aa), len(XX)), dtype=_np.float64)
+        dgdx[0, :] = ModelFourier._deriv(XX, aa)/f
+        for ii in range(nfreqs):
+            a = _np.copy(aa[2*ii+2+0])
+            b = _np.copy(aa[2*ii+2+1])
+            dgdx[0, :] -= _np.power(2.0*_np.pi, 2.0)*f*XX*(ii+1)*(ii+1)*(
+                    ModelFourier.cosine(XX, a, f) + ModelFourier.sine(XX, b, f))
+            dgdx[2*ii+2+0, :] = -1*(2.0*_np.pi*f)*(ii+1)*ModelFourier.sine(XX, 1.0, (ii+1)*f)
+            dgdx[2*ii+2+1, :] = (2.0*_np.pi*f)*(ii+1)*ModelFourier.cosine(XX, 1.0, (ii+1)*f)
+        # end for
+        return dgdx
 
 #    @staticmethod
 #    def _hessian(XX, aa):
@@ -1734,8 +1770,13 @@ class ModelGaussian(ModelClass):
 
         af[0]*_np.exp(-(XX-af[1])**2/(2.0*af[2]**2))
 
+    f = A*exp(-(x-xo)**2.0/(2.0*ss**2.0))
+        A = af[0]
+        xo = af[1]
+        ss = af[2]
+
         note that if normalized, then the PDF form is used so that the integral
-        is equal to af[0]:
+        is equal to af[0]: For that form use ModelNormal
             af[0]*_np.exp(-(XX-af[1])**2/(2.0*af[2]**2))/_np.sqrt(2.0*pi*af[2]**2.0)
     """
     _af = _np.asarray([1.0e-1/0.05, -0.3, 0.1], dtype=_np.float64)
@@ -1890,18 +1931,16 @@ class ModelGaussian(ModelClass):
 
 
 def offsetgaussian(XX, aa):
-    return ModelGaussian._model(XX, aa[1:]) + aa[0]
-
-def partial_offsetgaussian(XX, aa):
-    return _np.concatenate( (_np.ones((1,_np.size(XX)), dtype=_np.float64),
-                             ModelGaussian._partial(XX, aa[1:])), axis=0)
+    return ModelOffsetGaussian._model(XX, aa)
 
 def deriv_offsetgaussian(XX, aa):
-    return ModelGaussian._deriv(XX, aa[1:])
+    return ModelOffsetGaussian._deriv(XX, aa)
+
+def partial_offsetgaussian(XX, aa):
+    return ModelOffsetGaussian._partial(XX, aa)
 
 def partial_deriv_offsetgaussian(XX, aa):
-    return _np.concatenate( (_np.zeros((1,_np.size(XX)), dtype=_np.float64),
-                             ModelGaussian._partial_deriv(XX, aa[1:])), axis=0)
+    return ModelOffsetGaussian._partial_deriv(XX, aa)
 
 def _model_offsetgaussian(XX, af=None, **kwargs):
     """
@@ -1915,6 +1954,8 @@ class ModelOffsetGaussian(ModelClass):
     A gaussian with four free parameters:
         XX - x - independent variable
         af - y-offset, magnitude, shift, width
+
+    f = A0 + A*exp(-(x-xo)**2.0/(2.0*ss**2.0))
 
         af[0] + af[1]*_np.exp(-(XX-af[2])**2/(2.0*af[3]**2))
 
@@ -1932,19 +1973,23 @@ class ModelOffsetGaussian(ModelClass):
 
     @staticmethod
     def _model(XX, aa):
-        return offsetgaussian(XX, aa)
+        return ModelGaussian._model(XX, aa[1:]) + aa[0]
 
     @staticmethod
     def _deriv(XX, aa):
-        return deriv_offsetgaussian(XX, aa)
+        return ModelGaussian._deriv(XX, aa[1:])
 
     @staticmethod
     def _partial(XX, aa):
-        return partial_offsetgaussian(XX, aa)
+        return _np.concatenate(
+                (_np.ones((1,_np.size(XX)), dtype=_np.float64),
+                 ModelGaussian._partial(XX, aa[1:])), axis=0)
 
     @staticmethod
     def _partial_deriv(XX, aa):
-        return partial_deriv_offsetgaussian(XX, aa)
+        return _np.concatenate(
+                (_np.zeros((1,_np.size(XX)), dtype=_np.float64),
+                 ModelGaussian._partial_deriv(XX, aa[1:])), axis=0)
 
 #    @staticmethod
 #    def _hessian(XX, aa):
@@ -1966,10 +2011,9 @@ class ModelOffsetGaussian(ModelClass):
 
             y-scaling:  y' = (y-yo)/ys
              (y-miny)/(maxy-miny) = (y-yo)/ys
-             (y-yo)/ys = a0 + a' exp(-1*(x-b')^2/(2*c'^2))
+             (y-yo)/ys = a0' + a' exp(-1*(x-b')^2/(2*c'^2))
 
-             y-yo = ys*a0 + ys * a' * exp(-1*(x-b')^2/(2*c'^2))
-                 assume a = ys*a'
+             y = yo + ys*a0' + ys * a' * exp(-1*(x-b')^2/(2*c'^2))
 
             x-scaling: x' = (x-xo)/xs
              (y(x') - yo)/ys = a'*exp(-1*(x'-b')^2.0/(2*c'^2))   + a0
@@ -2000,6 +2044,144 @@ class ModelOffsetGaussian(ModelClass):
 # =========================================================================== #
 
 
+def offsetnormal(XX, aa):
+    return ModelOffsetNormal._model(XX, aa)
+
+def partial_offsetnormal(XX, aa):
+    return ModelOffsetNormal._partial(XX, aa)
+
+def deriv_offsetnormal(XX, aa):
+    return ModelOffsetNormal._deriv(XX, aa)
+
+def partial_deriv_offsetnormal(XX, aa):
+    return ModelOffsetNormal._partial_deriv(XX, aa)
+
+def model_offsetnormal(XX, af, **kwargs):
+    norm = kwargs.pop('norm', True)  # analysis:ignore
+    return _model(ModelOffsetNormal, XX, af, **kwargs)
+
+# ==================================== #
+
+class ModelOffsetNormal(ModelClass):
+    """
+    A gaussian with four free parameters:
+        XX - x - independent variable
+        af - offset, magnitude (AA), shift (xo), width (ss)
+            A0 = af[0]
+             A = af[1]
+            xo = af[2]
+            ss = af[3]
+    f = A0 + A*exp(-(x-xo)**2.0/(2.0*ss**2.0))/_np.sqrt(2.0*pi*ss**2.0)
+    """
+    _af = _np.asarray([0.0, 1.0, -0.3, 0.1], dtype=_np.float64)
+    _LB = _np.array([-_np.inf, -_np.inf, -_np.inf, -_np.inf], dtype=_np.float64)
+    _UB = _np.array([ _np.inf,  _np.inf,  _np.inf,  _np.inf], dtype=_np.float64)
+    _fixed = _np.array([0, 0, 0, 0], dtype=int)
+    def __init__(self, XX, af=None, **kwargs):
+        super(ModelOffsetNormal, self).__init__(XX, af, **kwargs)
+    # end def __init__
+
+    @staticmethod
+    def _model(XX, aa):
+        """
+        Model of an offset normalized Gaussian (unit area)
+        f = A0 + A*exp(-(x-xo)**2.0/(2.0*ss**2.0))/sqrt(2*pi*ss^2.0)
+            A0 = af[0]
+             A = af[1]
+            xo = af[2]
+            ss = af[3]
+        """
+        return aa[0] + ModelNormal._model(XX, aa[1:])
+
+    @staticmethod
+    def _deriv(XX, aa):
+        """
+        derivative of a normalized Gaussian (unit area)
+        dfdx = -(x-xo)/ss^2 *f
+        """
+        return ModelNormal._deriv(XX, aa[1:])
+
+    @staticmethod
+    def _partial(XX, aa):
+        """
+        Jacobian of a normalized Gaussian (unit area)
+        dfdA0 = 1.0
+        dfdA = f/A
+        dfdxo = (x-xo)/ss^2 * f
+        dfdss =  (x-xo)^2/ss^3 * f + A*exp(-(x-xo)**2.0/(2.0*ss**2.0))*d/ds( sqrt(2*pi*ss^2.0)**-1 )
+            d/ds( sqrt(2*pi*ss^2.0)**-1 ) = sqrt(2*pi)^-1 * d/ds( (ss^2.0)**-0.5 ) = sqrt(2*pi)^-1 * d/ds( abs(ss)^-1.0 )
+                = sqrt(2*pi)^-1 * (2*ss)*-0.5 * (ss^2.0)^-1.5 = sqrt(2*pi)^-1 *-ss/(ss^3.0) = sqrt(2*pi)^-1 *1.0/ss^2
+                = sqrt(2*pi*ss**2.0)^-1 *1.0/abs(ss)
+        dfdss =  (x-xo)^2/ss^3 * f + 1.0/abs(ss) * f
+        """
+        return _np.concatenate((_np.ones(1,len(XX)), ModelNormal._partial(XX, aa[1:])), axis=0)
+
+    @staticmethod
+    def _partial_deriv(XX, aa):
+        """
+        Jacobian of the derivative of a normalized Gaussian (unit area)
+        f = A*exp(-(x-xo)**2.0/(2.0*ss**2.0))/sqrt(2*pi*ss^2.0)
+
+        dfdx = -(x-xo)/ss^2 *f
+
+        d2fdxdA0 = 0.0
+        d2fdxdA = dfdx/A = -(x-xo)/ss^2 *dfdA
+        d2fdxdxo = f/ss^2 -(x-xo)/ss^2 *dfdxo
+        d2fdxds = 2*(x-xo)/ss^3 *f -(x-xo)/ss^2 *dfds
+
+        """
+        return _np.concatenate((_np.zeros(1,len(XX)), ModelNormal._partial_deriv(XX, aa[1:])), axis=0)
+
+#    @staticmethod
+#    def _hessian(XX, aa):
+#       """
+#        Hessian of a normalized gaussian
+#        [d2fda2, d2fdadb, d2fdadc; d2fdadb, d2fdb2, d2fdbdc; d2fdadc, d2fdbdc, d2fdc2]
+#       d2fda2 = 0.0
+#       d2fdb2 = d/dxo (x-xo)/ss^2 * f
+#       """
+#       hmat = _np.zeros((3, 3, _np.size(XX)), dtype=_np.float64)
+#       return hmat
+    # ====================================== #
+
+    @staticmethod
+    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
+        """
+        If fitting with scaling, then the algebra necessary to unscale the problem
+        to original units is:
+
+            y-scaling:  y' = (y-yo)/ys
+             (y-miny)/(maxy-miny) = (y-yo)/ys
+
+            x-scaling: x' = (x-xo)/xs
+             (y(x') - yo)/ys = a'*exp(-1*(x'-b')^2.0/(2*c'^2))/sqrt(2*pi*c'^2.0)
+               y = yo+ys*a0'+ys*a'*exp(-1*(x/xs-xo/xs-b')^2.0/(2*c'^2))/sqrt(2*pi*c'^2.0)
+                 = yo+ys*a0'+ys*a'*exp(-1*(x-xo-xs*b')^2.0/(2*c'^2*xs^2))/sqrt(2*pi*c'^2.0)
+             here:
+                 a0 = ys*a0'+yo
+                 a = a'*ys * xs
+                 b = b'*xs + xo
+                 c = c'*xs
+        """
+        aout = _np.copy(ain)
+        aout[0] = slope*ain[0] + offset
+        aout[1] = slope*xslope*ain[1]
+        aout[2] = xslope*ain[2]+xoffset
+        aout[3] = xslope*aout[3]
+        return aout
+
+    # ====================================== #
+
+#    def checkbounds(self, dat):
+#        return super(ModelNormal, self).checkbounds(dat, self.aa, mag=None)
+
+    # ========================#============= #
+# end def ModelOffsetNormal
+
+# =========================================================================== #
+# =========================================================================== #
+
+
 def normal(XX, aa):
     return ModelNormal._model(XX, aa)
 
@@ -2022,13 +2204,11 @@ class ModelNormal(ModelClass):
     """
     A gaussian with three free parameters:
         XX - x - independent variable
-        af - magnitude, shift, width
-
-        af[0]*_np.exp(-(XX-af[1])**2/(2.0*af[2]**2))
-
-        note that if normalized, then the PDF form is used so that the integral
-        is equal to af[0]:
-            af[0]*_np.exp(-(XX-af[1])**2/(2.0*af[2]**2))/_np.sqrt(2.0*pi*af[2]**2.0)
+        af - magnitude (AA), shift (xo), width (ss)
+            A = af[0]
+            xo = af[1]
+            ss = af[2]
+    f = A*exp(-(x-xo)**2.0/(2.0*ss**2.0))/_np.sqrt(2.0*pi*ss**2.0)
     """
     _af = _np.asarray([1.0, -0.3, 0.1], dtype=_np.float64)
     _LB = _np.array([-_np.inf, -_np.inf, -_np.inf], dtype=_np.float64)
@@ -2134,12 +2314,9 @@ class ModelNormal(ModelClass):
              (y-miny)/(maxy-miny) = (y-yo)/ys
              (y-yo)/ys = a' exp(-1*(x-b')^2/(2*c'^2))/sqrt(2*pi*c'^2.0)
 
-             y-yo = ys * a' * exp(-1*(x-b')^2/(2*c'^2))/sqrt(2*pi*c'^2.0)
-                 assume a = ys*a'+yo
-
-             yo + ys*a'*exp(-1*(x-b')^2/(2*c'^2))/sqrt(2*pi*c'^2.0) = a*exp(-1*(x-b)^2/(2*c^2))/sqrt(2*pi*c^2.0)
-             a = yo*exp((x-b)^2/(2*c^2)) + ys*a'*exp((x-b)^2/(2*c^2)-(x-b')^2/(2*c'^2))
-
+             y = yo + ys * a' * exp(-1*(x-b')^2/(2*c'^2))/sqrt(2*pi*c'^2.0)
+                 assume a = ys*a'+yo as before
+                 a = yo*exp((x-b)^2/(2*c^2)) + ys*a'*exp((x-b)^2/(2*c^2)-(x-b')^2/(2*c'^2))
              if b=b' and c=c' then a = yo*exp((x-b)^2/2c^2) + ys*a'
                  not possible unless x==b for all x  OR yo = 0
 
@@ -2241,8 +2418,8 @@ class ModelLogGaussian(ModelClass):
           = 10/ln(10)*( ln(A) -(x-xo)**2.0/(2.0*ss**2.0)  )
      """
     _af = _np.asarray([1.0, -0.3, 0.1], dtype=_np.float64)
-    _LB = _np.asarray([0.0, -_np.inf, -_np.inf], dtype=_np.float64)
-    _UB = _np.asarray([_np.inf, _np.inf, _np.inf], dtype=_np.float64)
+    _LB = _np.asarray([ 1e-18, -_np.inf, -_np.inf], dtype=_np.float64)
+    _UB = _np.asarray([_np.inf, _np.inf,  _np.inf], dtype=_np.float64)
     _fixed = _np.zeros( (3,), dtype=int)
     def __init__(self, XX, af=None, **kwargs):
         super(ModelLogGaussian, self).__init__(XX, af, **kwargs)
@@ -2371,7 +2548,7 @@ class ModelLogGaussian(ModelClass):
 
     # ====================================== #
 
-#    def checkbounds(self, dat):
+#    def checkbounds(self, dat, ain):
 #        self.aa = super(ModelLogGaussian, self).checkbounds(dat, self.aa, mag=None)
 #        dat = _np.copy(dat)
 #        if (dat<0.0).any():  dat[dat<0] = min((1e-10, 1e-3*_np.min(dat[dat>0]))) # end if
@@ -2409,7 +2586,8 @@ class ModelLorentzian(ModelClass):
         XX - x - independent variable
         af - magnitude, shift, width
 
-        AA*0.5*ss/((XX-x0)^2+0.25*ss^2)/_np.pi
+    Lorentzian normalization such that integration equals AA (af[0])
+        f = 0.5*A*s / ( (x-xo)**2.0 + 0.25*ss**2.0 ) / pi
     """
     _af = _np.asarray([1.0, 0.4, 0.05], dtype=_np.float64)
     _LB = _np.asarray([-_np.inf, -_np.inf, -_np.inf], dtype=_np.float64)
@@ -2431,7 +2609,7 @@ class ModelLorentzian(ModelClass):
     @staticmethod
     def _deriv(XX, aa):
         AA, x0, ss = tuple(aa)
-        return -1.0*AA*16.0*(XX-x0)*ss/(_np.pi*(4.0*(XX-x0)*(XX-x0)+ss*ss)**2.0)
+        return -1.0*AA*16.0*(XX-x0)*ss/(_np.pi*_np.power(4.0*(XX-x0)*(XX-x0)+ss*ss, 2.0))
 
     @staticmethod
     def _partial(XX, aa):
@@ -2439,8 +2617,8 @@ class ModelLorentzian(ModelClass):
 
         gvec = _np.zeros( (3,len(XX)), dtype=_np.float64)
         gvec[0,:] = 0.5*ss/((XX-x0)*(XX-x0)+0.25*ss*ss)/_np.pi
-        gvec[1,:] = AA*ss*(XX-x0)/( ((XX-x0)*(XX-x0)+0.25*ss*ss)**2.0 )/_np.pi
-        gvec[2,:] = AA*(-0.125*ss*ss+0.5*XX*XX-XX*x0+0.5*x0*x0)/((0.25*ss*ss+(XX-x0)*(XX-x0))**2.0)/_np.pi
+        gvec[1,:] = AA*ss*(XX-x0)/_np.power((XX-x0)*(XX-x0)+0.25*ss*ss, 2.0 )/_np.pi
+        gvec[2,:] = AA*(-0.125*ss*ss+0.5*XX*XX-XX*x0+0.5*x0*x0)/_np.power(0.25*ss*ss+(XX-x0)*(XX-x0), 2.0)/_np.pi
         return gvec
 
     @staticmethod
@@ -2448,9 +2626,9 @@ class ModelLorentzian(ModelClass):
         AA, x0, ss = tuple(aa)
 
         gvec = _np.zeros( (3,len(XX)), dtype=_np.float64)
-        gvec[0,:] = -1.0*16.0*(XX-x0)*ss/(_np.pi*(4.0*(XX-x0)*(XX-x0)+ss*ss)**2.0)
-        gvec[1,:] = 16.0*AA*ss*(-12.0*x0*x0+24.0*x0*XX+ss*ss-12.0*XX*XX)/(_np.pi*(4.0*x0*x0-8.0*x0*XX+ss*ss+4.0*XX*XX)**3.0)
-        gvec[2,:] = 16.0*AA*(XX-x0)*(3.0*ss*ss-4.0*(XX*XX-2.0*XX*x0+x0*x0))/(_np.pi*(ss*ss+4.0*(XX*XX-2.0*XX*x0+x0*x0))**3.0)
+        gvec[0,:] = -1.0*16.0*(XX-x0)*ss/(_np.pi*_np.power(4.0*(XX-x0)*(XX-x0)+ss*ss, 2.0))
+        gvec[1,:] = 16.0*AA*ss*(-12.0*x0*x0+24.0*x0*XX+ss*ss-12.0*XX*XX)/(_np.pi*_np.power(4.0*x0*x0-8.0*x0*XX+ss*ss+4.0*XX*XX, 3.0))
+        gvec[2,:] = 16.0*AA*(XX-x0)*(3.0*ss*ss-4.0*(XX*XX-2.0*XX*x0+x0*x0))/(_np.pi*_np.power(ss*ss+4.0*(XX*XX-2.0*XX*x0+x0*x0), 3.0))
         return gvec
 
 #    @staticmethod
@@ -2531,7 +2709,7 @@ class ModelPseudoVoigt(ModelClass):
     @staticmethod
     def _partial(XX, aa):
         gvec = _np.concatenate( (ModelPseudoVoigt.model/aa[0],
-                                 aa[0]*ModelLorentzian._partial(XX, aa[1:4]),
+                            aa[0]*ModelLorentzian._partial(XX, aa[1:4]),
                            (1.0-aa[0])*ModelNormal._partial(XX, aa[4:])), axis=0)
         return gvec
 
@@ -2592,14 +2770,14 @@ class ModelLogLorentzian(ModelClass):
 
       f =  10.0*_np.log10( AA*0.5*ss/((XX-x0)^2+0.25*ss^2)/_np.pi )
 
-      f = 10*log10(A) - 10*log10(s) + 10*log10(0.5) - 10*log10(pi)
+      f = 10*log10(A) + 10*log10(s) + 10*log10(0.5) - 10*log10(pi)
         - 10*log10((x-xo)**2.0 + 0.25*ss**2.0 )
 
     A log-lorentzian is a shifted log-parabola in x-s space that is centered at (xo,0)
     """
-    _af = _np.asarray([1.0, 0.4, 0.05], dtype=_np.float64)
-    _LB = _np.asarray([0.0, -_np.inf, 0.0], dtype=_np.float64)
-    _UB = _np.asarray([_np.inf, _np.inf, _np.inf], dtype=_np.float64)
+    _af = _np.asarray([    1.0,      0.4,    0.05], dtype=_np.float64)
+    _LB = _np.asarray([  1e-18, -_np.inf,   1e-18], dtype=_np.float64)
+    _UB = _np.asarray([_np.inf,  _np.inf, _np.inf], dtype=_np.float64)
     _fixed = _np.zeros( (3,), dtype=int)
     def __init__(self, XX, af=None, **kwargs):
         super(ModelLogLorentzian, self).__init__(XX, af, **kwargs)
@@ -2615,14 +2793,12 @@ class ModelLogLorentzian(ModelClass):
                 - 10*log10(pi)
             f = 10*log10( 0.5*A*s ) - 10*log10(pi)
               - 10*log10((x-xo)**2.0 + 0.25*ss**2.0 )
-
-              = line plus log of a shifted parabola
+              shifted log of a quadratic
         """
-        return 10.0*_np.log(lorentzian(XX, aa))/_np.log(10)
-    #    AA, x0, ss = tuple(af)
-    #    return ( 10.0*_np.log10( 0.5*AA*ss )
-    #           - 10.0*_np.log10(_np.pi)
-    #           - 10.0*_np.log10((XX-x0)**2.0 + 0.25*ss**2.0 ) )
+#        return 10.0*_np.log(lorentzian(XX, aa))/_np.log(10)
+        AA, x0, ss = tuple(aa)
+        return ( 10.0*_np.log10(0.5) + 10.0*_np.log10(AA)  + 10.0*_np.log10(ss) - 10.0*_np.log10(_np.pi)
+               - 10.0*_np.log10(_np.abs(_np.power(XX-x0, 2.0) + 0.25*_np.power(ss, 2.0) ) ) )
 
     @staticmethod
     def _deriv(XX, aa):
@@ -2675,8 +2851,8 @@ class ModelLogLorentzian(ModelClass):
              = -20.0*(x-xo)/((x-xo)**2.0 + 0.25*ss**2.0 )/_np.log(10)
 
         d2f/dxdAA = 0.0
-        d2f/dxdx0 = 80.0*(s-2.0*(x-xo))*(s+2.0*(x-xo))/(log10*(4.0*(x-xo)**2.0 + ss**2.0)**2.0 )
-        d2f/dxds =
+        d2f/dxdx0 = 80.0*(s-2.0*(x-xo))*(s+2.0*(x-xo))/(ln|10|*(4.0*(x-xo)**2.0 + ss**2.0)**2.0 )
+        d2f/dxds = 10*s*(x-xo)/( ln|10|*( (x-xo)^2+0.25s^2 )^2 )
         """
         AA, x0, ss = tuple(aa)
 
@@ -2740,327 +2916,292 @@ class ModelLogLorentzian(ModelClass):
 
 # ========================================================================== #
 # ========================================================================== #
-#
-#def _parse_noshift(ain, model_order=2):
-#    if model_order>1:
-#        return ain[0:3], ain[3:6], ain[6:]
-#    elif model_order>0:
-#        return ain[0:3], ain[3:6], []
-#    else:
-#        return ain[0:3], [], []
-#    # end if
-## end def
-#
-#def doppler(xdat, ain, model_order=2):
-#    a0, a1, a2 = _parse_noshift(ain, model_order=model_order)
-#    prof = normal(xdat, af=a0)
-#    if model_order>0:
-#        prof += lorentzian(xdat, af=a1)
-#    if model_order>1:
-#        prof += normal(xdat, af=a2)
-#    return prof
-#
-#def deriv_doppler(xdat, ain, model_order=2):
-#    a0, a1, a2 = _parse_noshift(ain, model_order=model_order)
-#    prof = deriv_normal(xdat,af=a0)
-#    if model_order>0:
-#        prof += deriv_lorentzian(xdat, af=a1)
-#    if model_order>1:
-#        prof += deriv_normal(xdat,af=a2)
-#    return prof
-#
-#def partial_doppler(xdat, ain, model_order=2):
-#    a0, a1, a2 = _parse_noshift(ain, model_order=model_order)
-#    gvec = partial_normal(xdat, af=a0)
-#    if model_order>0:
-#        gvec = _np.append(gvec, partial_lorentzian(xdat, af=a1), axis=0)
-#    if model_order>1:
-#        gvec = _np.append(gvec, partial_normal(xdat, af=a2), axis=0)
-#    return gvec
-#
-#def partial_deriv_doppler(xdat, ain, model_order=2):
-#    a0, a1, a2 = _parse_noshift(ain, model_order=model_order)
-#    gvec = partial_deriv_normal(xdat, af=a0)
-#    if model_order>0:
-#        gvec = _np.append(gvec, partial_deriv_lorentzian(xdat, af=a1), axis=0)
-#    if model_order>1:
-#        gvec = _np.append(gvec, partial_deriv_normal(xdat, af=a2), axis=0)
-#    return gvec
-#
-#def _doppler_logdata(xdat, ain, model_order=2):
-#    return 10.0*_np.log10(doppler(xdat, ain, model_order))
-#
-#def _deriv_doppler_logdata(xdat, ain, model_order=2):
-#    """
-#        f = 10*log10(y)
-#        dfdx = 10.0/ln(10) d ln(y)/dx
-#            d ln(y)/dx = 1/y * dydx
-#    """
-#    prof = doppler(xdat, ain, model_order)
-#    deriv = deriv_doppler(xdat, ain, model_order)
-#    return 10.0*deriv/(prof*_np.log(10.0))
-#
-#def _partial_doppler_logdata(xdat, ain, model_order=2):
-#    """
-#        f = 10*log10(y)
-#        dfdx = 10.0/ln(10) d ln(y)/dx
-#            d ln(y)/dx = 1/y * dydx
-#        dfda = 10.0 / ln(10) * d ln(y)/da
-#             = 10.0/ ln(10) *dyda/y
-#    """
-#    prof = doppler(xdat, ain, model_order)
-#    gvec = partial_doppler(xdat, ain, model_order)
-#    for ii in range(len(ain)):
-#        gvec[ii,:] /= prof
-#    # end for
-#    return 10.0*gvec/_np.log(10.0)
-#
-#def _partial_deriv_doppler_logdata(xdat, ain, model_order=2):
-#    """
-#        f = 10*log10(y)
-#        dfdx = 10.0/ln(10) d ln(y)/dx
-#            d ln(y)/dx = 1/y * dydx
-#        d2fdxda = d(df/dx)/da
-#                = 10.0/ln(10) d(dy/dx/y)/da
-#                = 10.0/ln(10) * ( 1/y*d2y/dxda - dyda/y^2 )
-#    """
-#    prof = doppler(xdat, ain, model_order)
-#    gvec = partial_doppler(xdat, ain, model_order)
-#    dgdx = partial_deriv_doppler(xdat, ain, model_order)
-#    dlngdx = _np.zeros_like(gvec)
-#    for ii in range(len(ain)):
-#        dlngdx[ii,:] = dgdx[ii,:]/prof -gvec[ii,:]/(prof*prof)
-#    # end for
-#    return 10.0*dlngdx/_np.log(10)
-#
-#
-#
-## fit model to the data
-#def model_doppler(XX, af=None, **kwargs):
-#    logdata = kwargs.setdefault('logdata', False)
-#    if logdata:
-#        return _model_doppler_logdata(XX, af=af, **kwargs)
-#    else:
-#        return _model_doppler_lindata(XX, af=af, **kwargs)
-#    # end if
-## end def
-#
-#
-#
-#
-#def _model_doppler_lindata(XX, af=None, **kwargs):
-#    """
-#         simple shifted gaussian - one doppler peak
-#         3 parameter fit
-#            modelspec.gaussian AA*_np.exp(-(XX-x0)**2/(2.0*ss**2))
-#         shifted gaussian and centered lorentzian - one doppler peak and reflection
-#         6 parameter fit
-#       +    modelspec.lorentzian AA*0.5*ss/((XX-x0)*(XX-x0)+0.25*ss*ss)/_np.pi
-#         two shifted gaussians and centered lorentzian - one doppler peak and reflection
-#         9 parameter fit
-#       +    modelspec.gaussian ... initialized with opposite shifts
-#    """
-#    model_order = kwargs.setdefault('model_order', 0)
-#    Fs = kwargs.setdefault('Fs', None)  # default to normalized frequencies
-#    noshift = kwargs.setdefault('noshift', True)
-#    if af is None:
-#        af = _np.ones((9,), dtype=_np.float64)
-#        # frequencies are normalized to sampling frequency
-#        af[0] = 1.0e-4      # integral of gaussian, -30 dBm ~ 0.001 mW = 1e-6 uW
-#        af[1] = -0.04       # (-0.4 MHz) doppler shift of gaussian,
-#        af[2] = 0.005       # doppler width of peak
-#        af[3] = 1.0e-3      # integrated value of lorentzian
-#        af[4] = 0.0         # shift of lorentzian
-#        af[5] = 0.01        # width of lorentzian peak
-#        af[6] = 0.5*_np.copy(af[0])   # integral of second gaussian
-#        af[7] =-0.75*_np.copy(af[1])  # doppler shift of second gaussian
-#        af[8] = 2.0*_np.copy(af[2])   # width of doppler peak of second gaussian
-#
-#        if Fs is not None:
-#            af[1] *= Fs;            af[2] *= Fs
-#            af[4] *= Fs;            af[5] *= Fs
-#            af[7] *= Fs;            af[8] *= Fs
-#        # end if
-#
-#        if model_order<2:
-#            af = af[:6]
-#        elif model_order<1:
-#            af = af[:3]
-#        # end if
-#    # end if
-#    if Fs is None:                  Fs = 1.0            # end if
-#    a0, a1, a2 = _parse_noshift(af, model_order=model_order)
-##    af = _np.asarray(a0.tolist()+a1.tolist()+a2.tolist(), dtype=_np.float64)
-#
-#    i0 = model_gaussian(None, a0, norm=True)
-#    info = Struct()
-#    info.af = _np.copy(i0.af)
-#    info.Lbounds = _np.array([0.0,-Fs/2, -Fs/2], dtype=_np.float64)
-#    info.Ubounds = _np.array([3.0, Fs/2, Fs/2], dtype=_np.float64)  # update this based on experience
-#    info.fixed = _np.zeros( _np.shape(info.Lbounds), dtype=int)
-#
-#    if model_order>0:
-#        i1 = model_lorentzian(None, a1)
-#        if noshift:
-#            i1.fixed[1] = int(1)
-#            i1.af[1] = 0.0
-#        # end if
-#        info.af = _np.append(info.af, i1.af, axis=0)
-#        i1.Lbounds = _np.array([0.0,-Fs/2.0, -Fs/2.0], dtype=_np.float64)
-#        i1.Ubounds = _np.array([3.0, Fs/2.0, Fs/2.0], dtype=_np.float64)
-#        info.Lbounds = _np.append(info.Lbounds, i1.Lbounds, axis=0)
-#        info.Ubounds = _np.append(info.Ubounds, i1.Ubounds, axis=0)
-#        info.fixed = _np.append(info.fixed, i1.fixed, axis=0)
-#    # end if
-#
-#    if model_order>1:
-#        i2 = model_gaussian(None, a2, norm=True)
-#        info.af = _np.append(info.af, i2.af, axis=0)
-#        i2.Lbounds = _np.array([0.0,-Fs/2.0, -Fs/2.0], dtype=_np.float64)
-#        i2.Ubounds = _np.array([3.0, Fs/2.0, Fs/2.0], dtype=_np.float64)
-#        info.Lbounds = _np.append(info.Lbounds, i2.Lbounds, axis=0)
-#        info.Ubounds = _np.append(info.Ubounds, i2.Ubounds, axis=0)
-#        info.fixed = _np.append(info.fixed, i2.fixed, axis=0)
-#
-#    # ====== #
-#
-#    info.Lbounds = kwargs.setdefault('LB', info.Lbounds)
-#    info.Ubounds = kwargs.setdefault('UB', info.Ubounds)
-#    info.fixed = kwargs.setdefault('fixed', info.fixed)
-#    def checkbounds(dat, ain):
-#        LB = _np.copy(info.Lbounds)
-#        UB = _np.copy(info.Ubounds)
-#        ain = _checkbounds(ain, LB=LB, UB=UB)
-#        return dat, ain
-#    info.checkbounds = checkbounds
-#    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
-#        a0, a1, a2 = _parse_noshift(ain, model_order=model_order)
-#        aout = _np.copy(ain)
-#        aout = i0.unscaleaf(a0, slope, offset=0.0, xslope=1.0, xoffset=0.0)
-#        if model_order>0:
-#            aout = _np.append(aout, i1.unscaleaf(a1, slope, offset=0.0, xslope=xslope, xoffset=xoffset), axis=0)
-#        if model_order>1:
-#            aout = _np.append(aout, i2.unscaleaf(a2, slope, offset=0.0, xslope=xslope, xoffset=xoffset), axis=0)
-#        info._secretoffset = offset
-#        print('Data offsets do not work with the lorentzian/normal models:\n'
-#             +'Remember the offset is now included in the model calls!')
-#        return aout
-#    info.unscaleaf = unscaleaf
-#    offset = 0.0 if not hasattr(info, '_secretoffset') else info._secretoffset    # end if
-#    if XX is None:
-#        return info
-#    # end if
-#
-#    # ===== #
-#
-#    model = doppler(XX, af, model_order=model_order) + offset
-#    gvec = partial_doppler(XX, af, model_order=model_order)
-#
-#    info.prof = model
-#    info.gvec = gvec
-#    info.dprofdx = deriv_doppler(XX, af, model_order=model_order)
-#    info.dgdx = partial_deriv_doppler(XX, af, model_order=model_order)
-#
-#    info.func = lambda _x, _a: doppler(_x, _a, model_order=model_order)+offset
-#    info.dfunc = lambda _x, _a: deriv_doppler(_x, _a, model_order=model_order)
-#    info.gfunc = lambda _x, _a: partial_doppler(_x, _a, model_order=model_order)
-#    info.dgfunc = lambda _x, _a: partial_deriv_doppler(_x, _a, model_order=model_order)
-#    return model, gvec, info
-## end def
-#
-#
-#def _model_doppler_logdata(XX, af=None, **kwargs):
-#    model_order = kwargs.setdefault('model_order', 0)
-#
-#
-#    if XX is None:
-#        info = _model_doppler_lindata(None, af=af, **kwargs)
-#        return info
-#    # end if
-#
-#    model, gvec, info = _model_doppler_lindata(XX, af=af, **kwargs)
-#    af = info.af.copy()
-#
-#    # ===== #
-#    def checkbounds(dat, ain):
-#        LB = _np.copy(info.Lbounds)
-#        UB = _np.copy(info.Ubounds)
-#        ain = _checkbounds(ain, LB=LB, UB=UB)
-#
-#        dat = _np.copy(dat)
-#        if (dat<0.0).any(): dat[dat<0] = min((1e-10, 1e-3*_np.min(dat[dat>0]))) # end if
-#        return dat, ain
-#    info.checkbounds = checkbounds
-#    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):  # check this ... leaving noshift to user
-#        aout = info.unscaleaf(ain, slope, 0.0, xslope, xoffset)
-#        info._secretoffset = offset
-#        print('Data offsets do not work with the lorentzian model:\n'
-#             +'Remember the offset is now included in the models!')
-#        return aout
-#    info.unscaleaf = unscaleaf
-#    offset = 0.0 if not hasattr('_secretoffset',info) else info._secretoffset    # end if
-#
-#    # ===== #
-#
-#    model = _doppler_logdata(XX, af, model_order=model_order) + offset
-#    gvec = _partial_doppler_logdata(XX, af, model_order=model_order)
-#
-#    info.prof = model
-#    info.gvec = gvec
-#    info.dprofdx = _deriv_doppler_logdata(XX, af, model_order=model_order)
-#    info.dgdx = _partial_deriv_doppler_logdata(XX, af, model_order=model_order)
-#
-#    info.func = lambda _x, _a: _doppler_logdata(_x, _a, model_order=model_order) + offset
-#    info.dfunc = lambda _x, _a: _deriv_doppler_logdata(_x, _a, model_order=model_order)
-#    info.gfunc = lambda _x, _a: _partial_doppler_logdata(_x, _a, model_order=model_order)
-#    info.dgfunc = lambda _x, _a: _partial_deriv_doppler_logdata(_x, _a, model_order=model_order)
-#    return model, gvec, info
-#
-#
-#class ModelDoppler(ModelClass):
-#    """
-#
-#    """
-#    _af = _np.asarray([1.0], dtype=_np.float64)
-#    _LB = _np.asarray([0.0], dtype=_np.float64)
-#    _UB = _np.asarray([_np.inf], dtype=_np.float64)
-#    _fixed = _np.zeros( (1,), dtype=int)
-#    def __init__(self, XX, af=None, **kwargs):
-#        super(ModelDoppler, self).__init__(XX, af, **kwargs)
-#    # end def __init__
-#
-#    @staticmethod
-#    def _model(XX, aa):
-#
-#    @staticmethod
-#    def _deriv(XX, aa):
-#
-#    @staticmethod
-#    def _partial(XX, aa):
-#
-#    @staticmethod
-#    def _partial_deriv(XX, aa):
-#
-##    @staticmethod
-##    def _hessian(XX, aa):
-#
-#    # ====================================== #
-#
-##    @staticmethod
-##    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
-##        """
-##        """
-##        aout = _np.copy(ain)
-##        return aout
-#
-#    # ====================================== #
-#
-##    def checkbounds(self, dat):
-##        return super(ModelDoppler, self).checkbounds(dat, self.aa, mag=None)
-#
-#    # ====================================== #
-## end def ModelDoppler
 
+def _parse_noshift(ain, model_order=2):
+    if model_order>1:
+        return ain[0:3], ain[3:6], ain[6:]
+    elif model_order>0:
+        return ain[0:3], ain[3:6], []
+    else:
+        return ain[0:3], [], []
+    # end if
+# end def
+
+def _doppler_logdata(xdat, ain, model_order=2):
+    return 10.0*_np.log10(ModelDoppler._model(xdat, ain, model_order=model_order))
+
+def _deriv_doppler_logdata(xdat, ain, model_order=2):
+    """
+        f = 10*log10(y)
+        dfdx = 10.0/ln(10) d ln(y)/dx
+            d ln(y)/dx = 1/y * dydx
+    """
+    prof = ModelDoppler._model(xdat, ain, model_order=model_order)
+    deriv = ModelDoppler._deriv(xdat, ain, model_order=model_order)
+    return 10.0*deriv/(prof*_np.log(10.0))
+
+def _partial_doppler_logdata(xdat, ain, model_order=2, noshift=True):
+    """
+        f = 10*log10(y)
+        dfdx = 10.0/ln(10) d ln(y)/dx
+            d ln(y)/dx = 1/y * dydx
+        dfda = 10.0 / ln(10) * d ln(y)/da
+             = 10.0/ ln(10) *dyda/y
+    """
+    prof = ModelDoppler._model(xdat, ain, model_order=model_order, noshift=noshift)
+    gvec = ModelDoppler._partial(xdat, ain, model_order=model_order, noshift=noshift)
+    for ii in range(len(ain)):
+        gvec[ii,:] /= prof
+    # end for
+    return 10.0*gvec/_np.log(10.0)
+
+def _partial_deriv_doppler_logdata(xdat, ain, model_order=2, noshift=True):
+    """
+        f = 10*log10(y)
+        dfdx = 10.0/ln(10) d ln(y)/dx
+            d ln(y)/dx = 1/y * dydx
+        d2fdxda = d(df/dx)/da
+                = 10.0/ln(10) d(dy/dx/y)/da
+                = 10.0/ln(10) * ( 1/y*d2y/dxda - dyda/y^2 )
+    """
+    prof = ModelDoppler._model(xdat, ain, model_order=model_order, noshift=noshift)
+    gvec = ModelDoppler._partial(xdat, ain, model_order=model_order, noshift=noshift)
+    dgdx = ModelDoppler._partial_deriv(xdat, ain, model_order=model_order, noshift=noshift)
+    dlngdx = _np.zeros_like(gvec)
+    for ii in range(len(ain)):
+        dlngdx[ii,:] = dgdx[ii,:]/prof -gvec[ii,:]/(prof*prof)
+    # end for
+    return 10.0*dlngdx/_np.log(10)
+
+# fit model to the data
+def model_doppler(XX, af=None, **kwargs):
+    logdata = kwargs.pop('logdata', False)
+#    noshift = kwargs.pop('noshift')
+    if logdata:
+        return _model(ModelLogDoppler, XX, af, **kwargs)
+    else:
+        return _model(ModelDoppler, XX, af, **kwargs)
+    # end if
+# end def
+
+class ModelDoppler(ModelClass):
+    """
+    Model of a Doppler spectrum.  Common situations:
+        1) Single peak - 3 parameter fit
+            - Gaussian (Doppler shift, integrated reflected power, width)
+        2) Zero frequency peak - additional 2 parameter fit
+            - Lorentzian to model window reflection or device cross-talk
+        3) Double peak - additional 3 parameter fit
+            - Gaussian (2nd Doppler shift, integrated reflected power, width)
+    """
+    def __init__(self, XX, af=None, **kwargs):
+        model_order = kwargs.setdefault('model_order', 2)
+        noshift = kwargs.setdefault('noshift', True)
+        self._af = ModelNormal._af
+        self._LB = ModelNormal._LB
+        self._UB = ModelNormal._UB
+        self._fixed = ModelNormal._fixed
+        if model_order>0:
+            self._af = _np.asarray(self._af.tolist()+ModelLorentzian._af.tolist())
+            self._LB = _np.asarray(self._LB.tolist()+ModelLorentzian._LB.tolist())
+            self._UB = _np.asarray(self._UB.tolist()+ModelLorentzian._UB.tolist())
+            self._fixed = _np.asarray(self._fixed.tolist()+ModelLorentzian._fixed.tolist())
+            if noshift:    self._fixed[4] = 1      # end if
+        if model_order>1:
+            self._af = _np.asarray(self._af.tolist()+ModelNormal._af.tolist())
+            self._LB = _np.asarray(self._LB.tolist()+ModelNormal._LB.tolist())
+            self._UB = _np.asarray(self._UB.tolist()+ModelNormal._UB.tolist())
+            self._fixed = _np.asarray(self._fixed.tolist()+ModelNormal._fixed.tolist())
+            self._af[7] *= -1.0
+        # end if
+        super(ModelDoppler, self).__init__(XX, af, **kwargs)
+        if noshift and model_order>0:
+            self.fixed[4] = 1
+        # end if
+    # end def __init__
+
+    @staticmethod
+    def _model(XX, aa, **kwargs):
+        """
+        Doppler model
+        f = NormalizedGaussian1
+          + Lorentzian
+          + Normalized Gaussain2
+        """
+        model_order = kwargs.setdefault('model_order', 2)
+        a0, a1, a2 = _parse_noshift(aa, model_order=model_order)
+        model = ModelNormal._model(XX, a0)
+        if model_order>0:            model += ModelLorentzian._model(XX, a1)
+        if model_order>1:            model += ModelNormal._model(XX, a2)
+        return model
+
+    @staticmethod
+    def _deriv(XX, aa, **kwargs):
+        """
+        Derivative of the Doppler model
+        dfdx = d/dx (NormalizedGaussian1
+             + Lorentzian
+             + Normalized Gaussain2 )
+        """
+        model_order = kwargs.setdefault('model_order', 2)
+        a0, a1, a2 = _parse_noshift(aa, model_order=model_order)
+        dfdx = ModelNormal._deriv(XX, a0)
+        if model_order>0:            dfdx += ModelLorentzian._deriv(XX, a1)
+        if model_order>1:            dfdx += ModelNormal._deriv(XX, a2)
+        return dfdx
+
+    @staticmethod
+    def _partial(XX, aa, **kwargs):
+        """
+        Jacobian of the Doppler model
+        dfdai = d/dai (NormalizedGaussian1
+             + Lorentzian
+             + Normalized Gaussain2 )
+        """
+        model_order = kwargs.setdefault('model_order', 2)
+        a0, a1, a2 = _parse_noshift(aa, model_order=model_order)
+        gvec = ModelNormal._partial(XX, a0)
+        if model_order>0: gvec = _np.concatenate( (gvec, ModelLorentzian._partial(XX, a1)), axis=0)
+        if model_order>1: gvec = _np.concatenate( (gvec, ModelNormal._partial(XX, a2)), axis=0)
+        return gvec
+
+    @staticmethod
+    def _partial_deriv(XX, aa, **kwargs):
+        """
+        Derivative of the Jacobian of the Doppler model
+        d2fdxdai = d2/dxdai(NormalizedGaussian1 + Lorentzian + NormalizedGaussain2 )
+        """
+        model_order = kwargs.setdefault('model_order', 2)
+        a0, a1, a2 = _parse_noshift(aa, model_order=model_order)
+        dgdx = ModelNormal._partial_deriv(XX, a0)
+        if model_order>0: dgdx = _np.concatenate( (dgdx, ModelLorentzian._partial_deriv(XX, a1)), axis=0)
+        if model_order>1: dgdx = _np.concatenate( (dgdx, ModelNormal._partial_deriv(XX, a2)), axis=0)
+        return dgdx
+
+#    @staticmethod
+#    def _hessian(XX, aa):
+
+    # ====================================== #
+
+    def unscaleaf(self, ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
+        """
+        """
+        a0, a1, a2 = _parse_noshift(ain, model_order=self.model_order)
+        aout = _np.copy(ain)
+        aout = ModelNormal.unscaleaf(a0, slope, offset, xslope, xoffset)
+        if self.model_order>0:
+            aout = _np.concatenate(aout, ModelLorentzian.unscaleaf(a1, slope, offset, xslope, xoffset), axis=0)
+        if self.model_order>1:
+            aout = _np.concatenate(aout, ModelNormal.unscaleaf(a2, slope, offset, xslope, xoffset), axis=0)
+        return aout
+
+    # ====================================== #
+
+#    def checkbounds(self, dat):
+#        return super(ModelDoppler, self).checkbounds(dat, self.aa, mag=None)
+
+    # ====================================== #
+# end def ModelDoppler
+
+
+class ModelLogDoppler(ModelDoppler):
+    """
+    Log of the Doppler spectrum.  Common situations:
+        1) Single peak - 3 parameter fit
+            - Gaussian (Doppler shift, integrated reflected power, width)
+        2) Zero frequency peak - additional 2 parameter fit
+            - Lorentzian to model window reflection or device cross-talk
+        3) Double peak - additional 3 parameter fit
+            - Gaussian (2nd Doppler shift, integrated reflected power, width)
+    """
+    def __init__(self, XX, af=None, **kwargs):
+        model_order = kwargs.setdefault('model_order', 2)
+        noshift = kwargs.setdefault('noshift', True)
+        self._af[0] = 1e-3
+        self._LB[0] = -_np.inf
+        self._UB[0] = 10.0
+        if model_order>0:
+            self._af[3] = 1
+            self._LB[3] = -_np.inf
+            self._UB[3] = 10.0
+            if noshift: self._fixed[4] = 1 # end if
+        if model_order>1:
+            self._af[6] = 1e-3
+            self._LB[6] = -_np.inf
+            self._UB[6] = 10.0
+        # end if
+        super(ModelDoppler, self).__init__(XX, af, **kwargs)
+        if noshift and model_order>0:
+            self.fixed[4] = 1
+        # end if
+    # end def __init__
+
+    @staticmethod
+    def _model(XX, aa, **kwargs):
+        """
+        Doppler model
+        f = NormalizedGaussian1
+          + Lorentzian
+          + Normalized Gaussain2
+        """
+        model_order = kwargs.setdefault('model_order', 2)
+        return _doppler_logdata(XX, aa, model_order=model_order)
+
+    @staticmethod
+    def _deriv(XX, aa, **kwargs):
+        """
+        Derivative of the Doppler model
+        dfdx = d/dx (NormalizedGaussian1
+             + Lorentzian
+             + Normalized Gaussain2 )
+        """
+        model_order = kwargs.setdefault('model_order', 2)
+        return _deriv_doppler_logdata(XX, aa, model_order=model_order)
+
+    @staticmethod
+    def _partial(XX, aa, **kwargs):
+        """
+        Jacobian of the Doppler model
+        dfdai = d/dai (NormalizedGaussian1
+             + Lorentzian
+             + Normalized Gaussain2 )
+        """
+        model_order = kwargs.setdefault('model_order', 2)
+        return _partial_doppler_logdata(XX, aa, model_order=model_order)
+
+    @staticmethod
+    def _partial_deriv(XX, aa, **kwargs):
+        """
+        Derivative of the Jacobian of the Doppler model
+        d2fdxdai = d2/dxdai(NormalizedGaussian1 + Lorentzian + NormalizedGaussain2 )
+        """
+        model_order = kwargs.setdefault('model_order', 2)
+        return _partial_deriv_doppler_logdata(XX, aa, model_order=model_order)
+
+#    @staticmethod
+#    def _hessian(XX, aa):
+
+    # ====================================== #
+
+    def unscaleaf(self, ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
+        """
+        """
+        a0, a1, a2 = _parse_noshift(ain, model_order=self.model_order)
+        aout = _np.copy(ain)
+        aout = ModelNormal.unscaleaf(a0, slope, offset, xslope, xoffset)
+        if self.model_order>0:
+            aout = _np.concatenate(aout, ModelLorentzian.unscaleaf(a1, slope, offset, xslope, xoffset), axis=0)
+        if self.model_order>1:
+            aout = _np.concatenate(aout, ModelNormal.unscaleaf(a2, slope, offset, xslope, xoffset), axis=0)
+        return aout
+
+    # ====================================== #
+
+#    def checkbounds(self, dat):
+#        return super(ModelLogDoppler, self).checkbounds(dat, self.aa, mag=None)
+
+    # ====================================== #
+# end def ModelLogDoppler
 
 # ========================================================================== #
 # ========================================================================== #
@@ -3084,11 +3225,17 @@ def _model_twopower(XX, af=None, **kwargs):
 
 class _ModelTwoPower(ModelClass):
     """
-    A two power profile fit with three free parameters:
-    prof ~ f(x) = a*(1-x^pow1)^pow2
+        model a two-power fit with three free parameters
+            f = a*(1.0 - x**c)**d
+
+            a = amplitude of core
+            c = power scaling factor 1
+            d = power scaling factor 2
+
+        non-trival domain:  c>0 and 0<=x<1  or   c<0 and x>1
     """
     _af = _np.asarray([1.0, 2.0, 1.0], dtype=_np.float64)
-    _LB = _np.asarray([1e-18, -_np.inf, -_np.inf], dtype=_np.float64)
+    _LB = _np.asarray([  1e-18,   1e-18, -_np.inf], dtype=_np.float64)
     _UB = _np.asarray([_np.inf, _np.inf, _np.inf], dtype=_np.float64)
     _fixed = _np.zeros( (3,), dtype=int)
     def __init__(self, XX, af=None, **kwargs):
@@ -3103,7 +3250,11 @@ class _ModelTwoPower(ModelClass):
         """
         XX = _np.copy(XX)
         c, d = tuple(aa)
-        return _np.power(1.0-_np.power(_np.abs(XX), c), d)
+        prof = _np.zeros_like(XX)
+#        prof = _np.power(1.0-_np.power(_np.abs(XX), c), d)
+        prof[XX<1] = _np.power(1.0-_np.power(_np.abs(XX[XX<1]), c), d)
+        prof[XX>=1] = -1.0*_np.power(1.0-_np.power(_np.abs(XX[XX>=1]), -c), d)
+        return prof
 
     @staticmethod
     def _model(XX, aa):
@@ -3127,8 +3278,10 @@ class _ModelTwoPower(ModelClass):
        """
         XX = _np.copy(_np.abs(XX))
         a, c, d = tuple(aa)
-        return -1.0*c*d*_np.power(XX, c-1.0)*_ModelTwoPower._model(XX, [a, c, d-1.0])
+#        dfdx = _np.zeros_like(XX)
+        dfdx = -1.0*c*d*_np.power(XX, c-1.0)*_ModelTwoPower._model(XX, [a, c, d-1.0])
     #    return -1.0*a*c*d*_np.power(XX, c-1.0)*_np.power(1.0-_np.power(XX,c), d-1.0)
+        return dfdx
 
     @staticmethod
     def _partial(XX, aa):
@@ -3221,18 +3374,18 @@ def model_twopower(XX, af=None, **kwargs):
 class ModelTwoPower(ModelClass):
     """
     model a two-power fit
-        first-half of a quasi-parabolic (no hole depth width or decaying edge)
-                .... dumb: reproduced everywhere: y-offset = slope*(1-x^b)^c
         y = a*( (1-b)*(1.0 - x^c)^d + b )
 
         a = amplitude of core
         b = edge / core
         c = power scaling factor 1
         d = power scaling factor 2
+
+       non-trival domain:  c>0 and 0<=x<1  or   c<0 and x>1
     """
     _af = _np.asarray([1.0, 0.0, 12.0, 3.0], dtype=_np.float64)
-    _LB = _np.asarray([1e-18, 0.0, -20.0, -20.0], dtype=_np.float64)
-    _UB = _np.asarray([20, 1.0, 20.0, 20.0], dtype=_np.float64)
+    _LB = _np.asarray([1e-18, 0.0, 1e-18, -20.0], dtype=_np.float64)
+    _UB = _np.asarray([   20, 1.0,  20.0,  20.0], dtype=_np.float64)
     _fixed = _np.zeros( (4,), dtype=int)
     def __init__(self, XX, af=None, **kwargs):
         super(ModelTwoPower, self).__init__(XX, af, **kwargs)
@@ -3389,7 +3542,7 @@ class ModelExpEdge(ModelClass):
 
     """
     _af = _np.asarray([2.0, 1.0], dtype=_np.float64)
-    _LB = _np.asarray([-_np.inf,-_np.inf], dtype=_np.float64)
+    _LB = _np.asarray([   1e-18,-_np.inf], dtype=_np.float64)
     _UB = _np.asarray([ _np.inf, _np.inf], dtype=_np.float64)
     _fixed = _np.zeros( (2,), dtype=int)
     def __init__(self, XX, af=None, **kwargs):
@@ -3413,6 +3566,15 @@ class ModelExpEdge(ModelClass):
 
     @staticmethod
     def _deriv(XX, aa):
+        """
+        model an exponential edge
+            y = e*(1-exp(-x^2/h^2))
+
+              = e *( 1 - gaussian(XX, [1.0, 0.0, _np.sqrt(0.5)*h]) )
+            second-half of a quasi-parabolic (no edge, or power factors)
+            e = hole width
+            h = hole depth
+        """
         e, h = tuple(aa)
         return 2.0*XX*e*_np.exp(-_np.square(XX)/_np.square(h))/_np.square(h)
 
@@ -3612,8 +3774,8 @@ class ModelQuasiParabolic(ModelClass):
         gvec[0, :] = ModelQuasiParabolic._model(XX, aa)/a
         gvec[1:4,:] = ModelTwoPower._partial(XX, [a, b-e, c, d])[1:,:]
         gvec[4:, :] = a*ModelExpEdge._partial(XX, [e, f])
-    #    gvec = _np.append(gvec, ModelTwoPower._partial(XX, [a, b-e, c, d]), axis=0)
-    #    gvec = _np.append(gvec, a*ModelExpEdge._partial(XX, [e, f]), axis=0)
+    #    gvec = _np.concatenate(gvec, ModelTwoPower._partial(XX, [a, b-e, c, d]), axis=0)
+    #    gvec = _np.concatenate(gvec, a*ModelExpEdge._partial(XX, [e, f]), axis=0)
         return gvec
 
     @staticmethod
@@ -3623,8 +3785,8 @@ class ModelQuasiParabolic(ModelClass):
         gvec[0, :] = ModelQuasiParabolic._deriv(XX, aa)/a
         gvec[1:4,:] = ModelTwoPower._partial_deriv(XX, [a, b-e, c, d])[1:,:]
         gvec[4:,:] = a*ModelExpEdge._partial_deriv(XX, [e, f])
-    #    gvec = _np.append(gvec, a*partial_deriv_edgepower(XX, [b-e, c, d]), axis=0)
-    #    gvec = _np.append(gvec, a*partial_deriv_expedge(XX, [e, f]), axis=0)
+    #    gvec = _np.concatenate(gvec, a*partial_deriv_edgepower(XX, [b-e, c, d]), axis=0)
+    #    gvec = _np.concatenate(gvec, a*partial_deriv_expedge(XX, [e, f]), axis=0)
         return gvec
 
 
@@ -4798,7 +4960,7 @@ def _model(mod, XX, af=None, **kwargs):
     if XX is None:
         return mod
     offset = 0.0 if not hasattr(mod, '_secretoffset') else mod._secretoffset    # end if
-    mod.update(XX, af)
+    mod.update(XX, af, **kwargs)
 
     mod.modfunc = lambda _x, _a: mod.model(_x, _a) + offset
     mod.moddfunc = lambda _x, _a: mod.derivative(_x, _a)
@@ -4945,301 +5107,10 @@ if __name__ == '__main__':
 
 # endif
 
-# ========================================================================== #
-# ========================================================================== #
 
+# =========================================================================== #
+# =========================================================================== #
 
-
-
-
-# ================= #
-
-#def _gaussian(XX, af, **kwargs):
-#    af = _parse_gaussian_inputs(af, **kwargs)
-#    return gaussian(XX, af)
-#
-#def _partial_gaussian(XX, af, **kwargs):
-#    noshift = kwargs.setdefault('noshift',False)
-#    af = _parse_gaussian_inputs(af, **kwargs)
-#    gvec = partial_gaussian(XX, af)
-#    if noshift:
-#        gvec = _np.delete(gvec, (1), axis=0)
-#    # end if
-#    return gvec
-#
-#def _deriv_gaussian(XX, af, **kwargs):
-#    af = _parse_gaussian_inputs(af, **kwargs)
-#    return deriv_gaussian(XX, af)
-#
-#def _partial_deriv_gaussian(XX, af, **kwargs):
-#    noshift = kwargs.setdefault('noshift',False)
-#    af = _parse_gaussian_inputs(af, **kwargs)
-#    gvec = partial_deriv_gaussian(XX, af)
-#    if noshift:
-#        gvec = _np.delete(gvec, (1), axis=0)
-#    # end if
-#    return gvec
-#
-#def model_gaussian(XX, af=None, **kwargs):
-#    """
-#    A gaussian with three free parameters:
-#        XX - x - independent variable
-#        af - magnitude, shift, width
-#
-#        af[0]*_np.exp(-(XX-af[1])**2/(2.0*af[2]**2))
-#
-#    If fitting with scaling, then the algebra necessary to unscale the problem
-#    to original units is:
-#        #    wrong af[0] = slope*af[0]
-#        #    wrong offset = 0.0  (in practice, this is not included in this filt)
-#
-#        y-scaling:  y' = (y-yo)/ys
-#         (y-miny)/(maxy-miny) = (y-yo)/ys
-#         (y-yo)/ys = a' exp(-1*(x-b')^2/(2*c'^2))
-#
-#         y-yo = ys * a' * exp(-1*(x-b')^2/(2*c'^2))
-#         a = ys*a'
-#             not possible to shift and maintain constant coefficients unless yo=0.0
-#
-#        x-scaling: x' = (x-xo)/xs
-#         y(x') - yo = a'*exp(-1*(x'-b')^2.0/(2*c'^2))
-#                    = a'*exp(-1*(x/xs-xo/xs-b')^2.0/(2*c'^2))
-#                    = a'*exp(-1*(x-xo-xs*b')^2.0/(2*c'^2*xs^2))
-#         here:
-#             a = a'*ys
-#             b = b'*xs + xo
-#             c = c'*xs
-#        only works if yo = 0.0
-#     found in the info Structure
-#    """
-#    noshift = kwargs.setdefault('noshift', False)
-#    if af is None:
-#        af = 0.7*_np.ones((3,), dtype=_np.float64)
-#        if noshift:
-#            af = _np.delete(af, (1), axis=0)
-#        # end if
-#    # endif
-#
-#    if len(af) == 2:
-#        noshift = True
-##        af = _np.atleast_1d(af)
-##        af = _np.insert(af,1,0.0, axis=0)
-#    # endif
-#
-#    info = Struct()
-#    info.Lbounds = _np.array([-_np.inf, -_np.inf, -_np.inf], dtype=_np.float64)
-#    info.Ubounds = _np.array([_np.inf, _np.inf, _np.inf], dtype=_np.float64)
-#    info.af = af
-#    info.kwargs = kwargs
-#
-#    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
-#        aout = _np.copy(ain)
-# #        aout[0] = slope*aout[0]
-# #        aout[1] = xslope*aout[1]+xoffset
-# #        aout[2] = xslope*aout[2]
-#        return aout
-#    info.unscaleaf = unscaleaf
-#    if noshift:
-##        info.af = _np.delete(info.af, (1), axis=0)
-#        info.Lbounds = _np.delete(info.Lbounds, (1), axis=0)
-#        info.Ubounds = _np.delete(info.Ubounds, (1), axis=0)
-#    # end if
-#    if XX is None:
-#        return info
-#
-#    prof = gaussian(XX, af, noshift=noshift)
-#    gvec = partial_gaussian(XX, af, noshift=noshift)
-#
-#    info.prof = prof
-#    info.gvec = gvec
-#    info.dprofdx = deriv_gaussian(XX, af, noshift=noshift)
-#    info.dgdx = partial_deriv_gaussian(XX, af, noshift=noshift)
-#
-#    info.func = lambda _x, _a: gaussian(_x, _a, noshift=noshift)
-#    info.dfunc = lambda _x, _a: deriv_gaussian(_x, _a, noshift=noshift)
-#    info.gfunc = lambda _x, _a: partial_gaussian(_x, _a, noshift=noshift)
-#    info.dgfunc = lambda _x, _a: partial_deriv_gaussian(_x, _a, noshift=noshift)
-#    return prof, gvec, info
-#
-#def _lorentzian(XX, af, **kwargs):
-#    """
-#    Lorentzian normalization such that integration equals AA (af[0])
-#    """
-#    af = _parse_gaussian_inputs(af, **kwargs)
-#    AA, x0, ss = tuple(af)
-#    return lorentzian(XX, [AA, x0, ss])
-#
-#def _deriv_lorentzian(XX, af, **kwargs):
-#    af = _parse_gaussian_inputs(af, **kwargs)
-#    AA, x0, ss = tuple(af)
-#    return deriv_lorentzian(XX, [AA, x0, ss])
-#
-#def _partial_lorentzian(XX, af, **kwargs):
-#    noshift = kwargs.setdefault('noshift', False)
-#    af = _parse_gaussian_inputs(af, **kwargs)
-#    AA, x0, ss = tuple(af)
-#
-#    gvec = partial_lorentzian(XX, [AA, x0, ss])
-#    if noshift:
-#        gvec = _np.delete(gvec, (1), axis=0)
-#    # end if
-#    return gvec
-#
-#def _partial_deriv_lorentzian(XX, af, **kwargs):
-#    noshift = kwargs.setdefault('noshift', False)
-#    af = _parse_gaussian_inputs(af, **kwargs)
-#    AA, x0, ss = tuple(af)
-#
-#    gvec = partial_deriv_lorentzian(XX, [AA, x0, ss])
-#    if noshift:
-#        gvec = _np.delete(gvec, (1), axis=0)
-#    # end if
-#    return gvec
-#
-#def model_lorentzian(XX, af=None, **kwargs):
-#    """
-#    A lorentzian with three free parameters:
-#        XX - x - independent variable
-#        af - magnitude, shift, width
-#
-#        AA*0.5*ss/((XX-x0)^2+0.25*ss^2)/_np.pi
-#
-#    If fitting with scaling, then the algebra necessary to unscale the problem
-#    to original units is:
-#        af[0] = slope*af[0]
-#        offset = 0.0  (in practice, this is necessary for this fit)
-#
-#       y-scaling: y' = (y-yo)/ys
-#        (y-yo) / ys = 0.5*a'*c' / ( (x-b')^2 + 0.25*c'^2 ) / pi
-#
-#        y-yo = 0.5*ys*a'*c' / ( (x-b')^2 + 0.25*c'^2 ) / pi
-#        a = ys*a'
-#
-#       x-scaling: x' = (x-xo)/xs
-#        y-yo = 0.5*ys*a'*c' / ( (x-xo-xs*b')^2/xs^2 + 0.25*c'^2 ) / pi
-#             = 0.5 * ys*xs*a'*xs*c' /( (x-xo-xs*b')^2 + 0.25*xs^2*c'^2 )/pi
-#        a = ys*xs*a'
-#        b = xs*b'+xo
-#        c = xs*c'
-#
-#    found in the info Structure
-#    """
-#    noshift = kwargs.setdefault('noshift', False)
-#    if af is None:
-#        af = 0.7*_np.ones((3,), dtype=_np.float64)
-#    # end if
-#
-#    if len(af) == 2:
-#        noshift = True
-#        af = _np.atleast_1d(_np.copy(af))
-#        af = _np.insert(af,1,0.0, axis=0)
-#    # end if
-#
-#    if len(af) == 3 and noshift:
-#        af = _np.delete(_np.copy(af), (1), axis=0)
-#    # endif
-#
-#    info = Struct()
-#    info.Lbounds = _np.array([-_np.inf, -_np.inf, -_np.inf], dtype=_np.float64)
-#    info.Ubounds = _np.array([_np.inf, _np.inf, _np.inf], dtype=_np.float64)
-#    info.af = _np.copy(af)
-#
-#    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):  # check this ... leaving noshift to user
-#        aout = _np.copy(ain)
-# #        aout[0] = slope*xslope*aout[0]
-# #        aout[1] = xslope*aout[1]+xoffset
-# #        aout[2] = xslope*aout[2]
-#        return aout
-#    info.unscaleaf = unscaleaf
-#    if noshift:
-##        info.af = _np.delete(info.af, (1), axis=0)
-#        info.Lbounds = _np.delete(info.Lbounds, (1), axis=0)
-#        info.Ubounds = _np.delete(info.Ubounds, (1), axis=0)
-#    # end if
-#
-#    if XX is None:
-#        return info
-#
-#    prof = lorentzian(XX, af, noshift=noshift)
-#    gvec = partial_lorentzian(XX, af, noshift=noshift)
-#    info.prof = prof
-#    info.gvec = gvec
-#    info.dprofdx = deriv_lorentzian(XX, af, noshift=noshift)
-#    info.dgdx = partial_deriv_lorentzian(XX, af, noshift=noshift)
-#
-#    info.func = lambda _x, _a: lorentzian(_x, _a, noshift=noshift)
-#    info.dfunc = lambda _x, _a: deriv_lorentzian(_x, _a, noshift=noshift)
-#    info.gfunc = lambda _x, _a: partial_lorentzian(_x, _a, noshift=noshift)
-#    info.dgfunc = lambda _x, _a: partial_deriv_lorentzian(_x, _a, noshift=noshift)
-#    return prof, gvec, info
-#
-#
-## =========================================================================== #
-## =========================================================================== #
-#
-## fit model to the data
-#def model_doppler(XX, af=None, noshift=True):
-#    """
-#         simple shifted gaussian - one doppler peak
-#         3 parameter fit
-#            modelspec.gaussian AA*_np.exp(-(XX-x0)**2/(2.0*ss**2))
-#         shifted gaussian and centered lorentzian - one doppler peak and reflection
-#         6 parameter fit
-#       +    modelspec.lorentzian AA*0.5*ss/((XX-x0)*(XX-x0)+0.25*ss*ss)/_np.pi
-#         two shifted gaussians and centered lorentzian - one doppler peak and reflection
-#         9 parameter fit
-#       +    modelspec.gaussian ... initialized with opposite shifts
-#    """
-#    if af is None:
-#        af = _np.ones((3,), dtype=_np.float64)
-##        af = _np.ones((9,), dtype=_np.float64)
-#        af[0] = 1.0         # amplitude of gaussian
-#        af[1] = -500.0e3    # doppler shift of gaussian
-#        af[2] = 100.0e3     # doppler width of peak
-##        af[3] = 10.0        # integrated value of lorentzian
-##        #  af[4] is added here for simplicity.  In this model we are using an unshifted lorentzian at zero-frequency.  It will be deleted shortly.
-##        af[4] = 0.0         # shift of lorentzian
-##        af[5] = 10.0e3      # width of lorentzian peak
-##        af[6] = 0.2*af[0]   # amplitude of second gaussian
-##        af[7] =-1.0*_np.copy(af[1])    # doppler shift of second gaussian
-##        af[8] = 50.0e3      # width of doppler peak of second gaussian
-#
-##        af = _np.delete(af, (4), axis=0)
-##    elif len(af) == 8:
-##        noshift = True
-##        af = _np.insert(_np.copy(af), (4), 0.0, axis=0)
-##    # end if
-##    if XX is None: XX = _np.linspace(-2e6, 2e6, num=200)   # end if
-#
-#    def parse_noshift(ain):
-#        if noshift:
-#            a0 = ain[0:3]
-#            a1 = ain[3:6]
-#            a2 = ain[6:]
-#        else:
-#            a0 = ain[0:3]
-#            a1 = ain[3:5]
-#            a2 = ain[5:]
-#        # end if
-#        return a0, a1, a2
-#    a0, a1, a2 = parse_noshift(af)
-#
-#    i0 = model_gaussian(None, a0)
-#    info = Struct()
-#    info.af = _np.copy(i0.af)
-#    info.Lbounds = _np.copy(i0.Lbounds)
-#    info.Ubounds = _np.copy(i0.Ubounds)
-#
-#    i1 = model_lorentzian(None, a1, noshift=noshift)
-#    info.af = _np.append(info.af, i1.af, axis=0)
-#    info.Lbounds = _np.append(info.Lbounds, i1.Lbounds, axis=0)
-#    info.Ubounds = _np.append(info.Ubounds, i1.Ubounds, axis=0)
-#
-#    i2 = model_gaussian(None, a2)
-#    info.af = _np.append(info.af, i2.af, axis=0)
-#    info.Lbounds = _np.append(info.Lbounds, i2.Lbounds, axis=0)
-#    info.Ubounds = _np.append(info.Ubounds, i2.Ubounds, axis=0)
-#
 #    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
 #        a0, a1, a2 = parse_noshift(ain)
 #        aout = _np.copy(ain)
@@ -5249,413 +5120,6 @@ if __name__ == '__main__':
 #        return aout
 #    info.unscaleaf = unscaleaf
 #
-#    if XX is None:
-#        return info
-#    # end if
-#
-##    # shifted gaussian
-###    model, gvec, info = model_gaussian(XX, a0)
-##    model = gaussian(XX, a0)
-##    info.dprofdx = deriv_gaussian(XX, a0)
-##    gvec = partial_gaussian(XX, a0)
-##    info.dgdx = partial_deriv_gaussian(XX, a0)
-##
-##    # shifted gaussian with lorentzian
-###    m1, g1, i1 = model_lorentzian(XX, a1, noshift=noshift)
-##    model += lorentzian(XX, a1, noshift=noshift)
-##    info.dprofdx += deriv_lorentzian(XX, a1, noshift=noshift)
-##    gvec = _np.append(gvec, partial_lorentzian(XX, a1, noshift=noshift), axis=0)
-##    info.dgdx = _np.append(info.dgdx, partial_deriv_lorentzian(XX, a1, noshift=noshift), axis=0)
-##
-##    # two shifted gaussians with lorentzian
-###    m2, g2, i2 = model_gaussian(XX, a2)
-##    model += gaussian(XX, a2)
-##    info.dprofdx += deriv_gaussian(XX, a2)
-##    gvec = _np.append(gvec, partial_gaussian(XX, a2), axis=0)
-##    info.dgdx = _np.append(info.dgdx, partial_deriv_gaussian(XX, a2), axis=0)
-#
-#    # ===== #
-#
-#    def dopplermodel(xdat, ain):
-#        a0, a1, a2 = parse_noshift(ain)
-#        return gaussian(xdat,af=a0) \
-#             + lorentzian(xdat, af=a1, noshift=noshift) \
-#             + gaussian(xdat,af=a2)
-#
-#    def deriv_model(xdat, ain):
-#        a0, a1, a2 = parse_noshift(ain)
-#        return deriv_gaussian(xdat,af=a0) \
-#             + deriv_lorentzian(xdat, af=a1, noshift=noshift) \
-#             + deriv_gaussian(xdat,af=a2)
-#
-#    def partial_model(xdat, ain):
-#        a0, a1, a2 = parse_noshift(ain)
-#        gvec = partial_gaussian(xdat,af=a0)
-#        gvec = _np.append(gvec, partial_lorentzian(xdat, af=a1, noshift=noshift), axis=0)
-#        if noshift:
-#            gvec = _np.insert(gvec, (4), _np.zeros((len(xdat),), dtype=_np.float64), axis=0)
-#        gvec = _np.append(gvec, partial_gaussian(xdat,af=a2), axis=0)
-#        return gvec
-#
-#    def partial_deriv_model(xdat, ain):
-#        a0, a1, a2 = parse_noshift(ain)
-#        gvec = partial_deriv_gaussian(xdat,af=a0)
-#        gvec = _np.append(gvec, partial_deriv_lorentzian(xdat, af=a1, noshift=noshift), axis=0)
-#        if noshift:
-#            gvec = _np.insert(gvec, (4), _np.zeros((len(xdat),), dtype=_np.float64), axis=0)
-#        gvec = _np.append(gvec, partial_deriv_gaussian(xdat,af=a2), axis=0)
-#        return gvec
-#
-#    model = dopplermodel(XX, af)
-#    gvec = partial_model(XX, af)
-#    info.prof = model
-#    info.gvec = gvec
-#    info.dprofdx = deriv_model(XX, af)
-#    info.dgdx = partial_deriv_model(XX, af)
-#
-#    info.func = lambda _x, _a: dopplermodel(_x, _a)
-#    info.dfunc = lambda _x, _a: deriv_model(_x, _a)
-#    info.gfunc = lambda _x, _a: partial_model(_x, _a)
-#    info.dgfunc = lambda _x, _a: partial_deriv_model(_x, _a)
-#    return model, gvec, info
-## end def
-#
-## =========================================================================== #
-#
-## Set the plasma density, temperature, and Zeff profiles (TRAVIS INPUTS)
-#def qparab(XX, *aa, **kwargs):
-#    """
-#    ex// ne_parms = [0.30, 0.002, 2.0, 0.7, -0.24, 0.30]
-#    This subfunction calculates the quasi-parabolic fit
-#    Y/Y0 = aa[1]-aa[4]+(1-aa[1]+aa[4])*(1-XX^aa[2])^aa[3]+aa[4]*(1-exp(-XX^2/aa[5]^2))
-#        XX - r/a
-#    aa[0] - Y0 - function value on-axis
-#    aa[1] - gg - Y1/Y0 - function value at edge over core
-#    aa[2],aa[3]-  pp, qq - power scaling parameters
-#    aa[4],aa[5]-  hh, ww - hole depth and width
-#    """
-#    options = {}
-#    options.update(kwargs)
-#    nohollow = options.get('nohollow', False)
-#    aedge = options.get('aedge', 1.0)
-#    if len(aa)>6:
-#        nohollow = aa.pop(6)
-#    XX = _np.abs(XX)/aedge
-#    if (type(aa) is tuple) and (len(aa) == 2):
-#        nohollow = aa[1]
-#        aa = aa[0]
-#    elif (type(aa) is tuple) and (len(aa) == 1):
-#        aa = aa[0]
-#    # endif
-#    aa = _np.asarray(aa, dtype=_np.float64)
-#    if nohollow and (_np.size(aa)==4):
-#        aa = _np.vstack((aa,_np.atleast_1d(0.0)))
-#        aa = _np.vstack((aa,_np.atleast_1d(1.0)))
-#    elif nohollow:
-#        aa[4] = 0.0
-#        aa[5] = 1.0
-#    # endif
-#    prof = aa[0]*( aa[1]-aa[4]
-#                   + (1.0-aa[1]+aa[4])*_np.abs(1.0-XX**aa[2])**aa[3]
-#                   + aa[4]*(1.0-_np.exp(-XX**2.0/aa[5]**2.0)) )
-#    return prof
-## end def qparab
-#
-#def deriv_qparab(XX, aa=[0.30, 0.002, 2.0, 0.7, -0.24, 0.30], nohollow=False):
-#    """
-#    ex// ne_parms = [0.30, 0.002 2.0 0.7 -0.24 0.30]
-#    This subfunction calculates the derivative of a quasi-parabolic fit
-#    Y/Y0 = aa[1]-aa[4]+(1-aa[1]+aa[4])*(1-XX^aa[2])^aa[3]+aa[4]*(1-exp(-XX^2/aa[5]^2))
-#        XX - r/a
-#    aa[0] - Y0 - function value on-axis
-#    aa[1] - gg - Y1/Y0 - function value at edge over core
-#    aa[2],aa[3]-  pp, qq - power scaling parameters
-#    aa[4],aa[5]-  hh, ww - hole depth and width
-#    """
-#    XX = _np.abs(XX)
-#    aa = _np.asarray(aa,dtype=_np.float64)
-#    if nohollow and (_np.size(aa)==4):
-#        aa = _np.vstack((aa,_np.atleast_1d(0.0)))
-#        aa = _np.vstack((aa,_np.atleast_1d(1.0)))
-#    elif nohollow:
-#        aa[4] = 0.0
-#        aa[5] = 1.0
-#    # endif
-#
-#    dpdx = aa[0]*( (1.0-aa[1]+aa[4])*(-1.0*aa[2]*XX**(aa[2]-1.0))*aa[3]*(1.0-XX**aa[2])**(aa[3]-1.0)
-#                   - aa[4]*(-2.0*XX/aa[5]**2.0)*_np.exp(-XX**2.0/aa[5]**2.0) )
-#
-#    return dpdx
-## end def derive_qparab
-#
-#def partial_qparab(XX,aa=[0.30, 0.002, 2.0, 0.7, -0.24, 0.30], nohollow=False):
-#    """
-#    ex// ne_parms = [0.30, 0.002 2.0, 0.7 -0.24 0.30]
-#    This subfunction calculates the jacobian of a quasi-parabolic fit
-#
-#    quasi-parabolic fit:
-#    Y/Y0 = aa[1]-aa[4]+(1-aa[1]+aa[4])*(1-XX^aa[2])^aa[3]+aa[4]*(1-exp(-XX^2/aa[5]^2))
-#        XX - r/a
-#    aa[0] - Y0 - function value on-axis
-#    aa[1] - gg - Y1/Y0 - function value at edge over core
-#    aa[2],aa[3]-  pp, qq - power scaling parameters
-#    aa[4],aa[5]-  hh, ww - hole depth and width
-#    """
-#    XX = _np.abs(XX)
-#    aa = _np.asarray(aa,dtype=_np.float64)
-#    if nohollow and (_np.size(aa)==4):
-#        aa = _np.vstack((aa,_np.atleast_1d(0.0)))
-#        aa = _np.vstack((aa,_np.atleast_1d(1.0)))
-#    elif nohollow:
-#        aa[4] = 0.0
-#        aa[5] = 1.0
-#    # endif
-#    Y0 = aa[0]
-#    g = aa[1]
-#    p = aa[2]
-#    q = aa[3]
-#    h = aa[4]
-#    w = aa[5]
-#
-#    gvec = _np.zeros( (6,_np.size(XX)), dtype=_np.float64)
-#    gvec[0,:] = g-h+(1.0-g+h)*_np.abs(1.0-XX**p)**q + h*(1.0-_np.exp(-XX**2.0/w**2.0))
-#    gvec[1,:] = Y0*( 1.0-_np.abs(1.0-XX**p)**q )    # aa[0]
-#    gvec[2,:] = -1.0*Y0*q*(g-h-1.0)*(XX**p)*_np.log(_np.abs(XX))*(_np.abs(1-XX**p)**q)/(XX**p-1.0)
-#    gvec[3,:] = Y0*(-g+h+1.0)*(_np.abs(1-XX**p)**q)*_np.log(_np.abs(1.0-XX**p))
-#    gvec[4,:] = Y0*(_np.abs(1.0-XX**p)**q) - Y0*_np.exp(-(XX/w)**2.0)
-#    gvec[5,:] = -2.0*h*(XX**2.0)*Y0*_np.exp(-(XX/w)**2.0) / w**3.0
-#
-#    return gvec
-## end def partial_qparab
-#
-#def partial_deriv_qparab(XX, aa=[0.30, 0.002, 2.0, 0.7, -0.24, 0.30], nohollow=False):
-#    """
-#    ex// ne_parms = [0.30, 0.002 2.0 0.7 -0.24 0.30]
-#    This subfunction calculates the jacobian of the derivative of a
-#    quasi-parabolic fit (partial derivatives of the derivative of a quasi-parabolic fit)
-#
-#    quasi-parabolic fit:
-#    Y/Y0 = aa[1]-aa[4]+(1-aa[1]+aa[4])*(1-XX^aa[2])^aa[3]+aa[4]*(1-exp(-XX^2/aa[5]^2))
-#        XX - r/a
-#
-#    aa[0] - Y0 - function value on-axis
-#    aa[1] - gg - Y1/Y0 - function value at edge over core
-#    aa[2],aa[3]-  pp, qq - power scaling parameters
-#    aa[4],aa[5]-  hh, ww - hole depth and width
-#    """
-#    XX = _np.abs(XX)
-#    aa = _np.asarray(aa,dtype=_np.float64)
-#    if nohollow and (_np.size(aa)==4):
-#        aa = _np.vstack((aa,_np.atleast_1d(0.0)))
-#        aa = _np.vstack((aa,_np.atleast_1d(1.0)))
-#    elif nohollow:
-#        aa[4] = 0.0
-#        aa[5] = 1.0
-#    # endif
-#    Y0 = aa[0]
-#    g = aa[1]
-#    p = aa[2]
-#    q = aa[3]
-#    h = aa[4]
-#    w = aa[5]
-#
-#    gvec = _np.zeros( (6,_np.size(XX)), dtype=_np.float64)
-#    gvec[0,:] = 2.0*h*XX*_np.exp(-(XX/w)**2.0)/(w**2.0) - p*q*(-g+h+1.0)*(XX**(p-1.0))*((1.0-XX**p)**(q-1.0))
-#    gvec[1,:] = p*q*Y0*(XX**(p-1.0))*((1-XX**p)**(q-1.0))
-#
-#    gvec[2,:] = q*Y0*(-1.0*(g-h-1.0))*((1.0-XX**p)**(q-2.0))
-#    gvec[2,:] *= p*_np.log(_np.abs(XX))*((q-1.0)*(XX**(2.0*p-1.0))
-#                    - (XX**(p-1.0))*(1.0-XX**p))+(XX**p-1.0)*XX**(p-1.0)
-#
-#    gvec[3,:] = p*Y0*(g-h-1.0)*(XX**(p-1.0))*((1.0-XX**p)**(q-1.0))*(q*_np.log(_np.abs(1.0-XX**p))+1.0)
-#    gvec[4,:] = (2.0*XX*Y0*_np.exp(-1.0*(XX/w)**2.0))/(w**2.0) - p*q*Y0*(XX**(p-1.0))*((1.0-XX**p)**(q-1.0))
-#
-#    gvec[5,:] = h*Y0*_np.exp(-1.0*(XX/w)**2.0)*((4.0*(XX**3.0))/(w**5.0)-(4.0*XX)/(w**3.0))
-#
-#    return gvec
-## end def partial_deriv_qparab
-#
-#def deriv2_qparab(XX, aa=[0.30, 0.002, 2.0, 0.7, -0.24, 0.30], nohollow=False):
-#    """
-#    ex// ne_parms = [0.30, 0.002 2.0 0.7 -0.24 0.30]
-#    This subfunction calculates the second derivative of a quasi-parabolic fit
-#    Y/Y0 = aa[1]-aa[4]+(1-aa[1]+aa[4])*(1-XX^aa[2])^aa[3]+aa[4]*(1-exp(-XX^2/aa[5]^2))
-#        XX - r/a
-#    aa[0] - Y0 - function value on-axis
-#    aa[1] - gg - Y1/Y0 - function value at edge over core
-#    aa[2],aa[3]-  pp, qq - power scaling parameters
-#    aa[4],aa[5]-  hh, ww - hole depth and width
-#    """
-#    XX = _np.abs(XX)
-#    aa = _np.asarray(aa,dtype=_np.float64)
-#    if nohollow and (_np.size(aa)==4):
-#        aa = _np.vstack((aa,_np.atleast_1d(0.0)))
-#        aa = _np.vstack((aa,_np.atleast_1d(1.0)))
-#    elif nohollow:
-#        aa[4] = 0.0
-#        aa[5] = 1.0
-#    # endif
-#    d2pdx2 = aa[3]*(aa[2]**2.0)*(aa[3]-1.0)*(1.0+aa[4]-aa[1])*(XX**(2.*aa[2]-2.0))*(1-XX**aa[2])**(aa[3]-2.0)
-#    d2pdx2 -= (aa[2]-1.0)*aa[2]*aa[3]*(1.0+aa[4]-aa[1])*(XX**(aa[2]-2.0))*(1-XX**aa[2])**(aa[3]-1.0)
-#    d2pdx2 += (2.0*aa[4]*_np.exp(-XX**2.0/(aa[5]**2.0)))/(aa[5]**2.0)
-#    d2pdx2 -= (4*aa[4]*(XX**2.0)*_np.exp(-XX**2.0/(aa[5]**2.0)))/(aa[5]**4.0)
-#    d2pdx2 *= aa[0]
-#    return d2pdx2
-## end def derive_qparab
-#
-#def partial_deriv2_qparab(XX, aa=[0.30, 0.002, 2.0, 0.7, -0.24, 0.30], nohollow=False):
-#    """
-#    ex// ne_parms = [0.30, 0.002 2.0 0.7 -0.24 0.30]
-#    This subfunction calculates the jacobian of the second derivative of a
-#    quasi-parabolic fit (partial derivatives of the second derivative of a quasi-parabolic fit)
-#
-#    quasi-parabolic fit:
-#    Y/Y0 = aa[1]-aa[4]+(1-aa[1]+aa[4])*(1-XX^aa[2])^aa[3]+aa[4]*(1-exp(-XX^2/aa[5]^2))
-#        XX - r/a
-#
-#    aa[0] - Y0 - function value on-axis
-#    aa[1] - gg - Y1/Y0 - function value at edge over core
-#    aa[2],aa[3]-  pp, qq - power scaling parameters
-#    aa[4],aa[5]-  hh, ww - hole depth and width
-#    """
-#    XX = _np.abs(XX)
-#    aa = _np.asarray(aa,dtype=_np.float64)
-#    if nohollow and (_np.size(aa)==4):
-#        aa = _np.vstack((aa,_np.atleast_1d(0.0)))
-#        aa = _np.vstack((aa,_np.atleast_1d(1.0)))
-#    elif nohollow:
-#        aa[4] = 0.0
-#        aa[5] = 1.0
-#    # endif
-#    Y0 = aa[0]
-#    g = aa[1]
-#    p = aa[2]
-#    q = aa[3]
-#    h = aa[4]
-#    w = aa[5]
-#
-#    gvec = _np.zeros( (6,_np.size(XX)), dtype=_np.float64)
-#    gvec[0,:] = deriv2_qparab(XX, aa, nohollow) / Y0
-#    gvec[1,:] = -p*q*Y0*(XX**(p-2.0))*(1.0-XX**p)**(q-2.0)*(p*(q*(XX**p)-1.0)-XX**p+1.0)
-#    gvec[2,:] = p*_np.log(_np.abs(XX))*(p*((q**2.0)*(XX**(2.0*p))-3.0*q*(XX**p)+XX**p+1.0)-(XX**p-1.0)*(q*XX**p-1.0))
-#    gvec[2,:] += (XX**p-1.0)*(2.0*p*(q*(XX**p)-1.0)-XX**p+1.0)
-#    gvec[2,:] *= q*Y0*(g-h-1.0)*(XX**(p-2.0))*((1.0-XX**p)**(q-3.0))
-#    gvec[3,:] = p*Y0*(-(g-h-1.0))*(XX**(p-2.0))*((1.0-XX**p)**(q-2.0))*(p*(2.0*q*XX**p-1.0)+q*(p*(q*XX**p-1.0)-XX**p+1.0)*_np.log(_np.abs(1.0-XX**p))-XX**p+1.0)
-#    gvec[4,:] = Y0*(p*q*(XX**(p-2.0))*((1.0-XX**p)**(q-2.0))*(p*(q*XX**p-1.0)-XX**p+1.0)+(2.0*_np.exp(-XX**2.0/w**2.0)*(w**2.0-2.0*XX**2.0))/w**4.0)
-#    gvec[5,:] = -(4.0*h*Y0*_np.exp(-XX**2.0/w**2.0)*(w**4.0-5*w**2.0*XX**2.0+2.0*XX**4.0))/w**7.0
-#
-#    return gvec
-## end def partial_deriv2_qparab
-#
-#
-#def model_qparab(XX, af=None, nohollow=False, prune=False, rescale=False, info=None):
-#    """
-#    ex// ne_parms = [0.30, 0.002, 2.0, 0.7, -0.24, 0.30]
-#    This function calculates the quasi-parabolic fit
-#        y/a = b-e+(1-b+e)*(1-x^c)^d + e*(1-exp(-x^2/f^2))
-#        y/a = edgepower(x,[b-e,c,d]) + expedge(x,[e,f])
-#            where
-#
-#    Y/Y0 = af[1]-af[4]+(1-af[1]+af[4])*(1-XX^af[2])^af[3]
-#                + af[4]*(1-exp(-XX^2/af[5]^2))
-#    XX - r/a
-#a    af[0] - Y0 - function value on-axis
-#b    af[1] - gg - Y1/Y0 - function value at edge over core
-#c,d    af[2],af[3]-  pp, qq - power scaling parameters
-#e,f    af[4],af[5]-  hh, ww - hole depth and width
-#
-#    If fitting with scaling, then the algebra necessary to unscale the problem
-#    to original units is:
-#            af[0] is Y0, af[1] if Y1/Y0; Y1 = af[1]*af[0]
-#
-#        af[1] = (slope*af[1]*af[0]+offset)/(slope*af[0]+offset)
-#        af[0] = slope*af[0]+offset
-#    found in the info Structure
-#
-#    """
-#    if info is None:
-#        info = Struct()  # Custom class that makes working with dictionaries easier
-##    info.Lbounds = _np.array([    0.0, 0.0,-_np.inf,-_np.inf,-_np.inf,-_np.inf], dtype=_np.float64)
-##    info.Ubounds = _np.array([_np.inf, _np.inf, _np.inf, _np.inf, _np.inf, _np.inf], dtype=_np.float64)
-##    info.Lbounds = _np.array([  0.0, 0.0,-20,-20,-1,-1], dtype=_np.float64)
-##    info.Ubounds = _np.array([ 20.0, 1.0, 20, 20, 1, 1], dtype=_np.float64)
-#    info.Lbounds = _np.array([  0.0, 0.0,-10,-10,-1,-1], dtype=_np.float64)
-#    info.Ubounds = _np.array([ 20.0, 1.0, 10, 10, 1, 1], dtype=_np.float64)
-#
-#    if af is None:
-#        af = _np.array([1.0, 0.002, 2.0, 0.7, -0.24, 0.30], dtype=_np.float64)
-##        af = randomize_initial_conditions(info.Lbounds, info.Ubounds)
-#        if nohollow:
-#            af[4] = 0.0
-#            af[5] = 1.0
-#        # endif
-#    if len(af) == 4:
-#        nohollow = True
-#        af = _np.hstack((af,0.0))
-#        af = _np.hstack((af,1.0))
-#    # endif
-#    info.af = _np.copy(af)
-#
-#    def unscaleaf(ain, slope, offset):
-#        aout = _np.copy(ain)
-# #        aout[1] = (slope*ain[1]*ain[0]+offset)/(slope*ain[0]+offset)
-# #        aout[0] = slope*ain[0]+offset
-#        return aout
-#    info.unscaleaf = unscaleaf
-#    if XX is None:
-#        if prune:
-#            info.af = info.af[:4]
-#            info.Lbounds = info.Lbounds[:4]
-#            info.Ubounds = info.Ubounds[:4]
-#        # end if
-#        return info
-#    # endif
-#
-#    # ========= #
-#    XX = _np.abs(XX)
-#    if rescale:
-#        XX = rescale_xlims(XX, forward=True, ascl=rescale)
-#    else:
-#        rescale = 1.0
-#    # end if
-#
-#    # ========= #
-#
-#    af = af.reshape((len(af),))
-#    if _np.isfinite(af).any() == 0:
-#        print("checkit! No finite values in fit coefficients! (from model_spec: model_qparab)")
-##    print(_np.shape(af))
-#
-#    try:
-#        prof = qparab(XX, af, nohollow)
-##        prof = interp_irregularities(prof, corezero=False)
-#        info.prof = prof
-#
-#        gvec = partial_qparab(XX*rescale, af, nohollow)
-##        gvec = interp_irregularities(gvec, corezero=False)  # invalid slice
-#        info.gvec = gvec
-#
-#        info.dprofdx = deriv_qparab(XX, af, nohollow)
-##        info.dprofdx = interp_irregularities(info.dprofdx, corezero=True)
-#
-#        info.dgdx = partial_deriv_qparab(XX*rescale, af, nohollow)
-##        info.dgdx = interp_irregularities(info.dgdx, corezero=False)
-#    except:
-#        pass
-#        raise
-#
-#    if prune:
-#        af = af[:4]
-#        info.Lbounds = info.Lbounds[:4]
-#        info.Ubounds = info.Ubounds[:4]
-#
-#        gvec = gvec[:4, :]
-#        info.dgdx = info.dgdx[:4, :]
-#    # endif
-#    info.af = af
-#
-#    return prof, gvec, info
-## end def model_qparab
 
 # ========================================================================== #
 # ========================================================================== #

@@ -203,34 +203,29 @@ __metaclass__ = type
 
 
 def gen_random_init_conds(func, **fkwargs):
-    af0 = fkwargs.pop('af0', None)
-    varaf0 = fkwargs.pop('varaf0', None)
+#    af0 = fkwargs.pop('af0', None)
+#    varaf0 = fkwargs.pop('varaf0', None)
 
     # Call the wrapper function to get reasonable bounds
     temp = func(XX=None, af=None, **fkwargs)
+    LB = _np.copy(temp.Lbounds)
+    UB = _np.copy(temp.Ubounds)
+    fixed = _np.copy(temp.fixed)
 
     # Differentiate base data set from default starting positions by randomly
     # setting the profile to be within the upper / lower bounds (or reasonable values)
     # aa = _ms.randomize_initial_conditions(LB=temp.Lbounds, UB=temp.Ubounds, af0=af0, varaf0=varaf0)
     aa = _np.copy(temp.af)
-##    aa += 0.5*aa*_np.random.normal(0.0, 1.0, len(aa))
 #    aa += 0.5*aa*_np.random.uniform(0.0, 1.0, len(aa))
     for ii in range(len(aa)):
-        if temp.fixed[ii] == 0:
-            aa[ii] += 0.5*aa[ii]*_np.random.uniform(0.0, 1.0, 1)
+        if fixed[ii] == 0:
+            if _np.isinf(LB[ii]):    LB[ii] = -10.0      # end if
+            if _np.isinf(UB[ii]):    UB[ii] = 10.0       # end if
+#            aa[ii] += 0.5*aa[ii]*_np.random.uniform(0.0, 1.0, 1)
+#            aa[ii] += 0.5*aa[ii]*_np.random.uniform(0.0, 1.0, 1)
+            aa[ii] = _np.random.uniform(low=LB[ii], high=UB[ii], size=1)
         # end if
     # end for
-
-    # Doesn't work super well:
-#    aa = _np.zeros_like(temp.af)
-#    for ii in range(len(temp.af)):
-#        LB = temp.Lbounds[ii]
-#        UB = temp.Ubounds[ii]
-#        if _np.isinf(LB):   LB = 0.1*_np.sign(LB)*temp.af[ii]            # endif
-#        if _np.isinf(UB):   UB = 0.1*_np.sign(UB)*temp.af[ii]            # endif
-#
-#        aa[ii] = temp.af[ii] + _np.random.normal(0.5*LB+0.5*UB, _np.abs(UB-LB), 1)
-#    # end for
     return aa
 
 # ========================================================================== #
@@ -281,7 +276,7 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
 
     # subfunction kwargs
     scale_by_data = kwargs.pop('scale_problem',False)
-    use_perpendicular_distance = kwargs.pop('perpchi2', True)
+    use_perpendicular_distance = kwargs.pop('perpchi2', False)
 
     # fitter kwargs
     LB = kwargs.pop('LB', None)
@@ -314,8 +309,8 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
         y, ey2, slope, offset = _ms.rescale_problem(_np.copy(y), _np.copy(ey)**2.0)
         ey = _np.sqrt(ey2)
     # end if
-#    autoderivative = kwargs.setdefault('autoderivative', 1)
-    autoderivative = kwargs.setdefault('autoderivative', 0)
+    autoderivative = kwargs.setdefault('autoderivative', 1)
+#    autoderivative = kwargs.setdefault('autoderivative', 0)
 
     # ============================================= #
 
@@ -762,7 +757,7 @@ class fitNL_base(Struct):
         self.LB = kwargs.pop("LB", -_np.Inf*_np.ones_like(self.af0))
         self.UB = kwargs.pop("UB",  _np.Inf*_np.ones_like(self.af0))
         self.fixed = kwargs.pop("fixed", _np.zeros(_np.shape(self.af0), dtype=int))
-        self.use_perpendicular_distance = kwargs.pop('perpdist', True)
+        self.use_perpendicular_distance = kwargs.pop('perpchi2', False)
 
         # ========================== #
 
@@ -1256,7 +1251,7 @@ def test_fit(func=_ms.model_qparab, **fkwargs):
 
     if 'Fs' in fkwargs:
         Fs = fkwargs.pop('Fs', 10.0e3)
-        tstart, tend = tuple(fkwargs.pop('tbds', [0.0, 6.0/33.0]))
+        tstart, tend = tuple(fkwargs.pop('tbnds', [0.0, 6.0/33.0]))
         numpts = fkwargs.pop('num', int((tend-tstart)*Fs))
         xdat = _np.linspace(tstart, tend, num=numpts)
         XX = _np.linspace(tstart, tend, num=numpts)
@@ -1731,7 +1726,7 @@ def test_fitNL(test_qparab=True, scale_by_data=False):
 
     if test_qparab:
         af, model, pderivmodel, wrapper = test_qparab_data()
-        x = _np.linspace(-0.8, 1.05, 11)
+        x = _np.linspace(-0.8, 1.05, 21)
 #        x = _np.linspace(-0.8, 0.95, 11)
     else:
         af, model, pderivmodel, wrapper = test_line_data()
@@ -1750,18 +1745,18 @@ def test_fitNL(test_qparab=True, scale_by_data=False):
 
     if test_qparab:
         import pybaseutils as _pyb   # TODO:  SORTING IS THIS ISSUE WITH HFS DATA STUFF, it isflipping upside down and backwards
-#        isort = _np.argsort(_np.abs(x))
-#        x = _np.abs(x[isort])
-        isort = _np.argsort(x)
-        x = x[isort]
+        isort = _np.argsort(_np.abs(x))
+        x = _np.abs(x[isort])
+#        isort = _np.argsort(x)
+#        x = x[isort]
         y = y[isort]
         vary = vary[isort]
 
-        _, vary = _pyb.utils.cylsym(x, vary)
-        x, y = _pyb.utils.cylsym(x, y)
-#        x = _pyb.utils.cylsym_odd(x)
-#        y = _pyb.utils.cylsym_even(_np.copy(y))
-#        vary = _pyb.utils.cylsym_even(_np.copy(vary))
+#        _, vary = _pyb.utils.cylsym(x, vary)
+#        x, y = _pyb.utils.cylsym(x, y)
+##        x = _pyb.utils.cylsym_odd(x)
+##        y = _pyb.utils.cylsym_even(_np.copy(y))
+##        vary = _pyb.utils.cylsym_even(_np.copy(vary))
     else:
         isort = _np.argsort(x)
         x = x[isort]
@@ -2014,20 +2009,19 @@ if __name__=="__main__":
     test_fit(_ms.model_sines, nfreqs=1,  Fs=10e3, numpts=int(6.0*1e3/33.0))
     test_fit(_ms.model_sines, nfreqs=3, Fs=10e3, numpts=int(6.0*2e3/33.0))
 
-
     test_qparab_fit(nohollow=False)
     test_qparab_fit(nohollow=True)
     ft = test_fitNL(False)
-#    ft = test_fitNL(True)  # issue with interpolation when x>1 and x<0?
+    ft = test_fitNL(True)  # issue with interpolation when x>1 and x<0?
 
     test_fit(_ms.model_line)
     test_fit(_ms.model_gaussian)    # check initial conditions
-    test_fit(_ms.model_normal)    # check initial conditions♣
+    test_fit(_ms.model_normal)    # check initial conditions
     test_fit(_ms.model_lorentzian)
-#    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=0, tbnds=[-0.5,0.5], numpts=18750)  # nan in model params!
-#    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=1, tbnds=[-0.5,0.5], numpts=18750)
-#    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=2, tbnds=[-0.5,0.5], numpts=18750)
-#    test_fit(_ms.model_doppler, noshift=0, Fs=1.0, model_order=2, tbnds=[-0.5,0.5], numpts=18750)
+    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=0, tbnds=[-0.5,0.5], num=18750)
+    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=1, tbnds=[-0.5,0.5], num=18750)
+    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=2, tbnds=[-0.5,0.5], num=18750)
+    test_fit(_ms.model_doppler, noshift=0, Fs=1.0, model_order=2, tbnds=[-0.5,0.5], num=18750)
     test_fit(_ms._model_twopower)
     test_fit(_ms.model_twopower)
     test_fit(_ms.model_expedge)
@@ -2048,9 +2042,9 @@ if __name__=="__main__":
     test_fit(_ms.model_PowerLaw, npoly=4)   # check derivatives, uncertainty wrong
     test_fit(_ms.model_Exponential)
     test_fit(_ms.model_parabolic)
-
-    # double check math! --- put in abs(XX) where necessary,
-    # use subfunctions/ chain rule for derivatives
+#
+#    # double check math! --- put in abs(XX) where necessary,
+#    # use subfunctions/ chain rule for derivatives
     test_fit(_ms.model_flattop)    # check math, looks good
     test_fit(_ms.model_massberg)   # check, looks good
 
