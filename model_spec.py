@@ -43,6 +43,23 @@ class ModelClass(Struct):
         aa = _np.copy(aa)
         return XX, aa
 
+    def checkNans(self, dat):
+#        nonzero = lambda z: _np.nonzero(z+1.101e-16)[0]
+#        flatten = False
+#        if len(_np.shape(dat))==1:
+#            flatten = True
+#            dat = _np.atleast_2d(dat)
+#        m = _np.size(dat, axis=0)
+#        for ii in range(m):
+#            nans = _np.where(_np.isnan(dat[ii,:]) + _np.isinf(dat[ii,:]))[0]
+#            if len(nans)>1:
+#                dat[ii,nans] = _np.interp(nonzero(nans), nonzero(~nans), dat[ii,~nans])
+#        # end for
+#        if flatten:
+#            dat = dat.flatten()
+        return dat
+
+
     def model(self, XX, aa=None, **kwargs):
         """
         Returns the derivative of the model.
@@ -50,7 +67,8 @@ class ModelClass(Struct):
             out: f(x)
         """
         XX, aa = self.parse_in(XX, aa)
-        return self._model(XX, aa, **kwargs)
+#        return self._model(XX, aa, **kwargs)
+        return self.checkNans(self._model(XX, aa, **kwargs))
 
     def derivative(self, XX, aa=None, **kwargs):
         """
@@ -63,7 +81,8 @@ class ModelClass(Struct):
         """
         XX, aa = self.parse_in(XX, aa)
         if hasattr(self, '_deriv'):
-            return self._deriv(XX, aa, **kwargs)
+#            return self._deriv(XX, aa, **kwargs)
+            return self.checkNans(self._deriv(XX, aa, **kwargs))
         hstep = kwargs.setdefault('hstep', 1e-16)
 
 #        dfdx = _np.zeros((_np.size(XX),), dtype=_np.float64)
@@ -75,7 +94,8 @@ class ModelClass(Struct):
 #        dfdx[1:-1] = (self.model(XX[1:-1]+hstep, aa, **kwargs) - self.model(XX[1:-1]-hstep, aa, **kwargs))/(2*hstep)
 
         # central difference all points - it is analytic! you can do this!
-        return (self.model(XX+hstep, aa, **kwargs) - self.model(XX-hstep, aa, **kwargs))/(2*hstep)
+#        return (self.model(XX+hstep, aa, **kwargs) - self.model(XX-hstep, aa, **kwargs))/(2*hstep)
+        return self.checkNans((self.model(XX+hstep, aa, **kwargs) - self.model(XX-hstep, aa, **kwargs))/(2*hstep))
         # end if
     # end def derivative
 
@@ -90,7 +110,7 @@ class ModelClass(Struct):
         """
         XX, aa = self.parse_in(XX, aa)
         if hasattr(self, '_partial'):
-            return self._partial(XX, aa, **kwargs)
+            return self.checkNans(self._partial(XX, aa, **kwargs))
         hstep = kwargs.setdefault('hstep', 1e-16)
         numfit = _np.size(aa)
         gvec = _np.zeros((numfit, _np.size(XX)), dtype=_np.float64)
@@ -99,7 +119,7 @@ class ModelClass(Struct):
             tmp[ii] += 1.0
             gvec[ii, :] = (self.model(XX, aa + hstep*tmp, **kwargs) - self.model(XX, aa-hstep*tmp, **kwargs))/(2*hstep)
         # end for
-        return gvec
+        return self.checkNans(gvec)
 
     def derivative_jacobian(self, XX, aa=None, **kwargs):
         """
@@ -112,7 +132,7 @@ class ModelClass(Struct):
         """
         XX, aa = self.parse_in(XX, aa)
         if hasattr(self, '_partial_deriv'):
-            return self._partial_deriv(XX, aa, **kwargs)
+            return self.checkNans(self._partial_deriv(XX, aa, **kwargs))
         hstep = kwargs.setdefault('hstep', 1e-16)
         numfit = _np.size(aa)
         dgdx = _np.zeros((numfit, _np.size(XX)), dtype=_np.float64)
@@ -121,7 +141,7 @@ class ModelClass(Struct):
             tmp[ii] += 1.0
             dgdx[ii, :] = (self.derivative(XX, aa + hstep*tmp, **kwargs) - self.derivative(XX, aa-hstep*tmp, **kwargs))/(2*hstep)
         # end for
-        return dgdx
+        return self.checkNans(dgdx)
 
     def second_derivative(self, XX, aa=None, **kwargs):
         """
@@ -134,10 +154,10 @@ class ModelClass(Struct):
         """
         XX, aa = self.parse_in(XX, aa)
         if hasattr(self, '_deriv2'):
-            return self._deriv(XX, aa, **kwargs)
+            return self.checkNans(self._deriv(XX, aa, **kwargs))
         hstep = kwargs.setdefault('hstep', 1e-16)
         # central difference all points - it is analytic! you can do this!
-        return (self.derivative(XX+hstep, aa, **kwargs) - self.derivative(XX-hstep, aa, **kwargs))/(2*hstep)
+        return self.checkNans((self.derivative(XX+hstep, aa, **kwargs) - self.derivative(XX-hstep, aa, **kwargs))/(2*hstep))
 
     def hessian(self, XX, aa=None, **kwargs):
         """
@@ -174,7 +194,7 @@ class ModelClass(Struct):
         """
         XX, aa = self.parse_in(XX, aa)
         if hasattr(self, '_partial_deriv2'):
-            return self._partial_deriv2(XX, aa, **kwargs)
+            return self.checkNans(self._partial_deriv2(XX, aa, **kwargs))
         hstep = kwargs.setdefault('hstep', 1e-16)
         numfit = _np.size(aa)
         d2gdx2 = _np.zeros((numfit, _np.size(XX)), dtype=_np.float64)
@@ -183,7 +203,7 @@ class ModelClass(Struct):
             tmp[ii] += 1.0
             d2gdx2[ii, :] = (self.second_derivative(XX, aa + hstep*tmp, **kwargs) - self.second_derivative(XX, aa-hstep*tmp, **kwargs))/(2*hstep)
         # end for
-        return d2gdx2
+        return self.checkNans(d2gdx2)
 
 
     # ====================================================== #
@@ -221,13 +241,13 @@ class ModelClass(Struct):
     def scalings(self, xdat, ydat, **kwargs):
         self.xdat, self.ydat = _np.copy(xdat), _np.copy(ydat)
         if not hasattr(self, 'xoffset'):
-            self.xoffset = xdat.nanmin()
+            self.xoffset = _np.nanmin(xdat)
         if not hasattr(self, 'xslope'):
-            self.xslope = xdat.nanmax() - xdat.nanmin()
+            self.xslope = _np.nanmax(xdat) - _np.nanmin(xdat)
         if not hasattr(self, 'offset'):
-            self.offset = ydat.nanmin()
+            self.offset = _np.nanmin(ydat)
         if not hasattr(self, 'slope'):
-            self.slope = ydat.nanmax()-ydat.nanmin()
+            self.slope = _np.nanmax(ydat)-_np.nanmin(ydat)
     # end def
 
     def scaledat(self, xdat, ydat, vdat, vxdat=None, **kwargs):
@@ -283,7 +303,7 @@ class ModelClass(Struct):
             self.xdat = self.xdat*self.xslope+self.xoffset
             self.ydat = self.ydat*self.slope+self.offset
             self.vdat = self.vdat*self.slope*self.slope
-            if self.vxdat is not None:
+            if hasattr(self, 'vxdat') and self.vxdat is not None:
                 self.vxdat = self.vxdat*self.xslope*self.xslope
             # end if
 
@@ -299,10 +319,10 @@ class ModelClass(Struct):
             self.af = self.unscaleaf(self.af)
             self.scaled = False
        # end if
-        if self.vxdat is None:
-            return self.xdat, self.ydat, self.vdat
-        else:
+        if hasattr(self, 'vxdat') and self.vxdat is not None:
             return self.xdat, self.ydat, self.vdat, self.vxdat
+        else:
+            return self.xdat, self.ydat, self.vdat
         # end if
     # end def
 
@@ -454,7 +474,7 @@ class ModelLine(ModelClass):
         return dgdx
 
     @staticmethod
-    def _hessian(XX, aa):
+    def _hessian(XX, aa, **kwargs):
         """
         Hessian of a line
             y = a*x + b
@@ -787,22 +807,27 @@ class ModelSines(ModelClass):
 
         hess = _np.zeros((numfit, numfit, _np.size(XX)), dtype=_np.float64)
         # diagonal:
-        # hess[0, 0, :] = 0.0                                                    # d2fao2
-        # hess[1, 1, :] = 0.0                                                    # d2fdai2
-        hess[2, 2, :] = -1.0*(f*_np.power(2.0*_np.pi*XX, 2.0))*a*_np.sin(w*XX+p) # d2fdfi2
-        hess[3, 3, :] = -1.0*a*_np.sin(w*XX+p)                                   # d2fdpi2
+        # hess[0::3, 0::3, :] = 0.0                                                    # d2fao2
+        # hess[1::3, 1::3, :] = 0.0                                                    # d2fdai2
+        hess[2::3, 2::3, :] = -1.0*(f*_np.power(2.0*_np.pi*XX, 2.0))*a*_np.sin(w*XX+p) # d2fdfi2
+        hess[3::3, 3::3, :] = -1.0*a*_np.sin(w*XX+p)                                   # d2fdpi2
 
         # Upper triangle
         # hess[0, :, :] = 0.0                                                                   #d2fdaod_
-        hess[1, 2, :] = 2.0*_np.pi*(_np.ones(w.shape, dtype=_np.float64)*XX)*_np.cos(w*XX+p)    # d2fdaidfi
-        hess[1, 3, :] =_np.cos(w*XX+p)                                                          # d2fdaidpi
-        hess[2, 3, :] = -2.0*_np.pi*(_np.ones(w.shape, dtype=_np.float64)*XX)*a*_np.sin(w*XX+p) # d2fdfidpi
+        hess[1::3, 2::3, :] = 2.0*_np.pi*(_np.ones(w.shape, dtype=_np.float64)*XX)*_np.cos(w*XX+p)    # d2fdaidfi
+        hess[1::3, 3::3, :] =_np.cos(w*XX+p)                                                          # d2fdaidpi
+        hess[2::3, 3::3, :] = -2.0*_np.pi*(_np.ones(w.shape, dtype=_np.float64)*XX)*a*_np.sin(w*XX+p) # d2fdfidpi
 
         # Lower triangle by symmetry
-        # hess[:, 0, :] =
-        hess[2, 1, :] = hess[1, 2, :].T
-        hess[3, 1, :] = hess[1, 3, :].T
-        hess[3, 2, :] = hess[2, 3, :].T
+        # hess[:, 0::3, :] =
+        for ii in range(numfit):    # TODO!:  CHECK THIS!
+            for jj in range(numfit):
+                hess[jj, ii, :] = hess[ii, jj, :]
+            # end for
+        # end for
+#        hess[2::3, 1::3, :] = hess[1::3, 2::3, :].T
+#        hess[3::3, 1::3, :] = hess[1::3, 3::3, :].T
+#        hess[3::3, 2::3, :] = hess[2::3, 3::3, :].T
         return hess
 
     # ====================================== #
@@ -1533,7 +1558,7 @@ class ModelProdExp(ModelClass):
 
     def scalings(self, xdat, ydat, **kwargs):
         self.offset = 0.0
-        return super(ModelProdExp, self).scalings(self, xdat, ydat, **kwargs)
+        return super(ModelProdExp, self).scalings(xdat, ydat, **kwargs)
 
     # ====================================== #
 
@@ -1725,7 +1750,7 @@ class ModelEvenPoly(ModelClass):
 
     def scalings(self, xdat, ydat, **kwargs):
         self.xoffset = 0.0
-        return super(ModelEvenPoly, self).scalings(self, xdat, ydat, **kwargs)
+        return super(ModelEvenPoly, self).scalings(xdat, ydat, **kwargs)
 
     # ====================================== #
 
@@ -1980,7 +2005,7 @@ class ModelPowerLaw(ModelClass):
         self.offset = 0.0      # TODO!:   Finish scalings
         self.xoffset = 0.0     # TODO!:   Finish scalings
         self.xscaling = 1.0    # TODO!:   Finish scalingss
-        return super(ModelPowerLaw, self).scalings(self, xdat, ydat, **kwargs)
+        return super(ModelPowerLaw, self).scalings(xdat, ydat, **kwargs)
     # ====================================== #
 
 #    def checkbounds(self, dat):
@@ -2074,7 +2099,7 @@ class ModelParabolic(ModelClass):
         self.offset = 0.0
         self.xslope = 1.0
         self.xoffset = 0.0
-        return super(ModelParabolic, self).scalings(self, xdat, ydat, **kwargs)
+        return super(ModelParabolic, self).scalings(xdat, ydat, **kwargs)
 
 
     # ====================================== #
@@ -2125,7 +2150,7 @@ class ModelExponential(ModelClass):
     # end def __init__
 
     @staticmethod
-    def _model(XX, aa, separate=False):
+    def _model(XX, aa, separate=False, **kwargs):
         """
          f     = a*(exp(b*XX^c) + XX^d) = f1+f2;
         """
@@ -2259,7 +2284,7 @@ class ModelExponential(ModelClass):
         self.offset = 0.0
         self.xslope = 1.0
         self.xoffset = 0.0
-        return super(ModelExponential, self).scalings(self, xdat, ydat, **kwargs)
+        return super(ModelExponential, self).scalings(xdat, ydat, **kwargs)
 
     # ====================================== #
 
@@ -2398,7 +2423,7 @@ class ModelGaussian(ModelClass):
         return dgdx
 
 #    @staticmethod
-#    def _hessian(XX, aa):
+#    def _hessian(XX, aa, **kwargs):
 #       """
 #        Hessian of a gaussian
 #        [d2fda2, d2fdadb, d2fdadc; d2fdadb, d2fdb2, d2fdbdc; d2fdadc, d2fdbdc, d2fdc2]
@@ -2447,7 +2472,7 @@ class ModelGaussian(ModelClass):
 
     def scalings(self, xdat, ydat, **kwargs):
         self.offset = 0.0
-        return super(ModelGaussian, self).scalings(self, xdat, ydat, **kwargs)
+        return super(ModelGaussian, self).scalings(xdat, ydat, **kwargs)
 
     # ====================================== #
 
@@ -2870,7 +2895,7 @@ class ModelNormal(ModelClass):
 
     def scalings(self, xdat, ydat, **kwargs):
         self.offset = 0.0
-        return super(ModelNormal, self).scalings(self, xdat, ydat, **kwargs)
+        return super(ModelNormal, self).scalings(xdat, ydat, **kwargs)
 
     # ====================================== #
 
@@ -3201,7 +3226,7 @@ class ModelLorentzian(ModelClass):
 
     def scalings(self, xdat, ydat, **kwargs):
         self.offset = 0.0
-        return super(ModelLorentzian, self).scalings(self, xdat, ydat, **kwargs)
+        return super(ModelLorentzian, self).scalings(xdat, ydat, **kwargs)
 
     # ====================================== #
 
@@ -3284,7 +3309,7 @@ class ModelPseudoVoigt(ModelClass):
 
     def scalings(self, xdat, ydat, **kwargs):
         self.offset = 0.0
-        return super(ModelPseudoVoigt, self).scalings(self, xdat, ydat, **kwargs)
+        return super(ModelPseudoVoigt, self).scalings(xdat, ydat, **kwargs)
 
     # ====================================== #
 
@@ -3672,7 +3697,7 @@ class ModelDoppler(ModelClass):
 
     def scalings(self, xdat, ydat, **kwargs):
         self.offset = 0.0
-        return super(ModelDoppler, self).scalings(self, xdat, ydat, **kwargs)
+        return super(ModelDoppler, self).scalings(xdat, ydat, **kwargs)
 
     # ====================================== #
 
@@ -3785,7 +3810,7 @@ class ModelLogDoppler(ModelDoppler):
 
     def scalings(self, xdat, ydat, **kwargs):
         self.offset = 0.0
-        return super(ModelLogDoppler, self).scalings(self, xdat, ydat, **kwargs)
+        return super(ModelLogDoppler, self).scalings(xdat, ydat, **kwargs)
 
     # ====================================== #
 
@@ -3950,7 +3975,7 @@ class _ModelTwoPower(ModelClass):
         self.offset = 0.0
         self.xoffset = 0.0
         self.xslope = 1.0
-        return super(_ModelTwoPower, self).scalings(self, xdat, ydat, **kwargs)
+        return super(_ModelTwoPower, self).scalings(xdat, ydat, **kwargs)
 
     # ====================================== #
 
@@ -4124,7 +4149,7 @@ class ModelTwoPower(ModelClass):
     def scalings(self, xdat, ydat, **kwargs):
         self.xoffset = 0.0
         self.xslope = 1.0
-        return super(ModelTwoPower, self).scalings(self, xdat, ydat, **kwargs)
+        return super(ModelTwoPower, self).scalings(xdat, ydat, **kwargs)
 
     # ====================================== #
 
@@ -4259,9 +4284,9 @@ class ModelExpEdge(ModelClass):
         gvec[1,:] = (-4.0*e*XX/_np.power(h,5.0))*(h-XX)*(h+XX)*ModelExpEdge._exp(XX, aa, **kwargs)
         return gvec
 
-    @staticmethod
-    def _hessian(XX, aa):
-        return None
+#    @staticmethod
+#    def _hessian(XX, aa, **kwargs):
+#        return None
 #        raise NotImplementedError
 
     # ====================================== #
@@ -4308,7 +4333,7 @@ class ModelExpEdge(ModelClass):
     def scalings(self, xdat, ydat, **kwargs):
         self.xoffset = 0.0
         self.offset = 1.0
-        return super(ModelExpEdge, self).scalings(self, xdat, ydat, **kwargs)
+        return super(ModelExpEdge, self).scalings(xdat, ydat, **kwargs)
 
     # ====================================== #
 
@@ -4397,6 +4422,7 @@ def model_qparab(XX, af=None, **kwargs):
     """
 
     """
+    kwargs.setdefault('nohollow', False)
     return _model(ModelQuasiParabolic, XX, af, **kwargs)
 
 # ======================================= #
@@ -4550,7 +4576,7 @@ class ModelQuasiParabolic(ModelClass):
     def scalings(self, xdat, ydat, **kwargs):
         self.xoffset = 0.0
         self.xslope = 1.0
-        return super(ModelQuasiParabolic, self).scalings(self, xdat, ydat, **kwargs)
+        return super(ModelQuasiParabolic, self).scalings(xdat, ydat, **kwargs)
 
     # ====================================== #
 
@@ -4722,7 +4748,7 @@ class ModelFlattop(ModelClass):
     def scalings(self, xdat, ydat, **kwargs):
         self.xoffset = 0.0
         self.offset = 0.0
-        return super(ModelFlattop, self).scalings(self, xdat, ydat, **kwargs)
+        return super(ModelFlattop, self).scalings(xdat, ydat, **kwargs)
 
     # ====================================== #
 
@@ -4926,7 +4952,7 @@ class ModelMassberg(ModelClass):
     def scalings(self, xdat, ydat, **kwargs):
         self.xoffset = 0.0
         self.offset = 0.0
-        return super(ModelMassberg, self).scalings(self, xdat, ydat, **kwargs)
+        return super(ModelMassberg, self).scalings(xdat, ydat, **kwargs)
 
     # ====================================== #
 
@@ -5702,10 +5728,10 @@ def _model(mod, XX, af=None, **kwargs):
     mod = mod(XX, af, **kwargs)
     if XX is None:
         return mod
-    offset = 0.0 if not hasattr(mod, '_secretoffset') else mod._secretoffset    # end if
+#    offset = 0.0 if not hasattr(mod, '_secretoffset') else mod._secretoffset    # end if
     mod.update(XX, af, **kwargs)
 
-    mod.modfunc = lambda _x, _a: mod.model(_x, _a) + offset
+    mod.modfunc = lambda _x, _a: mod.model(_x, _a) #+ offset
     mod.moddfunc = lambda _x, _a: mod.derivative(_x, _a)
     mod.modgfunc = lambda _x, _a: mod.jacobian(_x, _a)
     mod.moddgfunc = lambda _x, _a: mod.derivative_jacobian(_x, _a)

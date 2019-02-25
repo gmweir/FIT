@@ -243,8 +243,8 @@ def modelfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
 #    kwargs.setdefault('iterkw', {})
 #    kwargs.setdefault('nocovar', 0)
 #    kwargs.setdefault('rescale', 0)
-#    kwargs.setdefault('autoderivative', 1)
-    kwargs.setdefault('autoderivative', 0)
+    kwargs.setdefault('autoderivative', 1)
+#    kwargs.setdefault('autoderivative', 0)
 #    kwargs.setdefault('quiet', 1)
 #    kwargs.setdefault('diag', None)
 #    kwargs.setdefault('epsfcn', max((_np.nanmean(_np.diff(x.copy())),1e-2))) #5e-4) #1e-3
@@ -276,18 +276,18 @@ def _clean_mpfit_kwargs(kwargs):
 def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
 
     # subfunction kwargs
-    scale_by_data = kwargs.pop('scale_problem',False)
-    use_perpendicular_distance = kwargs.pop('perpchi2', True)
+    scale_by_data = kwargs.setdefault('scale_problem',True)
+    use_perpendicular_distance = kwargs.setdefault('perpchi2', False)
 
     # fitter kwargs
-    LB = kwargs.pop('LB', None)
-    UB = kwargs.pop('UB', None)
-    p0 = kwargs.pop('af0', None)
-    fixed = kwargs.pop('fixed', None)
+    LB = kwargs.setdefault('LB', None)
+    UB = kwargs.setdefault('UB', None)
+    p0 = kwargs.setdefault('af0', None)
+    fixed = kwargs.setdefault('fixed', None)
 
     # check for alternative names
-    if LB is None: LB = kwargs.pop('Lbounds', None)  # end if
-    if UB is None: UB = kwargs.pop('Ubounds', None)  # end if
+    if LB is None: LB = kwargs.setdefault('Lbounds', None)  # end if
+    if UB is None: UB = kwargs.setdefault('Ubounds', None)  # end if
     if p0 is None: p0 = kwargs.pop('af', None)       # end if
 
 #    skipwithnans = kwargs.pop('PassBadFit', False)
@@ -300,6 +300,7 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     if LB is None:        LB = info.Lbounds     # end if
     if UB is None:        UB = info.Ubounds     # end if
     if fixed is None:     fixed = info.fixed    # end if
+#    kwargs['af0'] = p0
     numfit = len(p0)
 
     if numfit != LB.shape[0]:
@@ -307,8 +308,16 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     # end if
 
     if scale_by_data:
-        y, ey2, slope, offset = _ms.rescale_problem(_np.copy(y), _np.copy(ey)**2.0)
-        ey = _np.sqrt(ey2)
+        x, y, vy = info.scaledat(_np.copy(x), _np.copy(y), _np.power(_np.copy(ey), 2.0))
+#        kwargs['offset'] = info.offset
+#        kwargs['slope'] = info.slope
+#        kwargs['xoffset'] = info.xoffset
+#        kwargs['xslope'] = info.xslope
+#        kwargs['scaled'] = info.scaled
+#        kwargs['xdat'] = x
+#        kwargs['ydat'] = y
+#        kwargs['vdat'] = vy
+        ey = _np.sqrt(vy)
     # end if
     autoderivative = kwargs.setdefault('autoderivative', 1)
 #    autoderivative = kwargs.setdefault('autoderivative', 0)
@@ -320,13 +329,13 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
         # If fjac==None then partial derivatives should not be
         # computed.  It will always be None if MPFIT is called with default
         # flag.
-        model, gvec, info = func(x, p, **fkwargs)
+        model, gvec, temp = func(x, p, **fkwargs)
 #        model = _ut.interp_irregularities(model, corezero=False)
-#        info.dprofdx = _ut.interp_irregularities(info.dprofdx, corezero=True)
+#        temp.dprofdx = _ut.interp_irregularities(temp.dprofdx, corezero=True)
 #        gvec = _ut.interp_irregularities(gvec, corezero=False)
-#        info.dgdx = _ut.interp_irregularities(info.dgdx, corezero=True)
+#        temp.dgdx = _ut.interp_irregularities(temp.dgdx, corezero=True)
         if nargout>1:
-            return model, gvec, info
+            return model, gvec, temp
 
         # Non-negative status value means MPFIT should continue, negative means
         # stop the calculation.
@@ -354,8 +363,8 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
             # vertical distance
             residual = (y-model)/err
         # end if
-        if _np.isnan(residual).any():
-            raise Exception('Nan detected in chi2. Check model parameters and bounds \n %s'%(str(residual),))
+#        if _np.isnan(residual).any():
+#            raise Exception('Nan detected in chi2. Check model parameters and bounds \n %s'%(str(residual),))
 
         if autoderivative == 0 and nargout == 1:
             fjac = gvec.copy().T   # use analytic jacobian  # TODO!: transpose is from weird reshape in mpfit
@@ -431,20 +440,17 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
 
     # ====== Post-processing ====== #
     # Final function evaluation
-    prof, fjac, info = mymodel(m.params, x=XX, nargout=3)
+    kwargs = _ut.merge_dicts(info.dict_from_class(), kwargs)
+    kwargs.pop('af')
+    prof, fjac, info = func(XX, af=m.params, **kwargs)
+#    prof, fjac, info = mymodel(m.params, x=XX, nargout=3)
     info.prof = prof
     info.fjac = fjac
-
+    if not hasattr(info, 'offset'):
+        print('debugging')
     # Calculate the hessian by finite differencing the analytic jacobian
-    info.hess = _np.zeros((numfit, numfit, _np.size(XX)), dtype=_np.float64)
-    for ii in range(numfit):
-        tmp = _np.zeros_like(m.params)
-        tmp[ii] += 1.0
-        info.hess[ii, :, :] = (info.jacobian(XX, m.params + hstep*tmp) - info.jacobian(XX, m.params-hstep*tmp))/(2*hstep)
-    # end for
+    info.hessian(XX, aa=m.params, **kwargs)
 
-        # end for
-    # end for
     # Actual fitting parameters
     info.params = m.params
 
@@ -488,15 +494,11 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     info.vardprofdx = _ut.interp_irregularities(info.vardprofdx, corezero=False)
 
     if scale_by_data:
-#        info.varp = _np.copy(info.varprof)
-        info.slope = slope
-        info.offset = offset
-        info = _ms.rescale_problem(info=info, nargout=1)
-        y = y*slope+offset
-        ey2 = ey2*(slope**2.0)
-        ey = _np.sqrt(ey2)
+        x, y, vy = info.unscaledat()
+        ey = _np.sqrt(vy)
 
-        # note: perror, covmat, and cormat need rescaling too a t this point
+        # note: perror, covmat, and cormat need rescaling too a t this point,
+        # but the error propagation has been completed
     # end if
 
     if plotit:
@@ -1307,8 +1309,9 @@ def test_fit(func=_ms.model_qparab, **fkwargs):
     ax1.plot(XX, info.prof+_np.sqrt(info.varprof), 'r--')
     # ax1.fill_between(XX, info.prof-_np.sqrt(info.varprof))
     isolid = _np.where(yerr/ydat<0.3)[0]
-    ax1.set_ylim((_np.nanmin(_np.append(0.0, _np.asarray([0.8,1.2])*_np.nanmin(ydat[isolid]-yerr[isolid]))),
-                  _np.nanmax(_np.append(0.0, _np.asarray([0.8,1.2])*_np.nanmax(ydat[isolid]+yerr[isolid]))) ))
+    if len(isolid)>0:
+        ax1.set_ylim((_np.nanmin(_np.append(0.0, _np.asarray([0.8,1.2])*_np.nanmin(ydat[isolid]-yerr[isolid]))),
+                      _np.nanmax(_np.append(0.0, _np.asarray([0.8,1.2])*_np.nanmax(ydat[isolid]+yerr[isolid]))) ))
 #    ylims = ax1.get_ylim()
 #    xlims = ax1.get_xlim()
 #    print(ylims)
@@ -1323,8 +1326,9 @@ def test_fit(func=_ms.model_qparab, **fkwargs):
     ax2.plot(XX, info.dprofdx+_np.sqrt(info.vardprofdx), 'r--')
 #    ax2.set_ylim((_np.min((0,1.2*_np.min(info.dprofdx))), 1.2*_np.max(info.dprofdx)))
     isolid = _np.where(_np.sqrt(info.vardprofdx)/info.dprofdx<0.3)[0]
-    ax2.set_ylim((_np.nanmin(_np.append( 0.0, _np.asarray([0.8, 1.2])*_np.nanmin(info.dprofdx[isolid]-_np.sqrt(info.vardprofdx[isolid])) )),
-                  _np.nanmax(_np.append( 0.0, _np.asarray([0.8, 1.2])*_np.nanmax(info.dprofdx[isolid]+_np.sqrt(info.vardprofdx[isolid])) )) ))
+    if len(isolid)>0:
+        ax2.set_ylim((_np.nanmin(_np.append( 0.0, _np.asarray([0.8, 1.2])*_np.nanmin(info.dprofdx[isolid]-_np.sqrt(info.vardprofdx[isolid])) )),
+                      _np.nanmax(_np.append( 0.0, _np.asarray([0.8, 1.2])*_np.nanmax(info.dprofdx[isolid]+_np.sqrt(info.vardprofdx[isolid])) )) ))
                   #, (_np.nanmax(ydat)-_np.nanmin(ydat))/(0.1*_np.diff(xlims))))))
 #    print(ax2.get_ylim())
 
@@ -1350,7 +1354,7 @@ def qparabfit(x, y, ey, XX, **kwargs):
 
     # It is possible to scale and unscale the x-dimension in the qparab model,
     # no x-shifting is available though
-    scale_problem = kwargs.pop("scale_problem", True)
+#    scale_problem = kwargs.pop("scale_problem", True)
 
     # plotting kwargs
     onesided = kwargs.pop('onesided', True)
@@ -1378,8 +1382,8 @@ def qparabfit(x, y, ey, XX, **kwargs):
         ylbl2 = r'a/L$_{Te}$'
     # endif
 
-    def myqparab(x, af=None, nohollow=False):
-        return _ms.model_qparab(x, af=af, nohollow=nohollow)
+    def myqparab(x, af=None, **kwargs):
+        return _ms.model_qparab(x, af=af, **kwargs)
 
     info = myqparab(None) #, nohollow=nohollow)
     af0 = info.af.copy()
@@ -1388,11 +1392,20 @@ def qparabfit(x, y, ey, XX, **kwargs):
     xin = x.copy()
     yin = y.copy()
     eyin = ey.copy()
+
+#    isort = _np.argsort(_np.abs(xin))
+#    xin = xin[isort]
+#    yin = yin[isort]
+#    eyin = eyin[isort]
 #    if _np.min(xin) != 0:
 #        xin = _np.insert(xin,0,0.0)
 #        yin = _np.insert(yin,0,yin[0])
 #        eyin = _np.insert(eyin,0,eyin[0])
 #    # end if
+#    if 1:
+#        xin = _np.insert(xin,-1, 1.3)
+#        yin = _np.insert(yin,-1, 0.0)
+#        eyin = _np.insert(eyin,-1,eyin[-1])
 #    isort = _np.argsort(_np.abs(xin))
 #    xin = xin[isort]
 #    yin = yin[isort]
@@ -2010,47 +2023,47 @@ if __name__=="__main__":
 #        out, ft = doppler_test(scale_by_data=False, logdata=False, Fs=1.0, fmax=None)
 #    print(out)
 
-#    test_fit(_ms.model_sines, nfreqs=1,  Fs=10e3, numpts=int(6.0*1e3/33.0))
-#    test_fit(_ms.model_sines, nfreqs=3, Fs=10e3, numpts=int(6.0*2e3/33.0))
+    test_fit(_ms.model_sines, nfreqs=1,  Fs=10e3, numpts=int(6.0*1e3/33.0))
+    test_fit(_ms.model_sines, nfreqs=3, Fs=10e3, numpts=int(6.0*2e3/33.0))
 #
     test_qparab_fit(nohollow=False)
-#    test_qparab_fit(nohollow=True)
-#    ft = test_fitNL(False)
-#    ft = test_fitNL(True)  # issue with interpolation when x>1 and x<0?
-#
-#    test_fit(_ms.model_line)
-#    test_fit(_ms.model_gaussian)    # check initial conditions
-#    test_fit(_ms.model_normal)    # check initial conditions
-#    test_fit(_ms.model_lorentzian)
-##    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=0, tbnds=[-0.5,0.5], num=18750)
-##    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=1, tbnds=[-0.5,0.5], num=18750)
-##    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=2, tbnds=[-0.5,0.5], num=18750)
-##    test_fit(_ms.model_doppler, noshift=0, Fs=1.0, model_order=2, tbnds=[-0.5,0.5], num=18750)
-#    test_fit(_ms._model_twopower)
-#    test_fit(_ms.model_twopower)
-#    test_fit(_ms.model_expedge)
-#    test_fit(_ms.model_qparab, nohollow=False) # broken
-#    test_fit(_ms.model_qparab, nohollow=True)
-#    test_fit(_ms.model_poly, npoly=2)
-#    test_fit(_ms.model_poly, npoly=3)
-#    test_fit(_ms.model_poly, npoly=6)
-#    test_fit(_ms.model_ProdExp, npoly=2)
-#    test_fit(_ms.model_ProdExp, npoly=3)
-#    test_fit(_ms.model_ProdExp, npoly=4)
-#    test_fit(_ms.model_evenpoly, npoly=2)
-#    test_fit(_ms.model_evenpoly, npoly=3)
-#    test_fit(_ms.model_evenpoly, npoly=6)
-#    test_fit(_ms.model_evenpoly, npoly=10)
-#    test_fit(_ms.model_PowerLaw, npoly=2)   # check derivatives, uncertainty wrong
-#    test_fit(_ms.model_PowerLaw, npoly=3)   # check derivatives, uncertainty wrong
-#    test_fit(_ms.model_PowerLaw, npoly=4)   # check derivatives, uncertainty wrong
-#    test_fit(_ms.model_Exponential)
-#    test_fit(_ms.model_parabolic)
-#
-#    # double check math! --- put in abs(XX) where necessary,
-#    # use subfunctions/ chain rule for derivatives
-#    test_fit(_ms.model_flattop)    # check math, looks good
-#    test_fit(_ms.model_massberg)   # check, looks good
+    test_qparab_fit(nohollow=True)
+    ft = test_fitNL(False)
+    ft = test_fitNL(True)  # issue with interpolation when x>1 and x<0?
+
+    test_fit(_ms.model_line)
+    test_fit(_ms.model_gaussian)    # check initial conditions
+    test_fit(_ms.model_normal)    # check initial conditions
+    test_fit(_ms.model_lorentzian)
+#    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=0, tbnds=[-0.5,0.5], num=18750)
+#    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=1, tbnds=[-0.5,0.5], num=18750)
+#    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=2, tbnds=[-0.5,0.5], num=18750)
+#    test_fit(_ms.model_doppler, noshift=0, Fs=1.0, model_order=2, tbnds=[-0.5,0.5], num=18750)
+    test_fit(_ms._model_twopower)
+    test_fit(_ms.model_twopower)
+    test_fit(_ms.model_expedge)
+    test_fit(_ms.model_qparab, nohollow=False) # broken
+    test_fit(_ms.model_qparab, nohollow=True)
+    test_fit(_ms.model_poly, npoly=2)
+    test_fit(_ms.model_poly, npoly=3)
+    test_fit(_ms.model_poly, npoly=6)
+    test_fit(_ms.model_ProdExp, npoly=2)
+    test_fit(_ms.model_ProdExp, npoly=3)
+    test_fit(_ms.model_ProdExp, npoly=4)
+    test_fit(_ms.model_evenpoly, npoly=2)
+    test_fit(_ms.model_evenpoly, npoly=3)
+    test_fit(_ms.model_evenpoly, npoly=6)
+    test_fit(_ms.model_evenpoly, npoly=10)
+    test_fit(_ms.model_PowerLaw, npoly=2)   # check derivatives, uncertainty wrong
+    test_fit(_ms.model_PowerLaw, npoly=3)   # check derivatives, uncertainty wrong
+    test_fit(_ms.model_PowerLaw, npoly=4)   # check derivatives, uncertainty wrong
+    test_fit(_ms.model_Exponential)
+    test_fit(_ms.model_parabolic)
+
+    # double check math! --- put in abs(XX) where necessary,
+    # use subfunctions/ chain rule for derivatives
+    test_fit(_ms.model_flattop)    # check math, looks good
+    test_fit(_ms.model_massberg)   # check, looks good
 #
 #    # need to be reformatted still (2 left!)
 ##    test_fit(_ms.model_Heaviside, npoly=3, rinits=[0.30, 0.35])
