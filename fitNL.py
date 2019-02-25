@@ -238,12 +238,13 @@ def modelfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
 #    kwargs.setdefault('damp', 0)
 #    kwargs.setdefault('maxiter', 1200)
 #    kwargs.setdefault('factor', 100)  # 100
-#    kwargs.setdefault('nprint', 100) # 100
+    kwargs.setdefault('nprint', 10) # 100
 #    kwargs.setdefault('iterfunct', 'default')
 #    kwargs.setdefault('iterkw', {})
 #    kwargs.setdefault('nocovar', 0)
 #    kwargs.setdefault('rescale', 0)
-#    kwargs.setdefault('autoderivative', 1)
+    kwargs.setdefault('autoderivative', 1)
+#    kwargs.setdefault('autoderivative', 0)
 #    kwargs.setdefault('quiet', 1)
 #    kwargs.setdefault('diag', None)
 #    kwargs.setdefault('epsfcn', max((_np.nanmean(_np.diff(x.copy())),1e-2))) #5e-4) #1e-3
@@ -321,11 +322,13 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
         # flag.
         model, gvec, info = func(x, p, **fkwargs)
 #        model = _ut.interp_irregularities(model, corezero=False)
+#        info.dprofdx = _ut.interp_irregularities(info.dprofdx, corezero=True)
 #        gvec = _ut.interp_irregularities(gvec, corezero=False)
+#        info.dgdx = _ut.interp_irregularities(info.dgdx, corezero=True)
         if nargout>1:
             info.prof = model.copy()
             info.gvec = gvec.copy()
-            info.dprofdx = _ut.interp_irregularities(info.dprofdx, corezero=False) # assumes cylindrical if True
+#            info.dprofdx = _ut.interp_irregularities(info.dprofdx, corezero=False) # assumes cylindrical if True
             return model, gvec, info
 
         # Non-negative status value means MPFIT should continue, negative means
@@ -377,8 +380,7 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     #       ex//   [1, 1] -> lower and upper bounds on parameter
     #   'limits' lower and upper bound values matching boolean mask in 'limited'
     parinfo = [{'value':p0[ii], 'fixed':fixed[ii], 'limited':[1,1], 'limits':[LB[ii],UB[ii]],
-                'mpside':[2]}
-                for ii in range(numfit)]
+                'mpside':[2]} for ii in range(numfit)]
 
     # Pass data into the solver through keywords
     fa = {'x':x, 'y':y, 'err':ey}
@@ -1029,19 +1031,18 @@ class fitNL(fitNL_base):
 #        self.solver_options.setdefault('damp', 0)   # a number above which residuals are damped with hyperbolic tangent
 #        self.solver_options.setdefault('maxiter', 600)  # 600
 #        self.solver_options.setdefault('factor', 100)  # 100
-#        self.solver_options.setdefault('nprint', 10)
+        self.solver_options.setdefault('nprint', 10)
 #        self.solver_options.setdefault('iterfunct', 'default')
 #        self.solver_options.setdefault('iterkw', {})
 #        self.solver_options.setdefault('nocovar', 0)
 #        self.solver_options.setdefault('rescale', 0)
-#        self.solver_options.setdefault('autoderivative', 1)
 #        self.solver_options.setdefault('quiet', 0)
 #        self.solver_options.setdefault('diag', None)
 #        self.solver_options.setdefault('epsfcn', max((_np.nanmean(_np.diff(self.xdat.copy())),1e-2))) #5e-4) #1e-3
 #        self.solver_options.setdefault('debug', 0)
 #        # default to finite differencing in mpfit for jacobian
-#        self.solver_options.setdefault('autoderivative', 1)
-
+        self.solver_options.setdefault('autoderivative', 1)
+#        self.solver_options.setdefault('autoderivative', 0)
         super(fitNL, self).run(**self.solver_options)
 #        self.__use_mpfit(**self.solver_options)
         return self.af, self.covmat
@@ -1258,7 +1259,8 @@ def test_fit(func=_ms.model_qparab, **fkwargs):
 #        xdat = _np.linspace(-0.5*Fs, 0.5*Fs, num=int(1.5*10e-3*10e6/8))
 #        XX = _np.linspace(-0.5*Fs, 0.5*Fs, 18750)
     else:
-        xdat = _np.linspace(0.05, 0.95, 10)
+        numpts = 10
+        xdat = _np.linspace(0.05, 0.95, numpts)
         XX = _np.linspace( 1e-6, 1.0, 99)
     # end if
     ydat, _, temp = func(xdat, af=aa, **fkwargs)
@@ -1280,7 +1282,10 @@ def test_fit(func=_ms.model_qparab, **fkwargs):
 
     _plt.figure()
     ax1 = _plt.subplot(3, 1, 1)
-    _plt.errorbar(xdat, ydat, yerr=yerr, fmt='bo')
+    if numpts<50:
+        _plt.errorbar(xdat, ydat, yerr=yerr, fmt='ko')
+    else:
+        _plt.plot(xdat, ydat, 'k-')
     _plt.plot(XX, yxx, 'b-')
     _plt.plot(XX, info.prof, 'r-')
     _plt.plot(XX, info.prof-_np.sqrt(info.varprof), 'r--')
@@ -1289,7 +1294,10 @@ def test_fit(func=_ms.model_qparab, **fkwargs):
     _plt.ylim((0, 1.2*_np.max(ydat)))
 
     _plt.subplot(3, 1, 2, sharex=ax1)
-    _plt.plot(xdat, temp.dprofdx, 'bo')
+    if numpts<50:
+        _plt.plot(xdat, temp.dprofdx, 'ko')
+    else:
+        _plt.plot(xdat, temp.dprofdx, 'kx')
     _plt.plot(XX, info.dprofdx, 'r-')
     _plt.plot(XX, info.dprofdx-_np.sqrt(info.vardprofdx), 'r--')
     _plt.plot(XX, info.dprofdx+_np.sqrt(info.vardprofdx), 'r--')
@@ -1311,27 +1319,10 @@ def qparabfit(x, y, ey, XX, **kwargs):
     """
     # subfunction kwargs
     nohol = kwargs.pop("nohollow", False)
-    scale_by_data = kwargs.pop('scale_problem',False)
 
-    # solver kwargs
-#    kwargs.setdefault('scale_problem', True)
-#    kwargs.setdefault('maxiter',2000)
-#    kwargs.setdefault('xtol',1e-16)
-#    kwargs.setdefault('ftol',1e-16)
-#    kwargs.setdefault('gtol',1e-16)
-#    kwargs.setdefault('nprint',100)
-#    kwargs.setdefault('damp',0)
-#    kwargs.setdefault('iterfunct','default')
-#    kwargs.setdefault('iterkw',{})
-#    kwargs.setdefault('nocovar',0)
-#    kwargs.setdefault('rescale',0) # 0
-#    kwargs.setdefault('quiet',1)
-#    kwargs.setdefault('diag',None)
-#    kwargs.setdefault('debug',0)
-#    kwargs.setdefault('epsfcn', max((_np.nanmean(_np.diff(x.copy())),1e-2)))
-##    kwargs.pop('epsfcn')
-#    kwargs.setdefault('factor',100)
-#    kwargs.setdefault('autoderivative',1)
+    # It is possible to scale and unscale the x-dimension in the qparab model,
+    # no x-shifting is available though
+    scale_problem = kwargs.pop("scale_problem", True)
 
     # plotting kwargs
     onesided = kwargs.pop('onesided', True)
@@ -1359,20 +1350,11 @@ def qparabfit(x, y, ey, XX, **kwargs):
         ylbl2 = r'a/L$_{Te}$'
     # endif
 
-    #  TODO:  REMOVE THE PARAMETERS FOR "NOHOLLOW" and PRUNE
-    def myqparab(x, af=None, nohollow=False, infoin=None):
-#        prune = False
-#        if nohollow:            prune = True        # end if
-        return _ms.model_qparab(x, af=af, nohollow=nohollow, info=infoin) #, prune=prune)
+    def myqparab(x, af=None, nohollow=False):
+        return _ms.model_qparab(x, af=af, nohollow=nohollow)
 
     info = myqparab(None) #, nohollow=nohollow)
     af0 = info.af.copy()
-#    if scale_by_data:   # modelfit is calling this already ... use defaults to pick one!
-#        y, ey2, slope, offset = _ms.rescale_problem(_np.copy(y), _np.copy(ey)**2.0)
-#        ey = _np.sqrt(ey2)
-#        af0[0] = 1.0
-#        af0[1] = 0.0
-#    # end if
     af0[0] = y[_np.argmin(x)].copy()
     kwargs.setdefault('af0',af0)
     xin = x.copy()
@@ -1399,24 +1381,6 @@ def qparabfit(x, y, ey, XX, **kwargs):
     # Call mpfit
 #    info = fit_mpfit(xin, yin, eyin, XX, myqparab, fkwargs={"nohollow":nohol}, **kwargs)
     info = modelfit(xin, yin, eyin, XX, myqparab, fkwargs={"nohollow":nohol}, **kwargs)
-
-#    print(info.)
-#    if scale_by_data:
-#        # slope = _np.nanmax(pdat)-_np.nanmin(pdat)
-#        # offset = _np.nanmin(pdat)
-##        info.prof = _np.copy(prof)
-#        info.varp = _np.copy(info.varprof)
-##        info.dprofdx = _np.copy(dprofdx)
-##        info.vardprofdx = _np.copy(vardprofdx)
-##        info.af = _np.copy(af)
-#        info.slope = slope
-#        info.offset = offset
-#        info = _ms.rescale_problem(info=info, nargout=1)
-#        info.varprof = info.varp
-#        y = y*slope+offset
-#        ey2 = ey2*(slope**2.0)
-#        ey = _np.sqrt(ey2)
-#    # end if
 
     # ================================= #
 
@@ -1775,6 +1739,7 @@ def test_fitNL(test_qparab=True, scale_by_data=False):
 #    options = {'fjac':myjac}
     options = {'UB':info.Ubounds, 'LB':info.Lbounds, 'fixed':info.fixed}
     ft = fitNL(xdat=x, ydat=y, vary=vary, af0=af0, func=mymodel, **options)
+    ft.fjac = myjac
     ft.run()
     ft.xx = _np.linspace(x.min(), x.max(), num=100)
     ft.properror(xvec=ft.xx, gvec=myjac(ft.af, ft.xx))   # use with analytic jacobian
@@ -2006,56 +1971,56 @@ if __name__=="__main__":
 #        out, ft = doppler_test(scale_by_data=False, logdata=False, Fs=1.0, fmax=None)
 #    print(out)
 
-    test_fit(_ms.model_sines, nfreqs=1,  Fs=10e3, numpts=int(6.0*1e3/33.0))
-    test_fit(_ms.model_sines, nfreqs=3, Fs=10e3, numpts=int(6.0*2e3/33.0))
-
-    test_qparab_fit(nohollow=False)
-    test_qparab_fit(nohollow=True)
-    ft = test_fitNL(False)
-    ft = test_fitNL(True)  # issue with interpolation when x>1 and x<0?
-
-    test_fit(_ms.model_line)
-    test_fit(_ms.model_gaussian)    # check initial conditions
-    test_fit(_ms.model_normal)    # check initial conditions
-    test_fit(_ms.model_lorentzian)
+#    test_fit(_ms.model_sines, nfreqs=1,  Fs=10e3, numpts=int(6.0*1e3/33.0))
+#    test_fit(_ms.model_sines, nfreqs=3, Fs=10e3, numpts=int(6.0*2e3/33.0))
+#
+#    test_qparab_fit(nohollow=False)
+#    test_qparab_fit(nohollow=True)
+#    ft = test_fitNL(False)
+#    ft = test_fitNL(True)  # issue with interpolation when x>1 and x<0?
+#
+#    test_fit(_ms.model_line)
+#    test_fit(_ms.model_gaussian)    # check initial conditions
+#    test_fit(_ms.model_normal)    # check initial conditions
+#    test_fit(_ms.model_lorentzian)
     test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=0, tbnds=[-0.5,0.5], num=18750)
     test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=1, tbnds=[-0.5,0.5], num=18750)
     test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=2, tbnds=[-0.5,0.5], num=18750)
     test_fit(_ms.model_doppler, noshift=0, Fs=1.0, model_order=2, tbnds=[-0.5,0.5], num=18750)
-    test_fit(_ms._model_twopower)
-    test_fit(_ms.model_twopower)
-    test_fit(_ms.model_expedge)
-    test_fit(_ms.model_qparab, nohollow=False) # broken
-    test_fit(_ms.model_qparab, nohollow=True)
-    test_fit(_ms.model_poly, npoly=2)
-    test_fit(_ms.model_poly, npoly=3)
-    test_fit(_ms.model_poly, npoly=6)
-    test_fit(_ms.model_ProdExp, npoly=2)
-    test_fit(_ms.model_ProdExp, npoly=3)
-    test_fit(_ms.model_ProdExp, npoly=4)
-    test_fit(_ms.model_evenpoly, npoly=2)
-    test_fit(_ms.model_evenpoly, npoly=3)
-    test_fit(_ms.model_evenpoly, npoly=6)
-    test_fit(_ms.model_evenpoly, npoly=10)
-    test_fit(_ms.model_PowerLaw, npoly=2)   # check derivatives, uncertainty wrong
-    test_fit(_ms.model_PowerLaw, npoly=3)   # check derivatives, uncertainty wrong
-    test_fit(_ms.model_PowerLaw, npoly=4)   # check derivatives, uncertainty wrong
-    test_fit(_ms.model_Exponential)
-    test_fit(_ms.model_parabolic)
+#    test_fit(_ms._model_twopower)
+#    test_fit(_ms.model_twopower)
+#    test_fit(_ms.model_expedge)
+#    test_fit(_ms.model_qparab, nohollow=False) # broken
+#    test_fit(_ms.model_qparab, nohollow=True)
+#    test_fit(_ms.model_poly, npoly=2)
+#    test_fit(_ms.model_poly, npoly=3)
+#    test_fit(_ms.model_poly, npoly=6)
+#    test_fit(_ms.model_ProdExp, npoly=2)
+#    test_fit(_ms.model_ProdExp, npoly=3)
+#    test_fit(_ms.model_ProdExp, npoly=4)
+#    test_fit(_ms.model_evenpoly, npoly=2)
+#    test_fit(_ms.model_evenpoly, npoly=3)
+#    test_fit(_ms.model_evenpoly, npoly=6)
+#    test_fit(_ms.model_evenpoly, npoly=10)
+#    test_fit(_ms.model_PowerLaw, npoly=2)   # check derivatives, uncertainty wrong
+#    test_fit(_ms.model_PowerLaw, npoly=3)   # check derivatives, uncertainty wrong
+#    test_fit(_ms.model_PowerLaw, npoly=4)   # check derivatives, uncertainty wrong
+#    test_fit(_ms.model_Exponential)
+#    test_fit(_ms.model_parabolic)
+##
+##    # double check math! --- put in abs(XX) where necessary,
+##    # use subfunctions/ chain rule for derivatives
+#    test_fit(_ms.model_flattop)    # check math, looks good
+#    test_fit(_ms.model_massberg)   # check, looks good
 #
-#    # double check math! --- put in abs(XX) where necessary,
-#    # use subfunctions/ chain rule for derivatives
-    test_fit(_ms.model_flattop)    # check math, looks good
-    test_fit(_ms.model_massberg)   # check, looks good
-
-    # need to be reformatted still (2 left!)
-#    test_fit(_ms.model_Heaviside, npoly=3, rinits=[0.30, 0.35])
-#    test_fit(_ms.model_Heaviside, npoly=3, rinits=[0.12, 0.27])
-#    test_fit(_ms.model_Heaviside, npoly=4, rinits=[0.30, 0.35])
-#    test_fit(_ms.model_Heaviside, npoly=4, rinits=[0.12, 0.27])
-#    test_fit(_ms.model_StepSeries, npoly=3)
-#    test_fit(_ms.model_StepSeries, npoly=4)
-#    test_fit(_ms.model_StepSeries, npoly=5)
+#    # need to be reformatted still (2 left!)
+##    test_fit(_ms.model_Heaviside, npoly=3, rinits=[0.30, 0.35])
+##    test_fit(_ms.model_Heaviside, npoly=3, rinits=[0.12, 0.27])
+##    test_fit(_ms.model_Heaviside, npoly=4, rinits=[0.30, 0.35])
+##    test_fit(_ms.model_Heaviside, npoly=4, rinits=[0.12, 0.27])
+##    test_fit(_ms.model_StepSeries, npoly=3)
+##    test_fit(_ms.model_StepSeries, npoly=4)
+##    test_fit(_ms.model_StepSeries, npoly=5)
 # endif
 
 

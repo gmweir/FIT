@@ -79,10 +79,7 @@ class ModelClass(Struct):
         return self._partial_deriv(XX, aa, **kwargs)
 
     def hessian(self, XX, aa=None, **kwargs):
-        if hasattr(self, '_hessian'):
-            return self._hessian(XX, aa, **kwargs)
-        else:
-            return 0
+        return self._hessian(XX, aa, **kwargs)
     # end def
 
     # ====================================================== #
@@ -117,7 +114,7 @@ class ModelClass(Struct):
 
     # ============================= #
 
-    def scale(self, pdat, vdat, **kwargs):
+    def scaledat(self, xdat, ydat, vdat, vxdat=None, **kwargs):
         """
         When fitting problems it is convenient to scale it to order 1:
             slope = _np.nanmax(pdat)-_np.nanmin(pdat)
@@ -126,6 +123,30 @@ class ModelClass(Struct):
             pdat = (pdat-offset)/slope
             vdat = vdat/slope**2.0
 
+        In general we cannot scale both x- and y-data due to non-linearities.
+        Return scalings on all data by default, but overwrite in each model with NL
+        (x-xmin)/(xmax-xmin) = (x-xoffset)/xslope
+        """
+        self.xdat, self.ydat, self.vdat = _np.copy(xdat), _np.copy(ydat), _np.copy(vdat)
+        self.xoffset = xdat.nanmin()
+        self.xslope = xdat.nanmax() - xdat.nanmin()
+        self.offset = ydat.nanmin()
+        self.slope = ydat.nanmax()-ydat.nanmin()
+        self.xdat = (self.xdat-self.xoffset)/self.xslope
+        self.ydat = (ydat-self.offset)/self.slope
+        self.vdat = vdat/(self.slope*self.slope)
+        self.scaled = True
+        if vxdat is None:
+            self.vxdat = None
+            return self.xdat, self.ydat, self.vdat
+        else:
+            self.vxdat = _np.copy(vxdat)/(self.xslope*self.xslope)
+            return self.xdat, self.ydat, self.vdat, self.vxdat
+        # end if
+    # end def
+
+    def unscaledat(self, **kwargs):
+        """
         After fitting, then the algebra necessary to unscale the problem to original
         units is:
             prof = slope*prof+offset
@@ -137,67 +158,51 @@ class ModelClass(Struct):
         Note that when scaling the problem, it is best to propagate errors from
         covariance / gvec / dgdx before rescaling because that is arbitrarily complex
 
-        ... but we can no longer reproduce the original data with our fitted model!
-            prof !=line(x, a) if prof was scaled pre-fitting
-
-        Here we check if we can rescale the analytic function to reproduce the data
+        In general we cannot scale both x- and y-data due to non-linearities.
+        Return scalings on all data by default, but overwrite in each model with NL
+        (x-xmin)/(xmax-xmin) = (x-xoffset)/xslope
         """
-        xdat = kwargs.setdefault('xdat', None)
-        if hasattr(self, 'scaled') and (self.scaled is True):
-            # Unscale the data if it has already been scaled
-            pdat = pdat*self._slope+self._offset
-            vdat = vdat * (self._slope**2.0)
-
-            if hasattr(self,'dprofdx'):
-                self.dprofdx = self._slope*self.dprofdx
-                self.vardprofdx = (self._slope**2.0)*self.vardprofdx
-                if hasattr(self, '_xslope'):
-                    self.dprofdx /= self._xslope
-                    self.vardprofdx /= self._xslope*self._xslope
-                # end if
+        if not hasattr(self, 'xslope'):  self.xslope = 1.0   # end if
+        if not hasattr(self, 'xoffset'): self.xoffset = 0.0  # end if
+        if not hasattr(self, 'slope'):   self.slope = 1.0    # end if
+        if not hasattr(self, 'offset'):  self.offset = 0.0   # end if
+        if self.scaled:
+            # Fitted data
+            self.xdat = self.xdat*self.xslope+self.xoffset
+            self.ydat = self.ydat*self.slope+self.offset
+            self.vdat = self.vdat*self.slope*self.slope
+            if self.vxdat is not None:
+                self.vxdat = self.vxdat*self.xslope*self.xslope
             # end if
 
-            if hasattr(info,'prof'):
-                self.prof = self._slope*self.prof+self._offset
-                self.varprof = (self._slope**2.0)*self.varprof
-            # end if
+            # Calculated quantities
+            self.prof = self.slope*self.prof+self.offset
+            self.varprof *= self.slope*self.slope
 
-            if xdat is not None:
-                xdat = xdat*self._xslope+self._xoffset
-            # end if
-
-            # =============================== #
+            self.dprofdx *= self.slope/self.xslope
+            self.vardprofdx *= (self.slope*self.slope)/(self.xslope*self.xslope)
 
             # Scaling model parameters to reproduce original data
-            self.af = self.unscaleaf(self.af, self._slope, self._offset, self._xslope, self._xoffset)
+#            self.af = self.unscaleaf(self.af, self.slope, self.offset, self.xslope, self.xoffset)
+            self.af = self.unscaleaf(self.af)
             self.scaled = False
+       # end if
+        if self.vxdat is None:
+            return self.xdat, self.ydat, self.vdat
         else:
-            self._slope = _np.nanmax(pdat)-_np.nanmin(pdat)
-            self._offset = _np.nanmin(pdat)
-            self.scaled = True
-
-            pdat = (pdat.copy()-self._offset)/self._slope
-            vdat = vdat.copy()/_np.abs(self._slope)**2.0
-
-            if xdat is not None:
-                self._xslope = _np.nanmax(xdat)-_np.nanmin(xdat)
-                self._xoffset = _np.nanmin(xdat)
-                xdat = (xdat.copy()-self._xoffset)/self._xslope
-            # end if
+            return self.xdat, self.ydat, self.vdat, self.vxdat
         # end if
-        if xdat is not None:
-            return pdat, vdat, xdat
-        else:
-            return pdat, vdat
-    # end def scale
+    # end def
 
-    @staticmethod
-    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
-        aout = _np.copy(ain)
-        print('Unscaling model parameters not supported: \n'+
-              '   Either not implemented in model or \n'+
-              '   there is a nonlinearity in the analytic model that precludes analytic scaling!')
-        return aout
+#    @staticmethod
+#    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
+#        aout = _np.copy(ain)
+#        print('Unscaling model parameters not supported: \n'+
+#              '   Either not implemented in model or \n'+
+#              '   there is a nonlinearity in the analytic model that precludes analytic scaling!')
+    def unscaleaf(self, ain):
+        return NotImplementedError
+    # end def
 # end def class
 
 
@@ -211,49 +216,43 @@ class ModelClass(Struct):
 #    # end def __init__
 
 
-#class ModelExample(ModelClass):
-#    """
-#
-#    """
-#    _af = _np.asarray([1.0], dtype=_np.float64)
-#    _LB = _np.asarray([0.0], dtype=_np.float64)
-#    _UB = _np.asarray([_np.inf], dtype=_np.float64)
-#    _fixed = _np.zeros( (1,), dtype=int)
-#    def __init__(self, XX, af=None, **kwargs):
-#        super(ModelExample, self).__init__(XX, af, **kwargs)
-#    # end def __init__
-#
-#    @staticmethod
-#    def _model(XX, aa):
-#
-#    @staticmethod
-#    def _deriv(XX, aa):
-#
-#    @staticmethod
-#    def _partial(XX, aa):
-#
-#    @staticmethod
-#    def _partial_deriv(XX, aa):
-#
-##    @staticmethod
-##    def _hessian(XX, aa):
-#
-#    # ====================================== #
-#
-##    @staticmethod
-##    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
-##        """
-##        """
-##        aout = _np.copy(ain)
-##        return aout
-#
-#    # ====================================== #
-#
-##    def checkbounds(self, dat):
-##        return super(ModelExample, self).checkbounds(dat, self.aa, mag=None)
-#
-#    # ====================================== #
-## end def ModelExample
+class ModelExample(ModelClass):
+    """
+
+    """
+    _af = _np.asarray([1.0], dtype=_np.float64)
+    _LB = _np.asarray([0.0], dtype=_np.float64)
+    _UB = _np.asarray([_np.inf], dtype=_np.float64)
+    _fixed = _np.zeros( (1,), dtype=int)
+    def __init__(self, XX, af=None, **kwargs):
+        super(ModelExample, self).__init__(XX, af, **kwargs)
+    # end def __init__
+
+    @staticmethod
+    def _model(XX, aa, **kwargs):
+        return NotImplementedError
+
+    @staticmethod
+    def _deriv(XX, aa, **kwargs):
+        return NotImplementedError
+
+    @staticmethod
+    def _partial(XX, aa, **kwargs):
+        return NotImplementedError
+
+    @staticmethod
+    def _partial_deriv(XX, aa, **kwargs):
+        return NotImplementedError
+
+    @staticmethod
+    def _hessian(XX, aa):
+        return NotImplementedError
+
+    # ====================================== #
+
+    def unscaleaf(self, ain):
+        return NotImplementedError
+# end def ModelExample
 
 
 # ========================================================================== #
@@ -297,26 +296,26 @@ class ModelLine(ModelClass):
     # end def __init__
 
     @staticmethod
-    def _model(XX, aa):
+    def _model(XX, aa, **kwargs):
         """
         model of a line
             y = a*x + b
         """
-        y = aa[0]*XX+aa[1]
-        return y
+        a, b = tuple(aa)
+        return a*XX+b
 
     @staticmethod
-    def _deriv(XX, aa):
+    def _deriv(XX, aa, **kwargs):
         """
         derivative of a line
             y = a*x + b
             dydx = a
         """
-        dydx = aa[0]*_np.ones_like(XX)
-        return dydx
+        a, b = tuple(aa)
+        return a*_np.ones_like(XX)
 
     @staticmethod
-    def _partial(XX, aa):
+    def _partial(XX, aa, **kwargs):
         """
         Jacobian of a line
             y = a*x + b
@@ -324,12 +323,12 @@ class ModelLine(ModelClass):
             dydb = 1
         """
         gvec = _np.zeros( (2,_np.size(XX)), dtype=_np.float64)
-        gvec[0,:] = XX.copy() # aa[0]
-        gvec[1,:] = 1.0       # aa[1]
+        gvec[0,:] = XX.copy() # aa[0], a
+        gvec[1,:] = 1.0       # aa[1], b
         return gvec
 
     @staticmethod
-    def _partial_deriv(XX, aa):
+    def _partial_deriv(XX, aa, **kwargs):
         """
         Jacobian of the derivative of a line
             y = a*x + b
@@ -338,8 +337,8 @@ class ModelLine(ModelClass):
             d2ydxdb = 0.0
         """
         dgdx = _np.zeros( (2,_np.size(XX)), dtype=_np.float64)
-        dgdx[0,:] = _np.ones_like(XX)  # aa[0]
-        dgdx[1,:] = _np.zeros_like(XX) # aa[1]
+        dgdx[0,:] = _np.ones_like(XX)  # aa[0], a
+        dgdx[1,:] = _np.zeros_like(XX) # aa[1], b
         return dgdx
 
     @staticmethod
@@ -356,8 +355,7 @@ class ModelLine(ModelClass):
 
     # ====================================== #
 
-    @staticmethod
-    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
+    def unscaleaf(self, ain):
         """
         if the model data is scaled, then unscaling the model goes like this:
              (y-miny)/(maxy-miny) = (y-offset)/slope
@@ -378,16 +376,9 @@ class ModelLine(ModelClass):
              b = ys*(b'-xo*a'/xs) + yo
         """
         aout = _np.copy(ain)
-        aout[0] = slope*ain[0] / xslope
-        aout[1] = slope*(ain[1]-xoffset*ain[0]/xslope) + offset
+        aout[0] = self.slope*ain[0] / self.xslope
+        aout[1] = self.slope*(ain[1]-self.xoffset*ain[0]/self.xslope) + self.offset
         return aout
-
-    # ====================================== #
-
-#    def checkbounds(self, dat):
-#        return super(ModelLine, self).checkbounds(dat, self.aa, mag=None)
-
-    # ====================================== #
 # end def ModelLine
 
 # ========================================================================== #
@@ -413,33 +404,31 @@ def model_sines(XX, af=None, **kwargs):
 
 class ModelSines(ModelClass):
     """
-    f = sum_ii a_ii *sin((2pi*f_ii)*XX+p_ii)
+    Fourier series in the sine-phase form:
+        f = 0.5*ao + sum_ii a_ii *sin((2pi*f_ii)*XX+p_ii) ii>=1
     """
-    _af = _np.asarray([1.0, 33.0, _np.pi/3], dtype=_np.float64)
-    _LB = _np.asarray([-_np.inf,     0.0, -2*_np.pi], dtype=_np.float64)
-    _UB = _np.asarray([ _np.inf, _np.inf,  2*_np.pi], dtype=_np.float64)
-    _fixed = _np.zeros( (3,), dtype=int)
+    _af = _np.asarray([0.0]+[1.0, 33.0, _np.pi/3], dtype=_np.float64)
+    _LB = _np.asarray([-_np.inf]+[-_np.inf,     0.0, -2*_np.pi], dtype=_np.float64)
+    _UB = _np.asarray([ _np.inf]+[ _np.inf, _np.inf,  2*_np.pi], dtype=_np.float64)
+    _fixed = _np.zeros( (4,), dtype=int)
     def __init__(self, XX, af=None, **kwargs):
-
-        # ================================ #
-
         # Tile defaults to the number of frequencies requested
         if af is not None:
             self.nfreqs = self.getnfreqs(af)
         else:
             self.nfreqs = kwargs.setdefault('nfreqs', 1)
             self.fmod = kwargs.setdefault('fmod', 33.0)
-            self._af[1] = _np.copy(self.fmod)
+            self._af[2] = _np.copy(self.fmod)
         # end if
-        self._af = _np.asarray( self.nfreqs*self._af.tolist(), dtype=_np.float64)
-        self._LB = _np.asarray( self.nfreqs*self._LB.tolist(), dtype=_np.float64)
-        self._UB = _np.asarray( self.nfreqs*self._UB.tolist(), dtype=_np.float64)
-        self._fixed = _np.asarray( self.nfreqs*self._fixed.tolist(), dtype=int)
+        self._af = _np.asarray( [0.0]+self.nfreqs*self._af[1:].tolist(), dtype=_np.float64)
+        self._LB = _np.asarray( [-_np.inf]+self.nfreqs*self._LB[1:].tolist(), dtype=_np.float64)
+        self._UB = _np.asarray( [ _np.inf]+self.nfreqs*self._UB[1:].tolist(), dtype=_np.float64)
+        self._fixed = _np.asarray( [0]+self.nfreqs*self._fixed[1:].tolist(), dtype=int)
         # shift the frequencies of each sine by a harmonic for defults
         for ii in range(self.nfreqs):
-            self._af[3*ii + 0] = self._af[0]/(ii+1)  # amplitudes
-            self._af[3*ii + 1] = self._af[1]*(ii+1)  # i'th harm. of default
-            self._af[3*ii + 2] = _np.random.normal(0.0, _np.pi, size=1)  # phase of i'th harm. of default
+            self._af[3*ii + 1] = self._af[1]/(ii+1)  # amplitudes
+            self._af[3*ii + 2] = self._af[2]*(ii+1)  # i'th harm. of default
+            self._af[3*ii + 3] = _np.random.normal(0.0, _np.pi, size=1)  # phase of i'th harm. of default
         # end for
 
         # ================================ #
@@ -457,114 +446,221 @@ class ModelSines(ModelClass):
 
     @staticmethod
     def getnfreqs(aa):
-        if _np.mod(3, len(aa)) == 0:
+        if _np.mod(3, len(aa)-1) == 0:
             nfreqs = 1
         else:
-            nfreqs = len(aa)/_np.mod(3, len(aa))
-        # end if
+            nfreqs = (len(aa)-1)/_np.mod(3, len(aa)-1)
         return int(nfreqs)
 
     @staticmethod
-    def _model(XX, aa):
+    def _convert2exp(aa):
         """
-        f = sum_ii a_ii *sin((2pi*f_ii)*XX+p_ii)
+        The Amp-phase form can be easily converted to the exponential or the
+        sine-cosine form
+        exponential: sn_x = sum_-N_+N ( cn * exp(i*2pif*n*x ) )
+        Amp-phase:   sn_x = Ao/2 + sum_n( An*sin(2pifnx+p) )
+            cn = (An/2i)*exp(i*p_n)    n>0
+            cn = 0.5*An                n=0
+            cn=(-An)/(2i)*exp(-i*p_n) n<0
         """
-        nfreqs = ModelSines.getnfreqs(aa)
+        An = aa[1::3]
+        # wn = 2*_np.pi*aa[2::3]
+        pn = aa[3::3]
 
-        ysum = _np.zeros( (len(XX),), dtype=_np.float64)
-        for ii in range(nfreqs):
-            a = _np.copy(aa[3*ii+0])
-            f = _np.copy(aa[3*ii+1])
-            p = _np.copy(aa[3*ii+2])
-#            ysum += a*_np.sin((2.0*_np.pi*f)*XX+p)
-            ysum += ModelSines.sine(XX, a, f, p)
-        # end for
-        return ysum
+        nfreqs = ModelSines.getnfreqs(aa)
+        aout = _np.zeros((2*nfreqs+1,), dtype=_np.complex128)
+        aout[:nfreqs] = 0.5*1j*(An*_np.exp(-1j*pn))
+        aout[nfreqs] = 0.5*aa[0]
+        aout[nfreqs:] = -0.5*1j*(An*_np.exp(1j*pn))
+        return aout
 
     @staticmethod
-    def _deriv(XX, aa):
+    def _convert2fourier(aa):
         """
-        f = sum_ii a_ii *sin((2pi*f_ii)*XX+p_ii)
-        dfdx = sum_ii 2*pi*f_ii*a_ii *cos((2pi*f_ii)*XX+p_ii)
+        The Amp-phase form can be easily converted to the exponential or the
+        sine-cosine form
+        sine-cosine: sn_x = ao/2 + sum_n( an*cos(2pifnx) + bn*sin(2pifnx) )
+        Amp-phase:   sn_x = Ao/2 + sum_n( An*sin(2pifnx+p) )
+            ao = Ao
+            an = An*sin(p_n)
+            bn = An*cos(p_n)
         """
+        An = aa[1::3]
+        # wn = 2*_np.pi*aa[2::3]
+        pn = aa[3::3]
+
         nfreqs = ModelSines.getnfreqs(aa)
-        dfdx = _np.zeros( (len(XX),), dtype=_np.float64)
-        for ii in range(nfreqs):
-            a = _np.copy(aa[3*ii+0])
-            f = _np.copy(aa[3*ii+1])
-            p = _np.copy(aa[3*ii+2])
-#            dfdx += (2.0*_np.pi*f)*a*_np.cos((2.0*_np.pi*f)*XX+p)
-            dfdx += (2.0*_np.pi*f)*ModelSines.cosine(XX, a, f, p)
-        # end for
-        return dfdx
+        aout = _np.zeros((2*nfreqs+1,), dtype=_np.float64)
+        aout[0] = _np.copy(aa[0])
+        aout[1::2] = An*_np.sin(pn)
+        aout[2::2] = An*_np.cos(pn)
+        return aout
 
     @staticmethod
-    def _partial(XX, aa):
+    def _model(XX, aa, **kwargs):
         """
-        f = sum_ii a_ii *sin((2pi*f_ii)*XX+p_ii)
+        f = 0.5*ao + sum_ii a_ii *sin((2pi*f_ii)*XX+p_ii)
+        """
+        XX = _np.copy(XX)
+        XX = _np.atleast_2d(XX)                  # (1,len(XX))
+        w = _np.atleast_2d(2*_np.pi*aa[2::3]).T  # cyclic freq. (nfreq,1)
+        a = _np.atleast_2d(aa[1::3]).T*_np.ones_like(XX) # amp (nfreq, nx)
+        p = _np.atleast_2d(aa[3::3]).T*_np.ones_like(XX) # phase (nfreq, nx)
+        return 0.5*aa[0] + _np.sum( a*_np.sin(w*XX+p), axis=0)
+#        nfreqs = ModelSines.getnfreqs(aa)
+#        ysum = 0.5*aa[0] + _np.zeros( (_np.size(XX),), dtype=_np.float64)
+#        for ii in range(nfreqs):
+#            a = _np.copy(aa[3*ii+1])
+#            f = _np.copy(aa[3*ii+2])
+#            p = _np.copy(aa[3*ii+3])
+##            ysum += a*_np.sin((2.0*_np.pi*f)*XX+p)
+#            ysum += ModelSines.sine(XX, a, f, p)
+#        # end for
+#        return ysum
+
+    @staticmethod
+    def _deriv(XX, aa, **kwargs):
+        """
+        f = 0.5*ao + sum_ii a_ii *sin((2pi*f_ii)*XX+p_ii)
+        dfdx = sum_ii 2*pi*f_ii*a_ii *cos((2pi*f_ii)*XX+p_ii)
+        """
+        XX = _np.copy(XX)
+        XX = _np.atleast_2d(XX)                  # (1,len(XX))
+        w = _np.atleast_2d(2*_np.pi*aa[2::3]).T  # cyclic freq. (nfreq,1)
+        a = _np.atleast_2d(aa[1::3]).T*_np.ones_like(XX) # amp (nfreq, nx)
+        p = _np.atleast_2d(aa[3::3]).T*_np.ones_like(XX) # phase (nfreq, nx)
+        return _np.sum( (w*_np.ones_like(XX))*a*_np.cos(w*XX+p), axis=0)
+#        nfreqs = ModelSines.getnfreqs(aa)
+#        dfdx = _np.zeros( (_np.size(XX),), dtype=_np.float64)
+#        for ii in range(nfreqs):
+#            a = _np.copy(aa[3*ii+1])
+#            f = _np.copy(aa[3*ii+2])
+#            p = _np.copy(aa[3*ii+3])
+##            dfdx += (2.0*_np.pi*f)*a*_np.cos((2.0*_np.pi*f)*XX+p)
+#            dfdx += (2.0*_np.pi*f)*ModelSines.cosine(XX, a, f, p)
+#        # end for
+#        return dfdx
+
+    @staticmethod
+    def _partial(XX, aa, **kwargs):
+        """
+        f = 0.5*ao + sum_ii a_ii *sin((2pi*f_ii)*XX+p_ii)
         dfdx = sum_ii 2*pi*f_ii*a_ii *cos((2pi*f_ii)*XX+p_ii)
 
+        dfdao = 0.5
         dfdai = sin(2pifii*XX+pii)
         dfdfi = 2piXX*a*cos(2pifii*XX+pii)
         dfdpi = a*cos(2pifii*XX+pii)
         """
-        nfreqs = ModelSines.getnfreqs(aa)
-        gvec = _np.zeros( (len(aa), len(XX)), dtype=_np.float64)
-        for ii in range(nfreqs):
-            a = _np.copy(aa[3*ii+0])
-            f = _np.copy(aa[3*ii+1])
-            p = _np.copy(aa[3*ii+2])
-            gvec[3*ii+0, :] = ModelSines.sine(XX, 1.0, f, p)
-            gvec[3*ii+1, :] = (2.0*_np.pi*XX)*ModelSines.cosine(XX, a, f, p)
-            gvec[3*ii+2, :] = ModelSines.cosine(XX, a, f, p)
-        # end for
+        XX = _np.copy(XX)
+        XX = _np.atleast_2d(XX)                  # (1,len(XX))
+        w = _np.atleast_2d(2*_np.pi*aa[2::3]).T  # cyclic freq. (nfreq,1)
+        a = _np.atleast_2d(aa[1::3]).T*_np.ones_like(XX) # amp (nfreq, nx)
+        p = _np.atleast_2d(aa[3::3]).T*_np.ones_like(XX) # phase (nfreq, nx)
+
+        gvec = _np.zeros( (len(aa), _np.size(XX)), dtype=_np.float64)
+        gvec[0, :] = 0.5
+        gvec[1::3, :] = _np.sin(w*XX+p)
+        gvec[2::3, :] = (2.0*_np.pi*_np.ones_like(w)*XX)*a*_np.cos(w*XX + p)
+        gvec[3::3, :] = a*_np.cos(w*XX+p)
+#        nfreqs = ModelSines.getnfreqs(aa)
+#        for ii in range(nfreqs):
+#            a = _np.copy(aa[3*ii+1])
+#            f = _np.copy(aa[3*ii+2])
+#            p = _np.copy(aa[3*ii+3])
+#            gvec[3*ii+1, :] = ModelSines.sine(XX, 1.0, f, p)
+#            gvec[3*ii+2, :] = (2.0*_np.pi*XX)*ModelSines.cosine(XX, a, f, p)
+#            gvec[3*ii+3, :] = ModelSines.cosine(XX, a, f, p)
+#        # end for
         return gvec
 
     @staticmethod
-    def _partial_deriv(XX, aa):
+    def _partial_deriv(XX, aa, **kwargs):
         """
-        f = sum_ii a_ii *sin((2pi*f_ii)*XX+p_ii)
+        f = 0.5*ao + sum_ii a_ii *sin((2pi*f_ii)*XX+p_ii)
         dfdx = sum_ii 2*pi*f_ii*a_ii *cos((2pi*f_ii)*XX+p_ii)
 
+        dfdao = 0.5
         dfdai = sin(2pifii*XX+pii)
         dfdfi = 2piXX*a*cos(2pifii*XX+pii)
         dfdpi = a*cos(2pifii*XX+pii)
 
+        d2fdxdao = 0.0
         d2fdxdai = 2*pi*f_ii*cos((2pi*f_ii)*XX+p_ii)
         d2fdxdfi = 2*pi*a_ii *cos((2pi*f_ii)*XX+p_ii) - (2*pi)^2*f_ii*XX*a_ii *sin((2pi*f_ii)*XX+p_ii)
         d2fdxdpi = -2*pi*f_ii*a_ii *sin((2pi*f_ii)*XX+p_ii)
         """
-        nfreqs = ModelSines.getnfreqs(aa)
-        dgdx = _np.zeros( (len(aa), len(XX)), dtype=_np.float64)
-        for ii in range(nfreqs):
-            a = _np.copy(aa[3*ii+0])
-            f = _np.copy(aa[3*ii+1])
-            p = _np.copy(aa[3*ii+2])
-            dgdx[3*ii+0, :] = (2.0*_np.pi*f)*ModelSines.cosine(XX, 1.0, f, p)
-            dgdx[3*ii+1, :] = (2.0*_np.pi)*(  ModelSines.cosine(XX, a, f, p)
-                                 - (2.0*_np.pi*f*XX)*ModelSines.sine(XX, a, f, p)  )
-            dgdx[3*ii+2, :] = (-2.0*_np.pi*f)*ModelSines.sine(XX, a, f, p)
-        # end for
+        XX = _np.copy(XX)
+        XX = _np.atleast_2d(XX)                  # (1,len(XX))
+        w = _np.atleast_2d(2*_np.pi*aa[2::3]).T  # cyclic freq. (nfreq,1)
+        a = _np.atleast_2d(aa[1::3]).T*_np.ones_like(XX) # amp (nfreq, nx)
+        p = _np.atleast_2d(aa[3::3]).T*_np.ones_like(XX) # phase (nfreq, nx)
+
+        dgdx = _np.zeros( (len(aa), _np.size(XX)), dtype=_np.float64)
+        dgdx[0, :] = 0.0
+        dgdx[1::3, :] = (w*_np.ones_like(XX))*_np.cos(w*XX+p)
+        dgdx[2::3, :] = (2.0*_np.pi)*a*(_np.cos(w*XX+p) - (w*XX)*_np.sin(w*XX+p))
+        dgdx[3::3, :] = (-1*w*_np.ones_like(XX))*a*_np.sin(w*XX+p)
         return dgdx
+#        nfreqs = ModelSines.getnfreqs(aa)
+#        dgdx = _np.zeros( (len(aa), _np.size(XX)), dtype=_np.float64)
+#        dgdx[0, :] = 0.0
+#        for ii in range(nfreqs):
+#            a = _np.copy(aa[3*ii+1])
+#            f = _np.copy(aa[3*ii+2])
+#            p = _np.copy(aa[3*ii+3])
+#            dgdx[3*ii+1, :] = (2.0*_np.pi*f)*ModelSines.cosine(XX, 1.0, f, p)
+#            dgdx[3*ii+2, :] = (2.0*_np.pi)*(  ModelSines.cosine(XX, a, f, p)
+#                                 - (2.0*_np.pi*f*XX)*ModelSines.sine(XX, a, f, p)  )
+#            dgdx[3*ii+3, :] = (-2.0*_np.pi*f)*ModelSines.sine(XX, a, f, p)
+#        # end for
+#        return dgdx
+
+    # ====================================== #
 
 #    @staticmethod
 #    def _hessian(XX, aa):
+#        return NotImplementedError
 
     # ====================================== #
 
-#    @staticmethod
-#    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
-#        """
-#        """
-#        aout = _np.copy(ain)
+    def unscaleaf(self, ain):
+        """
+        f = 0.5*ao + sum_ii a_ii *sin((2pi*f_ii)*XX+p_ii)
+        y-shifting: y'=(y-yo)/ys
+          y = yo + 0.5*ys*ao' + ys*sum_ii a_iiÄ *sin((2pi*f_ii')*XX+p_ii')
+            ao = 2*yo + ys*ao'
+            [a_i, f_i, p_i] = [ys*a_i', f_i', p_i']
+        x-shifting: x'=(x-xo)/xs
+          y = yo + 0.5*ys*ao' + ys*sum_ii a_ii' * sin(2pif'(x-xo)/xs+p')
+            = yo + 0.5*ys*ao' + ys*sum_ii a_ii' * sin(2pif'x/xs-2pif'xo/xs+p')
+                ao = 2*yo + ys*ao'
+                a_i = ys*a_i'
+                f_i = f_i'/xs
+                p_i = p_i'-2pif_i'xo/xs
+
+        x- and y- shift and scaling is possible here using zero-frequency components
+        and phase-shifting
+        """
+        aout = _np.copy(ain)
+#        nfreq = self.getnfreqs(aout)
+        ys = self.slope
+        yo = self.offset
+        xs = self.xslope
+        xo = self.xoffset
+
+        aout[0] = 2*yo + ys*ain[0]
+        aout[1::3] = ys*aout[1::3]
+        aout[2::3] = aout[2::3]/xs
+        aout[3::3] = aout[3::3] - 2*_np.pi*aout[3::3]*xo
+        return aout
+#        for ii in range(nfreq):
+#            aout[3*ii+1] = ain[3*ii+1]*ys
+#            aout[3*ii+2] = ain[3*ii+2]/xs
+#            aout[3*ii+3] = ain[3*ii+3] - 2*_np.pi*ain[3*ii+2]*xo/xs
+#        # end for
 #        return aout
 
-    # ====================================== #
-
-#    def checkbounds(self, dat):
-#        return super(ModelSines, self).checkbounds(dat, self.aa, mag=None)
-
-    # ====================================== #
 # end def ModelSines
 
 
@@ -591,10 +687,11 @@ def model_fourier(XX, af=None, **kwargs):
 
 class ModelFourier(ModelClass):
     """
-         f = ao + sum_ii( a_ii*cos((2*pi*f*ii)*x) + b_ii*sin((2*pi*f*ii)*x))
+    Fourier series in the sine-cosine form:
+         f = ao/2 + sum_ii( a_ii*cos((2*pi*f*ii)*x) + b_ii*sin((2*pi*f*ii)*x))
 
-    y = ao + sum_ii( a_ii*cos((2*pi*f*ii)*x) + b_ii*sin((2*pi*f*ii)*x))
-      = ao + a1*cos(2pif*x) + b1*sin(2pif*x) + a2*cos(4pif*x) + b2*sin(4pif*x) + ...
+      = ao/2 + sum_ii( a_ii*cos((2*pi*f*ii)*x) + b_ii*sin((2*pi*f*ii)*x))
+      = ao/2 + a1*cos(2pif*x) + b1*sin(2pif*x) + a2*cos(4pif*x) + b2*sin(4pif*x) + ...
         af - [fundamental frequency, offset,
               a_ii, b_ii, a_ii+1, b_ii+1, ...]
     """
@@ -603,9 +700,6 @@ class ModelFourier(ModelClass):
     _UB = _np.asarray([_np.inf, _np.inf, _np.inf, _np.inf, _np.inf, _np.inf], dtype=_np.float64)
     _fixed = _np.zeros( (6,), dtype=int)
     def __init__(self, XX, af=None, **kwargs):
-
-        # ================================ #
-
         # Tile defaults to the number of frequencies requested
         if af is not None:
             self.nfreqs = self.getnfreqs(af)
@@ -616,27 +710,24 @@ class ModelFourier(ModelClass):
         # end if
         # shift the frequencies of each sine by a harmonic for defults
         for ii in range(self.nfreqs):
-            self._af[3*ii + 2 + 0 ] = 0.5*self._af[1]/(ii+1)  # amplitudes
-            self._af[3*ii + 2 + 1 ] = 0.5*self._af[1]/(ii+1)  # i'th harm. of default
+            self._af[2*ii + 2 + 0 ] = 0.5*self._af[1]/(ii+1)  # amplitudes
+            self._af[2*ii + 2 + 1 ] = 0.5*self._af[1]/(ii+1)  # i'th harm. of default
             self._LB = _np.asarray(self._LB.tolist()+[-_np.inf,-_np.inf], dtype=_np.float64)
             self._UB = _np.asarray(self._UB.tolist()+[ _np.inf, _np.inf], dtype=_np.float64)
             self._fixed = _np.asarray(self._fixed.tolist()+[ 0, 0], dtype=_np.float64)
         # end for
-
-        # ================================ #
-
         super(ModelFourier, self).__init__(XX, af, **kwargs)
     # end def __init__
 
     @staticmethod
     def cosine(XX, a, f):
-#        return a*_np.cos((2*_np.pi*f)*XX)
-        return ModelSines.cosine(XX, a, f, p=0.0)
+        return a*_np.cos((2*_np.pi*f)*XX)
+#        return ModelSines.cosine(XX, a, f, p=0.0)
 
     @staticmethod
     def sine(XX, b, f):
-#        return b*_np.sin((2*_np.pi*f)*XX)
-        return ModelSines.sine(XX, b, f, p=0.0)
+        return b*_np.sin((2*_np.pi*f)*XX)
+#        return ModelSines.sine(XX, b, f, p=0.0)
 
     @staticmethod
     def getnfreqs(aa):
@@ -649,67 +740,83 @@ class ModelFourier(ModelClass):
 
     @staticmethod
     def _convert2sines(XX, aa):
+        """
+        The Fourier model can be expressed equivalently in the amplitude-
+        phase form (sines above), sin-cos form (here), or exponential form
+        (Fourier transform).
+        Amp-phase form: sn_x = Ao/2 + sum_1N An sin(2pifnx + p_n) for n>1
+        sin-cos form:   sn_x = ao/2 + sum_1N an cos(2pifnx) + bn sin(2pifnx)
+            Ao = ao
+            An = sqrt( an^2 + bn^2)
+                an = An sin(p_n)
+                bn = An cos(p_n)
+                an/bn = sin/cos = tan(p_n)
+            p_n = arctan(an/bn)  (arctan2(an, bn))
+        """
         nfreqs = ModelFourier.getnfreqs(aa)
-        f  = aa[0]
-        a1 = _np.zeros([3*nfreqs,], dtype=_np.float64)
-        a2 = _np.zeros_like(a1)
-        for ii in range(nfreqs):
-            a = _np.copy(aa[2*ii+2+0])
-            b = _np.copy(aa[2*ii+2+1])
+        f  = _np.copy(aa[0])
+        aout = _np.zeros([0.0]+[3*nfreqs,], dtype=_np.float64)
 
-            a1[3*ii+0] = _np.copy(a)  # amplitude of cosine
-            a1[3*ii+1] = _np.copy((ii+1)*f) # frequency of cosine
-            a1[3*ii+2] = -_np.pi/4.0   # sin(-90) = cos(), phase input to sine to get cosine
-            a2[3*ii+0] = _np.copy(b)  # amplitude of sine
-            a2[3*ii+1] = _np.copy((ii+1)*f) # frequency
-            a2[3*ii+2] =  0.0   # phase
-        # end for
-        return a1, a2
-#        return nfreqs, a1, a2
-
-    @staticmethod
-    def _model(XX, aa):
-        """
-         f = ao + sum_ii( a_ii*cos((2*pi*f*ii)*x) + b_ii*sin((2*pi*f*ii)*x))
-        """
-        a1, a2 = ModelFourier._convert2sines(aa)
-        ao = aa[1]
-        return ao+ModelSines._model(XX, a1)+ModelSines._model(XX, a2)
-#
-#        ysum = ao*_np.ones( (len(XX),), dtype=_np.float64)
+        aout[0] = _np.copy(aa[1])  # offset
+        aout[1::3] = _np.sqrt( _np.power(aa[2::2], 2.0) + _np.power(aa[3::2], 2.0)) # amplitude
+        aout[2::3] = (_np.asarray(range(nfreqs))+1.0)*f # frequency
+        aout[3::3] = _np.arctan2(aa[2::2], aa[3::2])    # phase
 #        for ii in range(nfreqs):
 #            a = _np.copy(aa[2*ii+2+0])
 #            b = _np.copy(aa[2*ii+2+1])
-#            ysum += ModelFourier.cosine(XX, a, (ii+1)*f)
-#            ysum += ModelFourier.sine(XX, b, (ii+1)*f)
+#
+#            aout[3*ii+1] = _np.sqrt(_np.power(a,2.0)+_np.power(b,2.0)  # amplitude
+#            aout[3*ii+2] = _np.copy((ii+1)*f) # frequency of sine-wave
+#            aout[3*ii+3] = _np.arctan2(a, b)  # phase
 #        # end for
-#        return ysum
+        return aout
+#        return nfreqs, a1, a2
 
     @staticmethod
-    def _deriv(XX, aa):
+    def _convert2exp(aa):
+        """
+        The sine-cosine form can be easily converted to the exponential or the
+        amp-phase form
+        exponential:  sn_x = sum_-N_+N ( cn * exp(i*2pif*n*x ) )
+        sin-cos form: sn_x = ao/2 + sum_1N an cos(2pifnx) + bn sin(2pifnx)
+            cn = 0.5*(an-i*bn)    n>0
+            cn = 0.5*ao           n=0
+            cn = 0.5*(an+i*bn)    n<0   # this is complex conjugate of cn>0
+        """
+        an = aa[1::2]
+        bn = aa[2::2]
+
+        nfreqs = ModelFourier.getnfreqs(aa)
+        aout = _np.zeros((2*nfreqs+1,), dtype=_np.complex128)
+        aout[:nfreqs] = 0.5*(an+1j*bn)
+        aout[nfreqs]  = 0.5*aa[0]
+        aout[nfreqs:] = 0.5*(an-1j*bn)
+        return aout
+
+    @staticmethod
+    def _model(XX, aa, **kwargs):
+        """
+         f = ao + sum_ii( a_ii*cos((2*pi*f*ii)*x) + b_ii*sin((2*pi*f*ii)*x))
+        """
+        a1 = ModelFourier._convert2sines(aa)
+        return ModelSines._model(XX, a1)
+#        ao = aa[1]
+#        return ao+ModelSines._model(XX, a1)+ModelSines._model(XX, a2)
+
+    @staticmethod
+    def _deriv(XX, aa, **kwargs):
         """
          f = ao + sum_ii( a_ii*cos((2*pi*f*ii)*x) + b_ii*sin((2*pi*f*ii)*x))
 
          dfdx = (2*pi*f)*sum_ii( -ii*a_ii*sin((2*pi*f*ii)*x) + ii*b_ii*cos((2*pi*f*ii)*x))
         """
-        a1, a2 = ModelFourier._convert2sines(aa)
-        return ModelSines._deriv(XX, a1)+ModelSines._deriv(XX, a2)
-#
-#        nfreqs = ModelFourier.getnfreqs(aa)
-#
-#        f  = aa[0]
-#        ao = aa[1]
-#        dfdx = ao*_np.zeros( (len(XX),), dtype=_np.float64)
-#        for ii in range(nfreqs):
-#            a = _np.copy(aa[2*ii+2+0])
-#            b = _np.copy(aa[2*ii+2+1])
-#            dfdx += (2.0*_np.pi*ii*f)*ModelFourier.cosine(XX, b, (ii+1)*f)
-#            dfdx -= (2.0*_np.pi*ii*f)*ModelFourier.sine(XX, a, (ii+1)*f)
-#        # end for
-#        return dfdx
+        a1 = ModelFourier._convert2sines(aa)
+        return ModelSines._deriv(XX, a1)
+#        a1, a2 = ModelFourier._convert2sines(aa)
+#        return ModelSines._deriv(XX, a1)+ModelSines._deriv(XX, a2)
 
     @staticmethod
-    def _partial(XX, aa):
+    def _partial(XX, aa, **kwargs):
         """
          f = ao + sum_ii( a_ii*cos((2*pi*f*ii)*x) + b_ii*sin((2*pi*f*ii)*x))
 
@@ -724,24 +831,20 @@ class ModelFourier(ModelClass):
         nfreqs = ModelFourier.getnfreqs(aa)
         f  = aa[0]
         ao = aa[1]
-        gvec = ao*_np.zeros( (len(aa), len(XX)), dtype=_np.float64)
+        gvec = ao*_np.zeros( (len(aa), _np.size(XX)), dtype=_np.float64)
 
-#        gvec[0, :] = (XX/f)*ModelFourier._deriv(XX, aa)
+        gvec[0, :] = (XX/f)*ModelFourier._deriv(XX, aa)
         gvec[1, :] = 1.0   # dfdao
-#        gvec[2::2, :] = [_np.cos(2*_np.pi*f*XX*(ii+1)) for ii in range(nfreqs)]
-#        gvec[3::2, :] = [_np.sin(2*_np.pi*f*XX*(ii+1)) for ii in range(nfreqs)]
-        for ii in range(nfreqs):
-            a = _np.copy(aa[2*ii+2+0])
-            b = _np.copy(aa[2*ii+2+1])
-            gvec[0, :] -= (2.0*_np.pi*(ii+1)*XX)*ModelFourier.sine(XX, a, (ii+1)*f)
-            gvec[0, :] += (2.0*_np.pi*(ii+1)*XX)*ModelFourier.cosine(XX, b, (ii+1)*f)
-            gvec[2*ii+2+0, :] = ModelFourier.cosine(XX, 1.0, (ii+1)*f)
-            gvec[2*ii+2+1, :] = ModelFourier.sine(XX, 1.0, (ii+1)*f)
-        # end for
+        gvec[2::2, :] = _np.cos(2*_np.pi*f*(_np.asarray(range(nfreqs))+1)*XX)
+        gvec[3::2, :] = _np.sin(2*_np.pi*f*(_np.asarray(range(nfreqs))+1)*XX)
         return gvec
+#       for ii in range(nfreqs):
+#            gvec[2*ii+2+0, :] = ModelFourier.cosine(XX, 1.0, (ii+1)*f)
+#            gvec[2*ii+2+1, :] = ModelFourier.sine(XX, 1.0, (ii+1)*f)
+#        # end for
 
     @staticmethod
-    def _partial_deriv(XX, aa):
+    def _partial_deriv(XX, aa, **kwargs):
         """
           f = ao + sum_ii( a_ii*cos((2*pi*f*ii)*x) + b_ii*sin((2*pi*f*ii)*x))
 
@@ -763,34 +866,96 @@ class ModelFourier(ModelClass):
         nfreqs = ModelFourier.getnfreqs(aa)
         f  = aa[0]
         ao = aa[1]
-        dgdx = ao*_np.zeros( (len(aa), len(XX)), dtype=_np.float64)
-        dgdx[0, :] = ModelFourier._deriv(XX, aa)/f
-        for ii in range(nfreqs):
-            a = _np.copy(aa[2*ii+2+0])
-            b = _np.copy(aa[2*ii+2+1])
-            dgdx[0, :] -= _np.power(2.0*_np.pi, 2.0)*f*XX*(ii+1)*(ii+1)*(
-                    ModelFourier.cosine(XX, a, f) + ModelFourier.sine(XX, b, f))
-            dgdx[2*ii+2+0, :] = -1*(2.0*_np.pi*f)*(ii+1)*ModelFourier.sine(XX, 1.0, (ii+1)*f)
-            dgdx[2*ii+2+1, :] = (2.0*_np.pi*f)*(ii+1)*ModelFourier.cosine(XX, 1.0, (ii+1)*f)
-        # end for
-        return dgdx
 
-#    @staticmethod
-#    def _hessian(XX, aa):
+        XX = _np.copy(XX)
+        XX = _np.atleast_2d(XX)                  # (1,len(XX))
+        w = 2*_np.pi*f  # cyclic freq. (nfreq,1)
+        tmp = _np.ones_like(XX)
+        a = _np.atleast_2d(aa[2::2]).T*tmp # amp (nfreq, nx)
+        b = _np.atleast_2d(aa[3::2]).T*tmp # phase (nfreq, nx)
+
+        dgdx = ao*_np.zeros( (len(aa), _np.size(XX)), dtype=_np.float64)
+        dgdx[0, :] = (1.0/f)*ModelFourier._deriv(XX, aa) - \
+            2.0*_np.pi*(w*XX)*_np.sum((_np.power(_np.asarray(range(nfreqs))+1, 2.0)*tmp)*(
+                    a*_np.cos((w*_np.asarray(range(nfreqs)+1))*XX)
+                  + b*_np.sin((w*_np.asarray(range(nfreqs)+1))*XX) ), axis=0)
+        gvec[1, :] = 0.0   # dfdao
+        gvec[2::2, :] = _np.cos((w*(_np.asarray(range(nfreqs))+1))*XX)
+        gvec[3::2, :] = _np.sin((w*(_np.asarray(range(nfreqs))+1))*XX)
+        return gvec
+#        nfreqs = ModelFourier.getnfreqs(aa)
+#        f  = aa[0]
+#        ao = aa[1]
+#        dgdx = ao*_np.zeros( (len(aa), _np.size(XX)), dtype=_np.float64)
+#        dgdx[0, :] = ModelFourier._deriv(XX, aa)/f
+#        for ii in range(nfreqs):
+#            a = _np.copy(aa[2*ii+2+0])
+#            b = _np.copy(aa[2*ii+2+1])
+#            dgdx[0, :] -= _np.power(2.0*_np.pi, 2.0)*f*XX*(ii+1)*(ii+1)*(
+#                    ModelFourier.cosine(XX, a, f) + ModelFourier.sine(XX, b, f))
+#            dgdx[2*ii+2+0, :] = -1*(2.0*_np.pi*f)*(ii+1)*ModelFourier.sine(XX, 1.0, (ii+1)*f)
+#            dgdx[2*ii+2+1, :] = (2.0*_np.pi*f)*(ii+1)*ModelFourier.cosine(XX, 1.0, (ii+1)*f)
+#        # end for
+#        return dgdx
 
     # ====================================== #
 
-#    @staticmethod
-#    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
-#        """
-#        """
-#        aout = _np.copy(ain)
-#        return aout
+    def unscaleaf(self, ain):
+        """
+        y-shifting and scaling is easy:        y' = (y-yo)/ys
 
-    # ====================================== #
+         y = ao + sum_ii( a_ii*cos((2*pi*f*ii)*x) + b_ii*sin((2*pi*f*ii)*x))
 
-#    def checkbounds(self, dat):
-#        return super(ModelFourier, self).checkbounds(dat, self.aa, mag=None)
+         y = yo + ys*ao' + sum_ii( ys*ai'*cos(2pif'x*ii) + ys*bi'*sin(2pif'x*ii)
+           ao = yo+ys*ao'
+           ai = ys*ai'
+           bi = ys*bi'
+
+        x-shifting requires trigonometry:      x' = (x-xo)/xs
+           w' = 2pif'/xs
+
+         y = yo + ys*ao' + sum_ii( ys*ai'*cos(w'(x-xo)*ii) + ys*bi'*sin(w'(x-xo)*ii)
+             cos(a-b) = cosx cosy + sinx siny
+             sin(a-b) = sinx cosy - sinx siny
+         cos(2pif'(x-xo)*ii) = cos(w'ii*(x-xo))
+           = cos(w'ii*x) * cos(-w'ii*xo) + sin(w'ii*x) * sin(-w'ii*xo)
+           = cos(w'ii*x) * cos(w'ii*xo) - sin(w'ii*x) * sin(w'ii*xo)
+         sin(2pif'(x-xo)*ii) = sin(w'ii*(x-xo))
+           = sin(w'ii*x) * cos(-w'ii*xo) - sin(w'ii*x) * sin(-w'ii*xo)
+           = sin(w'ii*x) * cos(w'ii*xo) + sin(w'ii*x) * sin(w'ii*xo)
+
+         y = yo + ys*ao' + sum_ii( ys*ai'*cos(w'ii*xo)cos(w'ii*x)
+                                 - ys*ai'*sin(w'ii*xo)sin(w'ii*x)
+                                 + ys*bi'*sin(w'ii*xo)cos(w'ii*x)
+                                 + ys*bi'*sin(w'ii*xo)sin(w'ii*x)
+           = (yo + ys*ao') + sum_ii(
+            (ys*ai'*cos(w'ii*xo) + ys*bi'*sin(w'ii*xo) )* cos(w'ii*x)
+          + (ys*bi'*sin(w'ii*xo) - ys*ai'*sin(w'ii*xo) )* sin(w'ii*x) )
+
+        finally:
+            f = f'/xs
+            ao = yo + ys*ao'
+            ai = ys*ai'*cos(2pif'ii/xs*xo) + ys*bi'*sin(2pif'ii/xs*xo)
+            bi = ys*bi'*sin(2pif'ii/xs*xo) - ys*ai'*sin(2pif'ii/xs*xo)
+        """
+        aout = _np.copy(ain)
+        nfreqs = ModelFourier.getnfreqs(ain)
+        ys = self.slope
+        yo = self.offset
+        xs = self.xslope
+        xo = self.xoffset
+        tmp = _np.asarray(range(nfreqs))+1
+
+        aout[0] = ain[0]/xs
+        aout[1] = yo + ys*ain[1]
+        w  = 2*_np.pi*ain[0]/xs
+        aout[2::2] = ys*(ain[2::2]*_np.cos(tmp*xo) + ain[3::2]*_np.sin(w*tmp*xo))
+        aout[3::2] = ys*(ain[3::2]*_np.sin(tmp*xo) - ain[2::2]*_np.sin(w*tmp*xo))
+#        for ii in range(nfreqs):
+#            aout[2*ii+2+0] = ys*(ain[2*ii+2+0]*_np.cos(w*(ii+1)*xo) + ain[2*ii+2+1]*_np.sin(w*(ii+1)*xo))
+#            aout[2*ii+2+1] = ys*(ain[2*ii+2+1]*_np.sin(w*(ii+1)*xo) - ain[2*ii+2+0]*_np.sin(w*(ii+1)*xo))
+#        # end for
+        return aout
 
     # ====================================== #
 # end def ModelFourier
@@ -839,17 +1004,17 @@ class ModelPoly(ModelClass):
     # end def __init__
 
     @staticmethod
-    def _model(XX, aa):
+    def _model(XX, aa, **kwargs):
         pp = _np.poly1d(aa)
         return pp(XX)
 
     @staticmethod
-    def _deriv(XX, aa):
+    def _deriv(XX, aa, **kwargs):
         pp = _np.poly1d(aa).deriv()
         return pp(XX)
 
     @staticmethod
-    def _partial(XX, aa):
+    def _partial(XX, aa, **kwargs):
         """
          The g-vector contains the partial derivatives used for error propagation
          f = a1*x^2+a2*x+a3
@@ -871,7 +1036,7 @@ class ModelPoly(ModelClass):
         return gvec
 
     @staticmethod
-    def _partial_deriv(XX, aa):
+    def _partial_deriv(XX, aa, **kwargs):
         """
          The jacobian for the derivative
          f = a1*x^2+a2*x+a3
@@ -914,7 +1079,11 @@ class ModelPoly(ModelClass):
                 a_o = ys*a_i'+yo
                 a_i = ys*a_i' / xs^i
         x-shifting: x' = (x-xo)/xs
-            possible but complicated ... requires binomial / multinomial theorem
+            y'= (y-yo)/ys = sum( a_i'*((x-xo)/xs)^i )
+              = sum( a_i'/xs^i*(x-xo)^i )
+             possible but complicated ... requires binomial / multinomial theorem
+             = sum( a_i'/xs^i*sum( (i,k)*x^k*xo^(i-k)) )
+
                 .... I won't show the math, look up Shaw and Traub method of "Taylor Shift"
             if q(x) = p(x+xo)
                 g(x) = p(xo*x)
@@ -999,7 +1168,7 @@ class ModelProdExp(ModelClass):
     # end def __init__
 
     @staticmethod
-    def _model(XX, aa):
+    def _model(XX, aa, **kwargs):
         """
         Product of exponentials
          y = exp( a0 + a1*x + a2*x^2 + ...)
@@ -1008,7 +1177,7 @@ class ModelProdExp(ModelClass):
         return _np.exp( poly(XX, aa) )
 
     @staticmethod
-    def _deriv(XX, aa):
+    def _deriv(XX, aa, **kwargs):
         """
         derivative of product of exponentials w.r.t. x is analytic as well:
          y = exp( a0 + a1*x + a2*x^2 + ...)
@@ -1020,7 +1189,7 @@ class ModelProdExp(ModelClass):
         return deriv_poly(XX, aa)*prodexp(XX, aa)
 
     @staticmethod
-    def _partial(XX, aa):
+    def _partial(XX, aa, **kwargs):
         """
          The g-vector contains the partial derivatives used for error propagation
          f = exp(a1*x^2+a2*x+a3)
@@ -1044,7 +1213,7 @@ class ModelProdExp(ModelClass):
         return gvec
 
     @staticmethod
-    def _partial_deriv(XX, aa):
+    def _partial_deriv(XX, aa, **kwargs):
         """
          The g-vector (jacobian) for the derivative
          dfdx = (...+2*a1*x + a2)*exp(...+a1*x^2+a2*x+a3)
@@ -1150,7 +1319,7 @@ class ModelEvenPoly(ModelClass):
     # end def __init__
 
     @staticmethod
-    def _model(XX, aa):
+    def _model(XX, aa, **kwargs):
         """
         Even Polynomial of order num_fit, Insert zeros for the odd powers
         """
@@ -1159,7 +1328,7 @@ class ModelEvenPoly(ModelClass):
         return poly(XX, a0)
 
     @staticmethod
-    def _deriv(XX, aa):
+    def _deriv(XX, aa, **kwargs):
         """
         Derivative of an even polynomial
         """
@@ -1168,7 +1337,7 @@ class ModelEvenPoly(ModelClass):
         return deriv_poly(XX, a0)
 
     @staticmethod
-    def _partial(XX, aa):
+    def _partial(XX, aa, **kwargs):
         """
          The g-vector contains the partial derivatives used for error propagation
          f = a1*x^4+a2*x^2+a3
@@ -1191,7 +1360,7 @@ class ModelEvenPoly(ModelClass):
         return gvec
 
     @staticmethod
-    def _partial_deriv(XX, aa):
+    def _partial_deriv(XX, aa, **kwargs):
         """
          The jacobian for the derivative
          f = a1*x^4+a2*x^2+a3
@@ -1304,7 +1473,7 @@ class ModelPowerLaw(ModelClass):
     # end def __init__
 
     @staticmethod
-    def _model(XX, aa):
+    def _model(XX, aa, **kwargs):
         """
          Curved power-law:
          fc = x^(a1*x^(n+1)+a2*x^n+...a(n+1))
@@ -1320,7 +1489,7 @@ class ModelPowerLaw(ModelClass):
         return aa[-1]*exp_factor*(XX**polys)
 
     @staticmethod
-    def _deriv(XX, aa):
+    def _deriv(XX, aa, **kwargs):
         """
          dfdx = dfcdx*(a(n+2)*e^a(n+1)x) +a(n+1)*f(x);
               = (dfcdx/fc)*f(x) + a(n+1)*f(x)
@@ -1345,7 +1514,7 @@ class ModelPowerLaw(ModelClass):
         return prof*( aa[-1] + polys/XX + _np.log(_np.abs(XX))*dpolys )
 
     @staticmethod
-    def _partial(XX, aa):
+    def _partial(XX, aa, **kwargs):
         """
          The g-vector contains the partial derivatives used for error propagation
          f = a(n+2) * exp(a(n+1)*x) * x^( a1*x^(n)+a2*x^(n-1)+...a(n) )
@@ -1379,6 +1548,8 @@ class ModelPowerLaw(ModelClass):
         # endfor
         gvec[-2, :] = prof*XX
         gvec[-1, :] = prof/aa[-1]
+#        if (_np.isnan(gvec).any()):
+#            print('debugging')
         return gvec
     #    prof = powerlaw(XX, af)
     #    gvec = _np.zeros((num_fit, nx), dtype=_np.float64)
@@ -1392,7 +1563,7 @@ class ModelPowerLaw(ModelClass):
 
 
     @staticmethod
-    def _partial_deriv(XX, aa):
+    def _partial_deriv(XX, aa, **kwargs):
         """
          The jacobian of the derivative
             dfda_i = d/da_i dfdx
@@ -1536,19 +1707,19 @@ class ModelParabolic(ModelClass):
     # end def __init__
 
     @staticmethod
-    def _model(XX, aa):
+    def _model(XX, aa, **kwargs):
         return aa*(1.0 - _np.power(XX, 2.0))
 
     @staticmethod
-    def _deriv(XX, aa):
+    def _deriv(XX, aa, **kwargs):
         return -2.0*aa*XX
 
     @staticmethod
-    def _partial(XX, aa):
+    def _partial(XX, aa, **kwargs):
         return _np.atleast_2d(parabolic(XX, aa) / aa)
 
     @staticmethod
-    def _partial_deriv(XX, aa):
+    def _partial_deriv(XX, aa, **kwargs):
         return -2.0*XX
 
 #    @staticmethod
@@ -1633,14 +1804,14 @@ class ModelExponential(ModelClass):
         return prof1 + prof2
 
     @staticmethod
-    def _separate_model(XX, aa):
+    def _separate_model(XX, aa, **kwargs):
         a, b, c, d = tuple(aa)
         prof1 = a*_np.exp(b* _np.power(XX, c))
         prof2 = a*_np.power(XX, d)
         return prof1, prof2
 
     @staticmethod
-    def _deriv(XX, aa):
+    def _deriv(XX, aa, **kwargs):
         """
          dfdx  = a*(b*c*XX^(c-1)*exp(b*XX^c) + d*XX^(d-1))
                = b*c*XX^(c-1) * (a*exp(b*XX^c))  + a*d*XX^(d-1)
@@ -1650,7 +1821,7 @@ class ModelExponential(ModelClass):
         return dprof1dx+dprof2dx
 
     @staticmethod
-    def _separate_deriv(XX, aa):
+    def _separate_deriv(XX, aa, **kwargs):
         prof1, prof2 = ModelExponential._separate_model(XX, aa)
 
         a, b, c, d = tuple(aa)
@@ -1659,7 +1830,7 @@ class ModelExponential(ModelClass):
         return dprof1dx, dprof2dx
 
     @staticmethod
-    def _partial(XX, aa):
+    def _partial(XX, aa, **kwargs):
         """
          f     = a*(exp(b*XX^c) + XX^d) = f1+f2;
          dfdx  = a*(b*c*XX^(c-1)*exp(b*XX^c) + d*XX^(d-1))
@@ -1686,7 +1857,7 @@ class ModelExponential(ModelClass):
         return gvec
 
     @staticmethod
-    def _partial_deriv(XX, aa):
+    def _partial_deriv(XX, aa, **kwargs):
         """
          f     = a*(exp(b*XX^c) + XX^d) = f1+f2;
          dfdx  = a*(b*c*XX^(c-1)*exp(b*XX^c) + d*XX^(d-1))
@@ -1788,7 +1959,7 @@ class ModelGaussian(ModelClass):
     # end def __init__
 
     @staticmethod
-    def _model(XX, aa):
+    def _model(XX, aa, **kwargs):
         """
         model of a Gaussian
         f = A*exp(-(x-xo)**2.0/(2.0*ss**2.0))
@@ -1800,7 +1971,7 @@ class ModelGaussian(ModelClass):
         return AA*_np.exp(-(XX-x0)**2/(2.0*ss**2))
 
     @staticmethod
-    def _deriv(XX, aa):
+    def _deriv(XX, aa, **kwargs):
         """
         derivative of a Gaussian
         f = A*exp(-(x-xo)**2.0/(2.0*ss**2.0))
@@ -1815,7 +1986,7 @@ class ModelGaussian(ModelClass):
         return -1.0*(XX-x0)/_np.power(ss, 2.0) * prof
 
     @staticmethod
-    def _partial(XX, aa):
+    def _partial(XX, aa, **kwargs):
         """
         Jacobian of a Gaussian
         f = A*exp(-(x-xo)**2.0/(2.0*ss**2.0))
@@ -1829,14 +2000,14 @@ class ModelGaussian(ModelClass):
         """
         AA, x0, ss = tuple(aa)
         prof = gaussian(XX, aa)
-        gvec = _np.zeros( (3,len(XX)), dtype=_np.float64)
+        gvec = _np.zeros( (3,_np.size(XX)), dtype=_np.float64)
         gvec[0,:] = prof/AA
         gvec[1,:] = ((XX-x0)/(ss**2.0))*prof
         gvec[2,:] = (((XX-x0)**2.0)/(ss**3.0)) * prof
         return gvec
 
     @staticmethod
-    def _partial_deriv(XX, aa):
+    def _partial_deriv(XX, aa, **kwargs):
         """
         Jacobian of the derivative of a Gaussian
         f = A*exp(-(x-xo)**2.0/(2.0*ss**2.0))
@@ -1860,7 +2031,7 @@ class ModelGaussian(ModelClass):
         term1 = (-1.0*(XX-x0)/_np.power(ss,2.0))
         gvec = partial_gaussian(XX, aa)
 
-        dgdx = _np.zeros( (3,len(XX)), dtype=_np.float64)
+        dgdx = _np.zeros( (3,_np.size(XX)), dtype=_np.float64)
         dgdx[0,:] = gvec[0,:]*term1
         dgdx[1,:] = prof/_np.power(ss,2.0) + gvec[1,:]*term1
         dgdx[2,:] = -2.0*term1*prof/ss + gvec[2,:]*term1
@@ -1972,21 +2143,21 @@ class ModelOffsetGaussian(ModelClass):
     # end def __init__
 
     @staticmethod
-    def _model(XX, aa):
+    def _model(XX, aa, **kwargs):
         return ModelGaussian._model(XX, aa[1:]) + aa[0]
 
     @staticmethod
-    def _deriv(XX, aa):
+    def _deriv(XX, aa, **kwargs):
         return ModelGaussian._deriv(XX, aa[1:])
 
     @staticmethod
-    def _partial(XX, aa):
+    def _partial(XX, aa, **kwargs):
         return _np.concatenate(
                 (_np.ones((1,_np.size(XX)), dtype=_np.float64),
                  ModelGaussian._partial(XX, aa[1:])), axis=0)
 
     @staticmethod
-    def _partial_deriv(XX, aa):
+    def _partial_deriv(XX, aa, **kwargs):
         return _np.concatenate(
                 (_np.zeros((1,_np.size(XX)), dtype=_np.float64),
                  ModelGaussian._partial_deriv(XX, aa[1:])), axis=0)
@@ -2082,7 +2253,7 @@ class ModelOffsetNormal(ModelClass):
     # end def __init__
 
     @staticmethod
-    def _model(XX, aa):
+    def _model(XX, aa, **kwargs):
         """
         Model of an offset normalized Gaussian (unit area)
         f = A0 + A*exp(-(x-xo)**2.0/(2.0*ss**2.0))/sqrt(2*pi*ss^2.0)
@@ -2094,7 +2265,7 @@ class ModelOffsetNormal(ModelClass):
         return aa[0] + ModelNormal._model(XX, aa[1:])
 
     @staticmethod
-    def _deriv(XX, aa):
+    def _deriv(XX, aa, **kwargs):
         """
         derivative of a normalized Gaussian (unit area)
         dfdx = -(x-xo)/ss^2 *f
@@ -2102,7 +2273,7 @@ class ModelOffsetNormal(ModelClass):
         return ModelNormal._deriv(XX, aa[1:])
 
     @staticmethod
-    def _partial(XX, aa):
+    def _partial(XX, aa, **kwargs):
         """
         Jacobian of a normalized Gaussian (unit area)
         dfdA0 = 1.0
@@ -2114,10 +2285,10 @@ class ModelOffsetNormal(ModelClass):
                 = sqrt(2*pi*ss**2.0)^-1 *1.0/abs(ss)
         dfdss =  (x-xo)^2/ss^3 * f + 1.0/abs(ss) * f
         """
-        return _np.concatenate((_np.ones(1,len(XX)), ModelNormal._partial(XX, aa[1:])), axis=0)
+        return _np.concatenate((_np.ones(1,_np.size(XX)), ModelNormal._partial(XX, aa[1:])), axis=0)
 
     @staticmethod
-    def _partial_deriv(XX, aa):
+    def _partial_deriv(XX, aa, **kwargs):
         """
         Jacobian of the derivative of a normalized Gaussian (unit area)
         f = A*exp(-(x-xo)**2.0/(2.0*ss**2.0))/sqrt(2*pi*ss^2.0)
@@ -2130,7 +2301,7 @@ class ModelOffsetNormal(ModelClass):
         d2fdxds = 2*(x-xo)/ss^3 *f -(x-xo)/ss^2 *dfds
 
         """
-        return _np.concatenate((_np.zeros(1,len(XX)), ModelNormal._partial_deriv(XX, aa[1:])), axis=0)
+        return _np.concatenate((_np.zeros(1,_np.size(XX)), ModelNormal._partial_deriv(XX, aa[1:])), axis=0)
 
 #    @staticmethod
 #    def _hessian(XX, aa):
@@ -2219,7 +2390,7 @@ class ModelNormal(ModelClass):
     # end def __init__
 
     @staticmethod
-    def _model(XX, aa):
+    def _model(XX, aa, **kwargs):
         """
         Model of a normalized Gaussian (unit area)
         f = A*exp(-(x-xo)**2.0/(2.0*ss**2.0))/sqrt(2*pi*ss^2.0)
@@ -2232,7 +2403,7 @@ class ModelNormal(ModelClass):
         return gaussian(XX,aa)/nn
 
     @staticmethod
-    def _deriv(XX, aa):
+    def _deriv(XX, aa, **kwargs):
         """
         derivative of a normalized Gaussian (unit area)
         f = A*exp(-(x-xo)**2.0/(2.0*ss**2.0))/sqrt(2*pi*ss^2.0)
@@ -2247,7 +2418,7 @@ class ModelNormal(ModelClass):
         return deriv_gaussian(XX, aa)/nn
 
     @staticmethod
-    def _partial(XX, aa):
+    def _partial(XX, aa, **kwargs):
         """
         Jacobian of a normalized Gaussian (unit area)
         f = A*exp(-(x-xo)**2.0/(2.0*ss**2.0))/sqrt(2*pi*ss^2.0)
@@ -2261,16 +2432,16 @@ class ModelNormal(ModelClass):
         dfdss =  (x-xo)^2/ss^3 * f + 1.0/abs(ss) * f
         """
         AA, x0, ss = tuple(aa)
-        gvec = _np.zeros( (3,len(XX)), dtype=_np.float64)
+        gvec = _np.zeros( (3,_np.size(XX)), dtype=_np.float64)
         prof = normal(XX, aa)
-        gvec = _np.zeros( (3,len(XX)), dtype=_np.float64)
+        gvec = _np.zeros( (3,_np.size(XX)), dtype=_np.float64)
         gvec[0,:] = prof/AA
         gvec[1,:] = ((XX-x0)/(ss**2.0))*prof
         gvec[1,:] = (((XX-x0)**2.0)/(ss**3.0)) * prof -prof/_np.abs(ss)
         return gvec
 
     @staticmethod
-    def _partial_deriv(XX, aa):
+    def _partial_deriv(XX, aa, **kwargs):
         """
         Jacobian of the derivative of a normalized Gaussian (unit area)
         f = A*exp(-(x-xo)**2.0/(2.0*ss**2.0))/sqrt(2*pi*ss^2.0)
@@ -2283,10 +2454,10 @@ class ModelNormal(ModelClass):
 
         """
         AA, x0, ss = tuple(aa)
-        gvec = _np.zeros( (3,len(XX)), dtype=_np.float64)
+        gvec = _np.zeros( (3,_np.size(XX)), dtype=_np.float64)
         prof = normal(XX, aa)
         gvec = partial_normal(XX, aa)
-        dgdx = _np.zeros((3,len(XX)), dtype=_np.float64)
+        dgdx = _np.zeros((3,_np.size(XX)), dtype=_np.float64)
         dgdx[0,:] = -(XX-x0)/_np.power(ss, 2.0)*gvec[0,:]
         dgdx[1,:] = prof/_np.power(XX, 2.0) - ((XX-x0)/_np.power(ss, 2.0))*gvec[1,:]
         dgdx[1,:] = 2.0*(XX-x0)*prof/_np.power(XX, 3.0) - ((XX-x0)/_np.power(ss, 2.0))*gvec[2,:]
@@ -2426,7 +2597,7 @@ class ModelLogGaussian(ModelClass):
     # end def __init__
 
     @staticmethod
-    def _model(XX, aa):
+    def _model(XX, aa, **kwargs):
         """
         f = 10*log10( A*exp(-(x-xo)**2.0/(2.0*ss**2.0)) )
           = 10/ln(10)*ln( exp(ln(A))*exp(-(x-xo)**2.0/(2.0*ss**2.0)) )
@@ -2444,7 +2615,7 @@ class ModelLogGaussian(ModelClass):
         return (10.0/_np.log(10))*_np.abs(_np.log(AA)-_np.power(XX-x0, 2.0)/(2.0*_np.power(ss, 2.0)))
 
     @staticmethod
-    def _deriv(XX, aa):
+    def _deriv(XX, aa, **kwargs):
         """
         f = 10*_np.log10( A*exp(-(x-xo)**2.0/(2.0*ss**2.0)) )
           = 10/ln(10)*( ln(A) -(x-xo)**2.0/(2.0*ss**2.0)  )
@@ -2464,7 +2635,7 @@ class ModelLogGaussian(ModelClass):
         return -10.0*(XX-xo)/(_np.power(ss, 2.0) * _np.log(10))
 
     @staticmethod
-    def _partial(XX, aa):
+    def _partial(XX, aa, **kwargs):
         """
         f = 10*_np.log10( A*exp(-(x-xo)**2.0/(2.0*ss**2.0)) )
           = 10/ln(10)*( ln(A) -(x-xo)**2.0/(2.0*ss**2.0)  )
@@ -2474,14 +2645,14 @@ class ModelLogGaussian(ModelClass):
         dfdss =  10*(x-xo)^2/(ss^3 * ln(10))
         """
         AA, x0, ss = tuple(aa)
-        gvec = _np.zeros( (3,len(XX)), dtype=_np.float64)
+        gvec = _np.zeros( (3,_np.size(XX)), dtype=_np.float64)
         gvec[0,:] = 10.0/(AA*_np.log(10.0))
         gvec[1,:] = 10.0*((XX-x0)/(_np.power(ss, 2.0)*_np.log(10.0)))
         gvec[2,:] = 10.0*_np.power(XX-x0, 2.0)/(_np.power(ss, 3.0)*_np.log(10.0))
         return gvec
 
     @staticmethod
-    def _partial_deriv(XX, aa):
+    def _partial_deriv(XX, aa, **kwargs):
         """
         f = 10*_np.log10( A*exp(-(x-xo)**2.0/(2.0*ss**2.0)) )
           = 10/ln(10)*( ln(A) -(x-xo)**2.0/(2.0*ss**2.0)  )
@@ -2499,7 +2670,7 @@ class ModelLogGaussian(ModelClass):
         """
         AA, x0, ss = tuple(aa)
 
-        dgdx = _np.zeros( (3,len(XX)), dtype=_np.float64)
+        dgdx = _np.zeros( (3,_np.size(XX)), dtype=_np.float64)
         dgdx[1,:] = 10.0/(_np.log(10.0)*_np.power(ss,2.0))
         dgdx[2,:] = 20.0*(XX-x0)/(_np.log(10)*_np.power(ss,3.0))
         return dgdx
@@ -2598,7 +2769,7 @@ class ModelLorentzian(ModelClass):
     # end def __init__
 
     @staticmethod
-    def _model(XX, aa):
+    def _model(XX, aa, **kwargs):
         """
         Lorentzian normalization such that integration equals AA (af[0])
             f = 0.5*A*s / ( (x-xo)**2.0 + 0.25*ss**2.0 ) / pi
@@ -2607,25 +2778,25 @@ class ModelLorentzian(ModelClass):
         return AA*0.5*ss/((XX-x0)*(XX-x0)+0.25*ss*ss)/_np.pi
 
     @staticmethod
-    def _deriv(XX, aa):
+    def _deriv(XX, aa, **kwargs):
         AA, x0, ss = tuple(aa)
         return -1.0*AA*16.0*(XX-x0)*ss/(_np.pi*_np.power(4.0*(XX-x0)*(XX-x0)+ss*ss, 2.0))
 
     @staticmethod
-    def _partial(XX, aa):
+    def _partial(XX, aa, **kwargs):
         AA, x0, ss = tuple(aa)
 
-        gvec = _np.zeros( (3,len(XX)), dtype=_np.float64)
+        gvec = _np.zeros( (3,_np.size(XX)), dtype=_np.float64)
         gvec[0,:] = 0.5*ss/((XX-x0)*(XX-x0)+0.25*ss*ss)/_np.pi
         gvec[1,:] = AA*ss*(XX-x0)/_np.power((XX-x0)*(XX-x0)+0.25*ss*ss, 2.0 )/_np.pi
         gvec[2,:] = AA*(-0.125*ss*ss+0.5*XX*XX-XX*x0+0.5*x0*x0)/_np.power(0.25*ss*ss+(XX-x0)*(XX-x0), 2.0)/_np.pi
         return gvec
 
     @staticmethod
-    def _partial_deriv(XX, aa):
+    def _partial_deriv(XX, aa, **kwargs):
         AA, x0, ss = tuple(aa)
 
-        gvec = _np.zeros( (3,len(XX)), dtype=_np.float64)
+        gvec = _np.zeros( (3,_np.size(XX)), dtype=_np.float64)
         gvec[0,:] = -1.0*16.0*(XX-x0)*ss/(_np.pi*_np.power(4.0*(XX-x0)*(XX-x0)+ss*ss, 2.0))
         gvec[1,:] = 16.0*AA*ss*(-12.0*x0*x0+24.0*x0*XX+ss*ss-12.0*XX*XX)/(_np.pi*_np.power(4.0*x0*x0-8.0*x0*XX+ss*ss+4.0*XX*XX, 3.0))
         gvec[2,:] = 16.0*AA*(XX-x0)*(3.0*ss*ss-4.0*(XX*XX-2.0*XX*x0+x0*x0))/(_np.pi*_np.power(ss*ss+4.0*(XX*XX-2.0*XX*x0+x0*x0), 3.0))
@@ -2697,24 +2868,24 @@ class ModelPseudoVoigt(ModelClass):
     # end def __init__
 
     @staticmethod
-    def _model(XX, aa):
+    def _model(XX, aa, **kwargs):
         return (aa[0]*ModelLorentzian._model(XX, aa[1:4])
                 (1.0-aa[0])*ModelNormal._model(XX, aa[4:]))
 
     @staticmethod
-    def _deriv(XX, aa):
+    def _deriv(XX, aa, **kwargs):
         return (aa[0]*ModelLorentzian._deriv(XX, aa[1:4])
                 (1.0-aa[0])*ModelNormal._deriv(XX, aa[4:]))
 
     @staticmethod
-    def _partial(XX, aa):
+    def _partial(XX, aa, **kwargs):
         gvec = _np.concatenate( (ModelPseudoVoigt.model/aa[0],
                             aa[0]*ModelLorentzian._partial(XX, aa[1:4]),
                            (1.0-aa[0])*ModelNormal._partial(XX, aa[4:])), axis=0)
         return gvec
 
     @staticmethod
-    def _partial_deriv(XX, aa):
+    def _partial_deriv(XX, aa, **kwargs):
         dgdx = _np.concatenate( (ModelPseudoVoigt.derivative/aa[0],
                                  aa[0]*ModelLorentzian._partial_deriv(XX, aa[1:4]),
                            (1.0-aa[0])*ModelNormal._partial_deriv(XX, aa[4:])), axis=0)
@@ -2784,7 +2955,7 @@ class ModelLogLorentzian(ModelClass):
     # end def __init__
 
     @staticmethod
-    def _model(XX, aa):
+    def _model(XX, aa, **kwargs):
         """
         log of a Lorentzian
             f = 10*log10(  0.5*A*s / ( (x-xo)**2.0 + 0.25*ss**2.0 ) / pi  )
@@ -2801,7 +2972,7 @@ class ModelLogLorentzian(ModelClass):
                - 10.0*_np.log10(_np.abs(_np.power(XX-x0, 2.0) + 0.25*_np.power(ss, 2.0) ) ) )
 
     @staticmethod
-    def _deriv(XX, aa):
+    def _deriv(XX, aa, **kwargs):
         """
         derivative of the log of a Lorentzian
             f = 10*log10( 0.5*A*s ) - 10*log10(pi)
@@ -2814,7 +2985,7 @@ class ModelLogLorentzian(ModelClass):
         return -20.0*(XX-x0)/( _np.log(10) *( _np.power(XX-x0, 2.0)+0.25*_np.power(ss, 2.0)) )
 
     @staticmethod
-    def _partial(XX, aa):
+    def _partial(XX, aa, **kwargs):
         """
         jacobian of the log of a Lorentzian
         f = 10*log10( 0.5*A*s ) - 10*log10(pi)
@@ -2834,14 +3005,14 @@ class ModelLogLorentzian(ModelClass):
        """
         AA, x0, ss = tuple(aa)
 
-        gvec = _np.zeros( (3,len(XX)), dtype=_np.float64)
+        gvec = _np.zeros( (3,_np.size(XX)), dtype=_np.float64)
         gvec[0,:] = 10.0/(_np.log(10.0)*AA)
         gvec[1,:] = 20.0*(XX-x0)/( _np.log(10.0)*(_np.power(XX-x0, 2.0) + 0.25*_np.power(ss, 2.0 )))
         gvec[2,:] = 10.0/(_np.log(10.0)*ss) - 5.0*ss/( _np.log(10.0)*(_np.power(XX-x0, 2.0) + 0.25*_np.power(ss, 2.0 )))
         return gvec
 
     @staticmethod
-    def _partial_deriv(XX, aa):
+    def _partial_deriv(XX, aa, **kwargs):
         """
         derivative of the log of a Lorentzian
         f = 10*log10( 0.5*A*s ) - 10*log10(pi)
@@ -2856,7 +3027,7 @@ class ModelLogLorentzian(ModelClass):
         """
         AA, x0, ss = tuple(aa)
 
-        gvec = _np.zeros( (3,len(XX)), dtype=_np.float64)
+        gvec = _np.zeros( (3,_np.size(XX)), dtype=_np.float64)
         gvec[1,:] = 80.0*(ss-2.0*(XX-x0))*(ss+2.0*(XX-x0))/( _np.log(10)*_np.power( 4.0*_np.power(XX-x0, 2.0) + _np.power(ss, 2.0) , 2.0) )
         gvec[2,:] = 10.0*ss*(XX-x0)/(_np.log(10.0)*_np.power(_np.power(XX-x0, 2.0)+0.25*_np.power(ss, 2.0), 2.0) )
         return gvec
@@ -2997,20 +3168,30 @@ class ModelDoppler(ModelClass):
     def __init__(self, XX, af=None, **kwargs):
         model_order = kwargs.setdefault('model_order', 2)
         noshift = kwargs.setdefault('noshift', True)
+        Fs = kwargs.setdefault('Fs', 1.0)
         self._af = ModelNormal._af
         self._LB = ModelNormal._LB
         self._UB = ModelNormal._UB
+        self._LB[0] = 1e-18
+        self._LB[1:] = -0.5*Fs
+        self._UB[1:] =  0.5*Fs
         self._fixed = ModelNormal._fixed
         if model_order>0:
             self._af = _np.asarray(self._af.tolist()+ModelLorentzian._af.tolist())
             self._LB = _np.asarray(self._LB.tolist()+ModelLorentzian._LB.tolist())
             self._UB = _np.asarray(self._UB.tolist()+ModelLorentzian._UB.tolist())
+            self._LB[3] = 1e-18
+            self._LB[4:] = -0.5*Fs
+            self._UB[4:] =  0.5*Fs
             self._fixed = _np.asarray(self._fixed.tolist()+ModelLorentzian._fixed.tolist())
             if noshift:    self._fixed[4] = 1      # end if
         if model_order>1:
             self._af = _np.asarray(self._af.tolist()+ModelNormal._af.tolist())
             self._LB = _np.asarray(self._LB.tolist()+ModelNormal._LB.tolist())
             self._UB = _np.asarray(self._UB.tolist()+ModelNormal._UB.tolist())
+            self._LB[6] = 1e-18
+            self._LB[7:] = -0.5*Fs
+            self._UB[7:] =  0.5*Fs
             self._fixed = _np.asarray(self._fixed.tolist()+ModelNormal._fixed.tolist())
             self._af[7] *= -1.0
         # end if
@@ -3238,7 +3419,9 @@ class _ModelTwoPower(ModelClass):
     _LB = _np.asarray([  1e-18,   1e-18, -_np.inf], dtype=_np.float64)
     _UB = _np.asarray([_np.inf, _np.inf, _np.inf], dtype=_np.float64)
     _fixed = _np.zeros( (3,), dtype=int)
+    # _rzero = 1.0
     def __init__(self, XX, af=None, **kwargs):
+        # kwargs.setdefault('rzero', self._rzero)
         super(_ModelTwoPower, self).__init__(XX, af, **kwargs)
     # end def __init__
 
@@ -3247,6 +3430,9 @@ class _ModelTwoPower(ModelClass):
         """
             f = (1.0 - x**c)**d
         non-trival domain:  c>0 and 0<=x<1  or   c<0 and x>1
+
+        Note that by definition, f = 0 at x=1
+            if f is modified to (r-x**c)**d, then the boundary changes to r
         """
         XX = _np.copy(XX)
         c, d = tuple(aa)
@@ -3256,8 +3442,9 @@ class _ModelTwoPower(ModelClass):
         prof[XX>=1] = -1.0*_np.power(1.0-_np.power(_np.abs(XX[XX>=1]), -c), d)
         return prof
 
+
     @staticmethod
-    def _model(XX, aa):
+    def _model(XX, aa, **kwargs):
         """
         model a two-power fit
             f = a*(1.0 - x**c)**d
@@ -3270,7 +3457,7 @@ class _ModelTwoPower(ModelClass):
         return a*_ModelTwoPower._model_base(XX, [c,d])
 
     @staticmethod
-    def _deriv(XX, aa):
+    def _deriv(XX, aa, **kwargs):
         """
             f = a*(1.0 - x^c)^d
          dfdx = -a*c*d*x^(c-1)*(1.0 - x**c)**(d-1)
@@ -3278,13 +3465,12 @@ class _ModelTwoPower(ModelClass):
        """
         XX = _np.copy(_np.abs(XX))
         a, c, d = tuple(aa)
-#        dfdx = _np.zeros_like(XX)
         dfdx = -1.0*c*d*_np.power(XX, c-1.0)*_ModelTwoPower._model(XX, [a, c, d-1.0])
     #    return -1.0*a*c*d*_np.power(XX, c-1.0)*_np.power(1.0-_np.power(XX,c), d-1.0)
         return dfdx
 
     @staticmethod
-    def _partial(XX, aa):
+    def _partial(XX, aa, **kwargs):
         """
             f = a*(1.0 - x^c)^d
          dfdx = -a*c*d*x^(c-1)*(1.0 - x**c)**(d-1)
@@ -3305,7 +3491,7 @@ class _ModelTwoPower(ModelClass):
         return gvec
 
     @staticmethod
-    def _partial_deriv(XX, aa):
+    def _partial_deriv(XX, aa, **kwargs):
         """
             f = a*(1.0 - x^c)^d
          dfdx = -a*c*d*x^(c-1)*(1.0 - x**c)**(d-1)
@@ -3392,7 +3578,7 @@ class ModelTwoPower(ModelClass):
     # end def __init__
 
     @staticmethod
-    def _model(XX, aa):
+    def _model(XX, aa, **kwargs):
         """
          one option: f/a = (1-b)*(1-x^c)^d + b
          2nd option: f = (a-b)*(1- x^c)^d + b
@@ -3404,7 +3590,7 @@ class ModelTwoPower(ModelClass):
         return (1.0-b)*_twopower(XX, [a, c, d]) + a*b
 
     @staticmethod
-    def _deriv(XX, aa):
+    def _deriv(XX, aa, **kwargs):
         """
         f/a = (1-b)*(1-x^c)^d + b
         dfdx = a*(1-b)*c*d*x^(c-1)*(1-x^c)^(d-1)
@@ -3415,7 +3601,7 @@ class ModelTwoPower(ModelClass):
         return (1.0-b)*_deriv_twopower(XX, [a, c, d])
 
     @staticmethod
-    def _partial(XX, aa):
+    def _partial(XX, aa, **kwargs):
         """
         f/a = (1-b)*(1-x^c)^d + b
         dfdx = a*b*c*d*x^(c-1)*(1-x^c)^(d-1)
@@ -3430,16 +3616,18 @@ class ModelTwoPower(ModelClass):
         XX = _np.copy(XX)
         a, b, c, d = tuple(aa)
 
-        nx = len(XX)
+        nx = _np.size(XX)
         gvec = _np.zeros((4, nx), dtype=_np.float64)
         gvec[0, :] = twopower(XX, [1.0, b, c, d])
         gvec[1, :] = a-_twopower(XX, [a, c, d])
         gvec[2, :] = -d*_np.log(_np.abs(XX))*_np.power(_np.abs(XX), c)*twopower(XX, [a, b, c, d-1.0])
         gvec[3, :] = (1.0-b)*_twopower(XX, [a, c, d])*_np.log(_np.abs(_twopower(XX, [1.0, c, 1.0])))
+        if (_np.isnan(gvec)).any():
+            print('debugging')
         return gvec
 
     @staticmethod
-    def _partial_deriv(XX, aa):
+    def _partial_deriv(XX, aa, **kwargs):
         """
         f/a = (1-b)*(1-x^c)^d + b
         dfdx = -a*(1-b)*c*d*x^(c-1)*(1-x^c)^(d-1)
@@ -3463,7 +3651,7 @@ class ModelTwoPower(ModelClass):
         a, b, c, d = tuple(aa)
         dfdx = deriv_twopower(XX, aa)
 
-        nx = len(XX)
+        nx = _np.size(XX)
         dgdx = _np.zeros((4, nx), dtype=_np.float64)
         dgdx[0, :] = dfdx/a
         dgdx[1, :] = -dfdx/(1.0-b)
@@ -3542,7 +3730,7 @@ class ModelExpEdge(ModelClass):
 
     """
     _af = _np.asarray([2.0, 1.0], dtype=_np.float64)
-    _LB = _np.asarray([   1e-18,-_np.inf], dtype=_np.float64)
+    _LB = _np.asarray([   1e-18, 1e-18], dtype=_np.float64)
     _UB = _np.asarray([ _np.inf, _np.inf], dtype=_np.float64)
     _fixed = _np.zeros( (2,), dtype=int)
     def __init__(self, XX, af=None, **kwargs):
@@ -3550,51 +3738,95 @@ class ModelExpEdge(ModelClass):
     # end def __init__
 
     @staticmethod
-    def _model(XX, aa):
-        """
-        model an exponential edge
-            y = e*(1-exp(-x^2/h^2))
-
-              = e *( 1 - gaussian(XX, [1.0, 0.0, _np.sqrt(0.5)*h]) )
-            second-half of a quasi-parabolic (no edge, or power factors)
-            e = hole width
-            h = hole depth
-        """
+    def _exp(XX, aa, **kwargs):
         e, h = tuple(aa)
-        prof = e*(1.0-_np.exp(-_np.square(XX)/_np.square(h)))
-        return prof
+        return _np.exp(-_np.power(XX, 2.0)/_np.power(h, 2.0))
 
     @staticmethod
-    def _deriv(XX, aa):
+    def _model(XX, aa, **kwargs):
         """
         model an exponential edge
-            y = e*(1-exp(-x^2/h^2))
-
-              = e *( 1 - gaussian(XX, [1.0, 0.0, _np.sqrt(0.5)*h]) )
-            second-half of a quasi-parabolic (no edge, or power factors)
             e = hole width
             h = hole depth
+            f = e*(1-exp(-x^2/h^2))
+              = e *( 1 - gaussian(XX, [1.0, 0.0, _np.sqrt(0.5)*h]) )
         """
         e, h = tuple(aa)
-        return 2.0*XX*e*_np.exp(-_np.square(XX)/_np.square(h))/_np.square(h)
+        return e*(1.0-ModelExpEdge._exp(XX, aa, **kwargs))
+#        return e*(1.0-_np.exp(-_np.power(XX, 2.0)/_np.power(h, 2.0)))
 
     @staticmethod
-    def _partial(XX, aa):
+    def _deriv(XX, aa, **kwargs):
+        """
+        model an exponential edge
+            e = hole width
+            h = hole depth
+        f = e*(1-exp(-x^2/h^2))
+          = e *( 1 - gaussian(XX, [1.0, 0.0, _np.sqrt(0.5)*h]) )
+
+        dfdx = 2ex/h^2 exp(-x^2/h^2)
+        """
         e, h = tuple(aa)
-        gvec = _np.zeros((2,len(XX)), dtype=_np.float64)
-        gvec[0,:] =  1.0 - _np.exp(-_np.square(XX)/_np.square(h))
-        gvec[1,:] = -2.0*_np.square(XX)*e*_np.exp(-_np.square(XX)/_np.square(h))/_np.power(h,3)
+        return (2.0*XX*e/_np.power(h, 2.0))*ModelExpEdge._exp(XX, aa, **kwargs)
+
+    @staticmethod
+    def _partial(XX, aa, **kwargs):
+        """
+        model an exponential edge
+            e = hole width
+            h = hole depth
+        f = e*(1-exp(-x^2/h^2))
+          = e *( 1 - gaussian(XX, [1.0, 0.0, _np.sqrt(0.5)*h]) )
+
+        dfdx = 2ex/h^2 exp(-x^2/h^2)
+
+        dfde = 1-exp(-x^2/h^2)
+        dfdh = -e*exp(-x^2/h^2)*(-1*-2*x^2/h^3) = (-2ex^2/h^3)*exp(-x^2/h^2)
+
+        dfde = f/e
+        dfdh = -x/h*dfdx
+        """
+        e, h = tuple(aa)
+        gvec = _np.zeros((2,_np.size(XX)), dtype=_np.float64)
+        gvec[0,:] =  1.0 - ModelExpEdge._exp(XX, aa, **kwargs)
+        gvec[1,:] = (-2.0*e*_np.power(XX, 2.0)/_np.power(h, 3.0))*ModelExpEdge._exp(XX, aa, **kwargs)
+#        gvec[0,:] =  ModelExpEdge._model(XX, aa, **kwargs)/e
+#        gvec[1,:] = (-XX/h)*ModelExpEdge._deriv(XX, aa, **kwargs)
         return gvec
 
     @staticmethod
-    def _partial_deriv(XX, aa):
+    def _partial_deriv(XX, aa, **kwargs):
+        """
+        model an exponential edge
+            e = hole width
+            h = hole depth
+        f = e*(1-exp(-x^2/h^2))
+          = e *( 1 - gaussian(XX, [1.0, 0.0, _np.sqrt(0.5)*h]) )
+
+        dfdx = 2ex/h^2 exp(-x^2/h^2)
+
+        dfde = 1-exp(-x^2/h^2)
+        dfdh = -e*exp(-x^2/h^2)*(-1*-2*x^2/h^3) = (-2ex^2/h^3)*exp(-x^2/h^2)
+
+        dfde = f/e
+        dfdh = -x/h*dfdx
+
+        d2fdxde = 2x/h^2 exp(-x^2/h^2)
+        d2fdxdh = -2*2ex/h^3 exp(-x^2/h^2) + 2ex/h^2 (-2x^2/h^3) exp(-x^2/h^2)
+                = (-4ex/h^3 - 4ex^3/h^5)exp(-x^2/h^2)
+                = -4ex/h^3 (1.0 + x^2/h^2) exp(-x^2/h^2)
+                = -4ex/h^5 (h+x)(h-x)exp(-x^2/h^2)
+        """
         e, h = tuple(aa)
-        gvec = _np.zeros((2,len(XX)), dtype=_np.float64)
-        gvec[0,:] = 2.0*XX*_np.exp(-_np.square(XX)/_np.square(h))/_np.square(h)
-        gvec[1,:] = 4.0*XX*e*_np.exp(-_np.square(XX)/_np.square(h)) * (_np.square(XX)-_np.square(h))/_np.power(h,5)
+        gvec = _np.zeros((2,_np.size(XX)), dtype=_np.float64)
+        gvec[0,:] = (2.0*XX/_np.power(h, 2.0))*ModelExpEdge._exp(XX, aa, **kwargs)
+        gvec[1,:] = (-4.0*e*XX/_np.power(h,5.0))*(h-XX)*(h+XX)*ModelExpEdge._exp(XX, aa, **kwargs)
         return gvec
-#    @staticmethod
-#    def _hessian(XX, aa):
+
+    @staticmethod
+    def _hessian(XX, aa):
+        return None
+#        raise NotImplementedError
 
     # ====================================== #
 
@@ -3607,7 +3839,7 @@ class ModelExpEdge(ModelClass):
                 h = h'
                 possible with constant coefficients
 
-          y-shifting: y' = (y-yo)/ys
+          y-shifting: y' = (y-yo)/ys  # NOT POSSIBLE
             y' = (y-yo)/ys = e'*(1-exp(-x^2/h'^2))
 
             y = yo + ys*e' * (1-exp(-x^2/h'^2))
@@ -3620,7 +3852,13 @@ class ModelExpEdge(ModelClass):
             y' = y/ys = e'*(1-exp(-x^2/(xs*h')^2))
                 e = e'*ys
                 h = h'*xs
-          x-shifting not possible with constant coefficients
+
+          x-shifting: x'=(x-xo)/xs  # NOT POSSIBLE
+            y' = y/ys = e'*(1-exp(-(x-xo)^2/(xs*h')^2))
+               = e'*ys*( 1-exp(-x^2/(xs*h')^2)exp(-2xox/(xs*h')^2)exp(-xo^2/(xs*h')^2) )
+
+               = e'*ys*exp(-xo^2/(xs*h')^2)( exp(xo^2/(xs*h')^2)-exp(-x^2/(xs*h')^2)exp(-2xox/(xs*h')^2) )
+                  still not possible
         """
         aout = _np.copy(ain)
         aout[0] = slope*aout[0]
@@ -3730,16 +3968,21 @@ class ModelQuasiParabolic(ModelClass):
     aa[2],aa[3]-  pp, qq - power scaling parameters
     aa[4],aa[5]-  hh, ww - hole depth and width
 
-        b+(1-b)*(1-XX^c)^d
+    f/a = prof1/a + prof2/a
+
+        prof1 = a*( b+(1-b)*(1-XX^c)^d )    # ModelTwoPower
     {x element R: (d>0 and c=0 and x>0) or (d>0 and x=1)
             or (c>0 and 0<=x<1) or (c<0 and x>1) }
+
+        prof2 = e*(1-exp(-XX^2/h^2))        # EdgePower
+   {x element R}
+
         nohollow = True
         af = _np.hstack((af,0.0))
         af = _np.hstack((af,1.0))
 
         Y0 = core
         YO*aa[1] = edge
-
     """
     _af = _np.asarray([1.0, 0.002, 2.0, 0.7, -0.24, 0.30], dtype=_np.float64)
     _LB = _np.asarray([1e-18, 0.0,  1e-18,-10,-1, 0], dtype=_np.float64)
@@ -3755,33 +3998,35 @@ class ModelQuasiParabolic(ModelClass):
     # end def __init__
 
     @staticmethod
-    def _model(XX, aa):
+    def _model(XX, aa, **kwargs):
         a, b, c, d, e, f = tuple(aa)
         prof = ( ModelTwoPower._model(XX, [a, b-e, c, d])
                  + a*ModelExpEdge._model(XX, [e, f]) )
         return prof
 
     @staticmethod
-    def _deriv(XX, aa):
+    def _deriv(XX, aa, **kwargs):
         a, b, c, d, e, f = tuple(aa)
         return ( ModelTwoPower._deriv(XX, [a, b-e, c, d])
                  + a*ModelExpEdge._deriv(XX, [e, f]) )
 
     @staticmethod
-    def _partial(XX, aa):
+    def _partial(XX, aa, **kwargs):
         a, b, c, d, e, f = tuple(aa)
-        gvec = _np.zeros((6,len(XX)), dtype=_np.float64)
+        gvec = _np.zeros((6,_np.size(XX)), dtype=_np.float64)
         gvec[0, :] = ModelQuasiParabolic._model(XX, aa)/a
         gvec[1:4,:] = ModelTwoPower._partial(XX, [a, b-e, c, d])[1:,:]
         gvec[4:, :] = a*ModelExpEdge._partial(XX, [e, f])
     #    gvec = _np.concatenate(gvec, ModelTwoPower._partial(XX, [a, b-e, c, d]), axis=0)
     #    gvec = _np.concatenate(gvec, a*ModelExpEdge._partial(XX, [e, f]), axis=0)
+        if (_np.isnan(gvec)).any():
+            print('debugging')
         return gvec
 
     @staticmethod
-    def _partial_deriv(XX, aa):
+    def _partial_deriv(XX, aa, **kwargs):
         a, b, c, d, e, f = tuple(aa)
-        gvec = _np.zeros((6,len(XX)), dtype=_np.float64)
+        gvec = _np.zeros((6,_np.size(XX)), dtype=_np.float64)
         gvec[0, :] = ModelQuasiParabolic._deriv(XX, aa)/a
         gvec[1:4,:] = ModelTwoPower._partial_deriv(XX, [a, b-e, c, d])[1:,:]
         gvec[4:,:] = a*ModelExpEdge._partial_deriv(XX, [e, f])
@@ -3795,65 +4040,65 @@ class ModelQuasiParabolic(ModelClass):
 
     # ====================================== #
 
-#    @staticmethod
-#    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
-#        """
-#        rescaling: y'=(y-yo)/ys
-#            y' = a0'*( a1'-a4'+(1-a1'+a4')*(1-x^a2')^a3' + a4'*(1-exp(x^2/a5'^2)))
-#               = a0'*a1'-a0'*a4' + a0'*(1-a1'+a4')*(...) + a0'*a4'*(...)
-#               = -a4' + (1+a4')*(...) + a4'*(...)
-#
-#            y = yo+a0'*(...)
-#                by inspection
-#                (1)
-#            constants :    a0*a1-a0*a4 = yo+a0'*a1'-a0'*a4'
-#
-#            and (2)
-#            (1-x^a2)^a3 :   a0*(1-a1+a4) = a0'*(1-a1'+a4')
-#                     a0-a1*a0+a0*a4 = a0'-a0'*a1'+a0'*a4'
-#            and (3)
-#            (1-exp(x^2/a5^2)) : a0*a4 = a0'*a4'
-#                                    --------
-#                    use (3) in (1):  a0*a1 = yo+a0'*a1'
-#                        (3) in (2):  a0-a1*a0 = a0'-a0'*a1' ->
-#                                    a0*(1-a1) = a0'*(1-a1')
-#                                    --------
-#                  a0 = a0'*(1-a1)/(1-a1') = (yo+a0'*a1')/a1
-#                   a0'*(1-a1)/(1-a1') = (yo+a0'*a1')/a1
-#                        a0'*(1-a1)*a1 = (1-a1')*(yo+a0'*a1')
-#                        a1-a1^2 = (1-a1')*(yo/a0'+a1')
-#                        a1-a1^2 = yo/a0'+a1'-yo*a1'/a0'-a1'^2
-#
-#                            a1 = yo/a0' + a1' - yo*a1'/a0'
-#                            a0 = a0'*(1-a1)/(1-a1')
-#                            a4 = a0'*a4'/a0
-#
-#        rescaling: x'=(x-xo)/xs
-#            is not possible because of the non-linearities in the x-functions
-#                (1-x^a2)^a3 = (1-(x-xo)^a2'/xs^a2')^a3'
-#
-#          and   exp(x^2/a5^2) = exp((x-xo)^2/(xs*a5')^2)
-#                exp(x/a5) = exp((x-xo)/(xs*a5'))
-#                    x/a5 = (x-xo)/(xs*a5')
-#                    x*xs*a5' = x*a5-xo*a5
-#                    independence of x means that x*(xs*a5'-a5) = 0, a5 = xs*a5'
-#                    but x*xs*a5' = x*xs*a5'-xo*a5 requires that xo == 0
-#
-#                (1-x^a2)^a3 = (1-x^a2'/xs^a2')^a3'
-#                a3*ln(1-x^a2) = a3'*ln(1-x^a2'/xs^a2')
-#                    assume a3 == a3'
-#                    x^a2 = x^a2'/xs^a2'
-#                    a2*ln(x) = a2'*ln(x)-a2'*ln(xs)
-#                        a2 = a2'*(1-ln(xs)/ln(x))  ... only works if xs = 1.0
-#        a1 = yo/a0' + a1' - yo*a1'/a0'
-#        a0 = a0'*(1-a1)/(1-a1')
-#        a4 = a0'*a4'/a0
-#        """
-#        aout = _np.copy(ain)
-#        aout[1] = offset/ain[0] + ain[1] - offset*ain[1]/ain[0]
-#        aout[0] = ain[0]*(1-aout[1])/(1-ain[1])
-#        aout[4] = ain[0]*ain[4]/aout[0]
-#        return aout
+    @staticmethod
+    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
+        """
+        rescaling: y'=(y-yo)/ys
+            y' = a0'*( a1'-a4'+(1-a1'+a4')*(1-x^a2')^a3' + a4'*(1-exp(x^2/a5'^2)))
+               = a0'*a1'-a0'*a4' + a0'*(1-a1'+a4')*(...) + a0'*a4'*(...)
+               = -a4' + (1+a4')*(...) + a4'*(...)
+
+            y = yo+a0'*(...)
+                by inspection
+                (1)
+            constants :    a0*a1-a0*a4 = yo+a0'*a1'-a0'*a4'
+
+            and (2)
+            (1-x^a2)^a3 :   a0*(1-a1+a4) = a0'*(1-a1'+a4')
+                     a0-a1*a0+a0*a4 = a0'-a0'*a1'+a0'*a4'
+            and (3)
+            (1-exp(x^2/a5^2)) : a0*a4 = a0'*a4'
+                                    --------
+                    use (3) in (1):  a0*a1 = yo+a0'*a1'
+                        (3) in (2):  a0-a1*a0 = a0'-a0'*a1' ->
+                                    a0*(1-a1) = a0'*(1-a1')
+                                    --------
+                  a0 = a0'*(1-a1)/(1-a1') = (yo+a0'*a1')/a1
+                   a0'*(1-a1)/(1-a1') = (yo+a0'*a1')/a1
+                        a0'*(1-a1)*a1 = (1-a1')*(yo+a0'*a1')
+                        a1-a1^2 = (1-a1')*(yo/a0'+a1')
+                        a1-a1^2 = yo/a0'+a1'-yo*a1'/a0'-a1'^2
+
+                            a1 = yo/a0' + a1' - yo*a1'/a0'
+                            a0 = a0'*(1-a1)/(1-a1')
+                            a4 = a0'*a4'/a0
+
+        rescaling: x'=(x-xo)/xs
+            is not possible because of the non-linearities in the x-functions
+                (1-x^a2)^a3 = (1-(x-xo)^a2'/xs^a2')^a3'
+
+          and   exp(x^2/a5^2) = exp((x-xo)^2/(xs*a5')^2)
+                exp(x/a5) = exp((x-xo)/(xs*a5'))
+                    x/a5 = (x-xo)/(xs*a5')
+                    x*xs*a5' = x*a5-xo*a5
+                    independence of x means that x*(xs*a5'-a5) = 0, a5 = xs*a5'
+                    but x*xs*a5' = x*xs*a5'-xo*a5 requires that xo == 0
+
+                (1-x^a2)^a3 = (1-x^a2'/xs^a2')^a3'
+                a3*ln(1-x^a2) = a3'*ln(1-x^a2'/xs^a2')
+                    assume a3 == a3'
+                    x^a2 = x^a2'/xs^a2'
+                    a2*ln(x) = a2'*ln(x)-a2'*ln(xs)
+                        a2 = a2'*(1-ln(xs)/ln(x))  ... only works if xs = 1.0
+        a1 = yo/a0' + a1' - yo*a1'/a0'
+        a0 = a0'*(1-a1)/(1-a1')
+        a4 = a0'*a4'/a0
+        """
+        aout = _np.copy(ain)
+        aout[1] = offset/ain[0] + ain[1] - offset*ain[1]/ain[0]
+        aout[0] = ain[0]*(1-aout[1])/(1-ain[1])
+        aout[4] = ain[0]*ain[4]/aout[0]
+        return aout
 
     # ====================================== #
 
@@ -3904,7 +4149,7 @@ class ModelFlattop(ModelClass):
     # end def __init__
 
     @staticmethod
-    def _model(XX, aa):
+    def _model(XX, aa, **kwargs):
         """
         A flat-top plasma parameter profile with three free parameters:
             a, b, c
@@ -3916,7 +4161,7 @@ class ModelFlattop(ModelClass):
         return a / (1.0 + temp)
 
     @staticmethod
-    def _deriv(XX, aa):
+    def _deriv(XX, aa, **kwargs):
         """
         prof ~ f(x) = a / (1 + (x/b)^c)
         dfdx = -1*c*x^(c-1)*b^-c* a/(1+(x/b)^c)^2
@@ -3927,7 +4172,7 @@ class ModelFlattop(ModelClass):
         return -1.0*a*c*temp/(XX*_np.power(1.0+temp,2.0))
 
     @staticmethod
-    def _partial(XX, aa):
+    def _partial(XX, aa, **kwargs):
         """
         prof ~ f(x) = a / (1 + (x/b)^c)
         dfdx = -1*c*x^(c-1)*b^-c* a/(1+(x/b)^c)^2
@@ -3937,7 +4182,7 @@ class ModelFlattop(ModelClass):
         dfdb = a*c*(x/b)^c/(b*(1+(x/b)^c)^2)
         dfdc = a*_np.log(x/b)*(x/b)^c / (1+(x/b)^c)^2
         """
-        nx = len(XX)
+        nx = _np.size(XX)
         a, b, c = tuple(aa)
         temp = _np.power(XX/b, c)
         prof = flattop(XX, aa)
@@ -3949,7 +4194,7 @@ class ModelFlattop(ModelClass):
         return gvec
 
     @staticmethod
-    def _partial_deriv(XX, aa):
+    def _partial_deriv(XX, aa, **kwargs):
         """
         prof ~ f(x) = a / (1 + (x/b)^c)
         dfdx = -1*c*x^(c-1)*b^-c* a/(1+(x/b)^c)^2
@@ -3970,7 +4215,7 @@ class ModelFlattop(ModelClass):
                 = prof*dfdx/(a*c) * ( -(x/b)^c + c*(x/b)^c*ln|x/b| - c*ln|x/b| - 1.0  )
 
         """
-        nx = len(XX)
+        nx = _np.size(XX)
         a, b, c = tuple(aa)
         temp = _np.power(XX/b, c)
         prof = flattop(XX, aa)
@@ -4069,12 +4314,12 @@ class ModelMassberg(ModelClass):
     # end def __init__
 
 #    @staticmethod
-#    def _model(XX, aa):
+#    def _model(XX, aa, **kwargs):
 #        a, b, c, h = tuple(aa)
 #        return a*(1.0-h*(XX/b)) / (1+_np.power(XX/b, c))
 
     @staticmethod
-    def _model(XX, aa):
+    def _model(XX, aa, **kwargs):
         """
         f = a*(1-h*x/b)/(1+(x/b)^c)
           = flattop*(1-h*x/b)
@@ -4085,7 +4330,7 @@ class ModelMassberg(ModelClass):
         return prft * (1-h*temp)
 
     @staticmethod
-    def _deriv(XX, aa):
+    def _deriv(XX, aa, **kwargs):
         """
         f = a*(1-h*x/b)/(1+(x/b)^c)
           = flattop*(1-h*x/b)
@@ -4100,7 +4345,7 @@ class ModelMassberg(ModelClass):
         return drft*(1-h*temp) - prft*h/b
 
     @staticmethod
-    def _partial(XX, aa):
+    def _partial(XX, aa, **kwargs):
         """
         f = a*(1-h*x/b)/(1+(x/b)^c)
           = flattop*(1-h*x/b)
@@ -4113,7 +4358,7 @@ class ModelMassberg(ModelClass):
         dfdh = dflattop/dh *(1-h*x/b) - flattop*x/b
              = -flattop*x/b
         """
-        nx = len(XX)
+        nx = _np.size(XX)
         a, b, c, h = tuple(aa)
         prft = flattop(XX, [a, b, c])
         gft = partial_flattop(XX, [a, b, c])
@@ -4129,7 +4374,7 @@ class ModelMassberg(ModelClass):
         return gvec
 
     @staticmethod
-    def _partial_deriv(XX, aa):
+    def _partial_deriv(XX, aa, **kwargs):
         """
         f = a*(1-h*x/b)/(1+(x/b)^c)
           = flattop*(1-h*x/b)
@@ -4148,7 +4393,7 @@ class ModelMassberg(ModelClass):
         d2fdxdc = d2flattopdxdc*(1-h*x/b) - dflattopdc*h/b
         d2fdxdh = dflattopdx*(-x/b) - flattop/b
         """
-        nx = len(XX)
+        nx = _np.size(XX)
         a, b, c, h = tuple(aa)
     #    prof = massberg(XX, af)
 #        dprofdx = deriv_massberg(XX, aa)
@@ -4302,16 +4547,16 @@ def model_Heaviside(XX, af=None, **kwargs):
 #    # end def __init__
 #
 #    @staticmethod
-#    def _model(XX, aa):
+#    def _model(XX, aa, **kwargs):
 #
 #    @staticmethod
-#    def _deriv(XX, aa):
+#    def _deriv(XX, aa, **kwargs):
 #
 #    @staticmethod
-#    def _partial(XX, aa):
+#    def _partial(XX, aa, **kwargs):
 #
 #    @staticmethod
-#    def _partial_deriv(XX, aa):
+#    def _partial_deriv(XX, aa, **kwargs):
 #
 ##    @staticmethod
 ##    def _hessian(XX, aa):
@@ -4425,16 +4670,16 @@ def model_StepSeries(XX, af=None, **kwargs):
 #    # end def __init__
 #
 #    @staticmethod
-#    def _model(XX, aa):
+#    def _model(XX, aa, **kwargs):
 #
 #    @staticmethod
-#    def _deriv(XX, aa):
+#    def _deriv(XX, aa, **kwargs):
 #
 #    @staticmethod
-#    def _partial(XX, aa):
+#    def _partial(XX, aa, **kwargs):
 #
 #    @staticmethod
-#    def _partial_deriv(XX, aa):
+#    def _partial_deriv(XX, aa, **kwargs):
 #
 ##    @staticmethod
 ##    def _hessian(XX, aa):
