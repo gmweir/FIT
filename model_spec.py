@@ -43,23 +43,6 @@ class ModelClass(Struct):
         aa = _np.copy(aa)
         return XX, aa
 
-    def checkNans(self, dat):
-#        nonzero = lambda z: _np.nonzero(z+1.101e-16)[0]
-#        flatten = False
-#        if len(_np.shape(dat))==1:
-#            flatten = True
-#            dat = _np.atleast_2d(dat)
-#        m = _np.size(dat, axis=0)
-#        for ii in range(m):
-#            nans = _np.where(_np.isnan(dat[ii,:]) + _np.isinf(dat[ii,:]))[0]
-#            if len(nans)>1:
-#                dat[ii,nans] = _np.interp(nonzero(nans), nonzero(~nans), dat[ii,~nans])
-#        # end for
-#        if flatten:
-#            dat = dat.flatten()
-        return dat
-
-
     def model(self, XX, aa=None, **kwargs):
         """
         Returns the derivative of the model.
@@ -68,7 +51,7 @@ class ModelClass(Struct):
         """
         XX, aa = self.parse_in(XX, aa)
 #        return self._model(XX, aa, **kwargs)
-        return self.checkNans(self._model(XX, aa, **kwargs))
+        return self._model(XX, aa, **kwargs)
 
     def derivative(self, XX, aa=None, **kwargs):
         """
@@ -82,7 +65,7 @@ class ModelClass(Struct):
         XX, aa = self.parse_in(XX, aa)
         if hasattr(self, '_deriv'):
 #            return self._deriv(XX, aa, **kwargs)
-            return self.checkNans(self._deriv(XX, aa, **kwargs))
+            return self._deriv(XX, aa, **kwargs)
         hstep = kwargs.setdefault('hstep', 1e-16)
 
 #        dfdx = _np.zeros((_np.size(XX),), dtype=_np.float64)
@@ -95,7 +78,7 @@ class ModelClass(Struct):
 
         # central difference all points - it is analytic! you can do this!
 #        return (self.model(XX+hstep, aa, **kwargs) - self.model(XX-hstep, aa, **kwargs))/(2*hstep)
-        return self.checkNans((self.model(XX+hstep, aa, **kwargs) - self.model(XX-hstep, aa, **kwargs))/(2*hstep))
+        return (self.model(XX+hstep, aa, **kwargs) - self.model(XX-hstep, aa, **kwargs))/(2*hstep)
         # end if
     # end def derivative
 
@@ -110,7 +93,7 @@ class ModelClass(Struct):
         """
         XX, aa = self.parse_in(XX, aa)
         if hasattr(self, '_partial'):
-            return self.checkNans(self._partial(XX, aa, **kwargs))
+            return self._partial(XX, aa, **kwargs)
         hstep = kwargs.setdefault('hstep', 1e-16)
         numfit = _np.size(aa)
         gvec = _np.zeros((numfit, _np.size(XX)), dtype=_np.float64)
@@ -119,7 +102,7 @@ class ModelClass(Struct):
             tmp[ii] += 1.0
             gvec[ii, :] = (self.model(XX, aa + hstep*tmp, **kwargs) - self.model(XX, aa-hstep*tmp, **kwargs))/(2*hstep)
         # end for
-        return self.checkNans(gvec)
+        return gvec
 
     def derivative_jacobian(self, XX, aa=None, **kwargs):
         """
@@ -132,7 +115,7 @@ class ModelClass(Struct):
         """
         XX, aa = self.parse_in(XX, aa)
         if hasattr(self, '_partial_deriv'):
-            return self.checkNans(self._partial_deriv(XX, aa, **kwargs))
+            return self._partial_deriv(XX, aa, **kwargs)
         hstep = kwargs.setdefault('hstep', 1e-16)
         numfit = _np.size(aa)
         dgdx = _np.zeros((numfit, _np.size(XX)), dtype=_np.float64)
@@ -141,7 +124,7 @@ class ModelClass(Struct):
             tmp[ii] += 1.0
             dgdx[ii, :] = (self.derivative(XX, aa + hstep*tmp, **kwargs) - self.derivative(XX, aa-hstep*tmp, **kwargs))/(2*hstep)
         # end for
-        return self.checkNans(dgdx)
+        return dgdx
 
     def second_derivative(self, XX, aa=None, **kwargs):
         """
@@ -154,10 +137,10 @@ class ModelClass(Struct):
         """
         XX, aa = self.parse_in(XX, aa)
         if hasattr(self, '_deriv2'):
-            return self.checkNans(self._deriv(XX, aa, **kwargs))
+            return self._deriv(XX, aa, **kwargs)
         hstep = kwargs.setdefault('hstep', 1e-16)
         # central difference all points - it is analytic! you can do this!
-        return self.checkNans((self.derivative(XX+hstep, aa, **kwargs) - self.derivative(XX-hstep, aa, **kwargs))/(2*hstep))
+        return (self.derivative(XX+hstep, aa, **kwargs) - self.derivative(XX-hstep, aa, **kwargs))/(2*hstep)
 
     def hessian(self, XX, aa=None, **kwargs):
         """
@@ -194,7 +177,7 @@ class ModelClass(Struct):
         """
         XX, aa = self.parse_in(XX, aa)
         if hasattr(self, '_partial_deriv2'):
-            return self.checkNans(self._partial_deriv2(XX, aa, **kwargs))
+            return self._partial_deriv2(XX, aa, **kwargs)
         hstep = kwargs.setdefault('hstep', 1e-16)
         numfit = _np.size(aa)
         d2gdx2 = _np.zeros((numfit, _np.size(XX)), dtype=_np.float64)
@@ -203,7 +186,7 @@ class ModelClass(Struct):
             tmp[ii] += 1.0
             d2gdx2[ii, :] = (self.second_derivative(XX, aa + hstep*tmp, **kwargs) - self.second_derivative(XX, aa-hstep*tmp, **kwargs))/(2*hstep)
         # end for
-        return self.checkNans(d2gdx2)
+        return d2gdx2
 
 
     # ====================================================== #
@@ -424,6 +407,7 @@ class ModelLine(ModelClass):
     _UB = _np.array([_np.inf, _np.inf], dtype=_np.float64)
     _fixed = _np.array([0, 0], dtype=int)
     def __init__(self, XX, af=None, **kwargs):
+        self._af = _np.random.uniform(low=-10.0, high=10.0, size=2)
         super(ModelLine, self).__init__(XX, af, **kwargs)
     # end def __init__
 
@@ -1221,19 +1205,18 @@ def model_poly(XX, af=None, **kwargs):
 class ModelPoly(ModelClass):
     """
     --- Straight Polynomial ---
-    Model - chi ~ sum( af(ii)*XX^(polyorder-ii))
+    Model - y ~ sum( af(ii)*XX^(polyorder-ii))
     af    - estimate of fitting parameters
     XX    - independent variable
     """
     def __init__(self, XX, af=None, **kwargs):
         if af is not None:
-            num_fit = _np.size(af)  # Number of fitting parameters
-            npoly = _np.int(num_fit-1)  # Polynomial order from input af
+            npoly = _np.size(af)  # Number of fitting parameters
         else:
             npoly = kwargs.setdefault('npoly', 4)
-        self._af = 0.1*_np.ones((npoly+1,), dtype=_np.float64)
-        self._LB = -_np.inf*_np.ones((npoly+1,), dtype=_np.float64)
-        self._UB = _np.inf*_np.ones((npoly+1,), dtype=_np.float64)
+        self._af = _np.random.uniform(low=-5.0, high=5.0, size=npoly)
+        self._LB = -_np.inf*_np.ones((npoly,), dtype=_np.float64)
+        self._UB = _np.inf*_np.ones((npoly,), dtype=_np.float64)
         self._fixed = _np.zeros( _np.shape(self._LB), dtype=int)
         super(ModelPoly, self).__init__(XX, af, **kwargs)
     # end def __init__
@@ -1426,11 +1409,10 @@ class ModelProdExp(ModelClass):
     """
     def __init__(self, XX, af=None, **kwargs):
         if af is not None:
-            num_fit = _np.size(af)  # Number of fitting parameters
-            npoly = _np.int(2*(num_fit-1))  # Polynomial order from input af
+            npoly = _np.size(af)  # Number of fitting parameters
         else:
             npoly = kwargs.setdefault('npoly', 4)
-        self._af = 0.9*_np.ones((npoly+1,), dtype=_np.float64)
+        self._af = _np.random.uniform(low=-5.0, high=5.0, size=npoly)
         self._LB = -_np.inf*_np.ones_like(self._af)
         self._UB = _np.inf*_np.ones_like(self._af)
         self._fixed = _np.zeros(_np.shape(self._LB), dtype=int)
@@ -1459,15 +1441,17 @@ class ModelProdExp(ModelClass):
          gvec(2,1:nx) =        prof;
         """
         nx = _np.size(XX)
-        num_fit = _np.size(aa)  # Number of fitting parameters
+        npoly = _np.size(aa)  # Number of fitting parameters
         prof = prodexp(XX, aa)
 
-        gvec = _np.zeros((num_fit, nx), dtype=_np.float64)
-        for ii in range(num_fit):  # 1:num_fit
-            # Formulated this way, there is an analytic jacobian:
-            kk = num_fit - (ii + 1)
-            gvec[ii, :] = (XX**kk)*prof
+        gvec = _np.zeros((npoly, nx), dtype=_np.float64)
+        for ii in range(npoly):
+            gvec[ii, :] = _np.power(XX, ii)*prof
+#            # Formulated this way, there is an analytic jacobian:
+#            kk = num_fit - (ii + 1)
+#            gvec[ii, :] = (XX**kk)*prof
         # endif
+        gvec = gvec[::-1, :]
         return gvec
 
     @staticmethod
@@ -1488,19 +1472,19 @@ class ModelProdExp(ModelClass):
          The g-vector (jacobian) for the derivative
          dfdx = (...+2*a1*x + a2)*exp(...+a1*x^2+a2*x+a3)
         """
-        num_fit = _np.size(aa)  # Number of fitting parameters
+        npoly = _np.size(aa)  # Number of fitting parameters
 
         prof = prodexp(XX, aa)
         dprofdx = deriv_prodexp(XX, aa)
         gvec = partial_prodexp(XX, aa)
 
         # Product rule:  partial derivatives of the exponential term times the leading derivative polynomial
-        dgdx = gvec.copy()*(_np.ones((num_fit,1), dtype=float)*_np.atleast_2d(dprofdx))
+        dgdx = gvec.copy()*(_np.ones((npoly,1), dtype=float)*_np.atleast_2d(dprofdx))
 
         # Product rule:  exponential term times the partial derivatives of the derivative polynomial
-        for ii in range(num_fit-1):  # 1:num_fit
+        for ii in range(npoly-1):  # 1:npoly
             # Formulated this way, there is an analytic jacobian:
-            kk = num_fit-1 - (ii + 1)
+            kk = npoly-1 - (ii + 1)
             dgdx[ii, :] += (kk+1)*(XX**kk)*prof
         # endif
         return dgdx
@@ -1602,8 +1586,8 @@ class ModelEvenPoly(ModelClass):
         if af is not None:
             npoly = _np.size(af)  # Number of fitting parameters
         else:
-            npoly = kwargs.setdefault('npoly', 4)
-        self._af = 0.1*_np.ones((npoly,), dtype=_np.float64)
+            npoly = kwargs.setdefault('npoly', 3)
+        self._af = _np.random.uniform(low=-5.0, high=5.0, size=npoly)
         self._LB = -_np.inf*_np.ones((npoly,), dtype=_np.float64)
         self._UB = _np.inf*_np.ones((npoly,), dtype=_np.float64)
         self._fixed = _np.zeros( _np.shape(self._LB), dtype=int)
@@ -2150,7 +2134,7 @@ class ModelExponential(ModelClass):
     # end def __init__
 
     @staticmethod
-    def _model(XX, aa, separate=False, **kwargs):
+    def _model(XX, aa, **kwargs):
         """
          f     = a*(exp(b*XX^c) + XX^d) = f1+f2;
         """
@@ -2913,11 +2897,11 @@ def model_gaussian(XX, af=None, **kwargs):
     """
     """
     normalized = kwargs.setdefault('norm', False)
-    offset = kwargs.pop('offset', False)
+    offsetgaussian = kwargs.pop('offsetgaussian', False)
     if normalized:
         return _model(ModelNormal, XX, af, **kwargs)
     else:
-        if offset:
+        if offsetgaussian:
             return _model(ModelOffsetGaussian, XX, af, **kwargs)   # only scalable form
         else:
             return _model(ModelGaussian, XX, af, **kwargs)
@@ -3966,9 +3950,12 @@ class _ModelTwoPower(ModelClass):
         """
          y-scaling is possible, but everything else is non-linear
                      f = a*(1.0 - x^c)^d
+        y' = y/ys
+        y = a*ys*(1-x^c)^d
+        a = ys*a'
         """
         aout = _np.copy(ain)
-        aout[0] *= self.slope
+        aout[0] = self.slope*ain[0]
         return aout
 
     def scalings(self, xdat, ydat, **kwargs):
@@ -4066,8 +4053,8 @@ class ModelTwoPower(ModelClass):
         gvec[1, :] = a-_twopower(XX, [a, c, d])
         gvec[2, :] = -d*_np.log(_np.abs(XX))*_np.power(_np.abs(XX), c)*twopower(XX, [a, b, c, d-1.0])
         gvec[3, :] = (1.0-b)*_twopower(XX, [a, c, d])*_np.log(_np.abs(_twopower(XX, [1.0, c, 1.0])))
-        if (_np.isnan(gvec)).any():
-            print('debugging')
+#        if (_np.isnan(gvec)).any():
+#            print('debugging')
         return gvec
 
     @staticmethod
@@ -4489,8 +4476,8 @@ class ModelQuasiParabolic(ModelClass):
         gvec[4:, :] = a*ModelExpEdge._partial(XX, [e, f])
     #    gvec = _np.concatenate(gvec, ModelTwoPower._partial(XX, [a, b-e, c, d]), axis=0)
     #    gvec = _np.concatenate(gvec, a*ModelExpEdge._partial(XX, [e, f]), axis=0)
-        if (_np.isnan(gvec)).any():
-            print('debugging')
+#        if (_np.isnan(gvec)).any():
+#            print('debugging')
         return gvec
 
     @staticmethod
