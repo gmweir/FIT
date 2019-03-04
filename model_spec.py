@@ -84,17 +84,7 @@ class ModelClass(Struct):
         else:
             hh = hstep
         # end if
-        # central difference all points - it is analytic! you can do this!
-#        return (self.model(XX+hstep, aa, **kwargs) - self.model(XX-hstep, aa, **kwargs))/(2*hstep)
-        # 2nd order accurate
-        return (self.model(XX+hh, aa, **kwargs) - self.model(XX-hh, aa, **kwargs))/(2.0*hh)
-#        # 4th order accurate
-#        return (-self.model(XX+2*hh, aa, **kwargs) + 8.0*self.model(XX+hh, aa, **kwargs)
-#              -8.0*self.model(XX-hh, aa, **kwargs) +self.model(XX-2.0*hh, aa, **kwargs))/(12.0*hh)
-#        # 6th order accurate
-#        return (-self.model(XX-3.0*hh, aa, **kwargs) + 9.0*self.model(XX-2.0*hh, aa, **kwargs)
-#              -45.0*self.model(XX-hh, aa, **kwargs) + 45.0*self.model(XX+hh, aa, **kwargs)
-#              -9.0*self.model(XX+2.0*hh, aa, **kwargs) + self.model(XX+3.0*hh, aa, **kwargs))/(60.0*hh)
+        return self._1stderiv_fd(self.model, XX, hh, aa, order=4, **kwargs)
         # end if
     # end def derivative
 
@@ -132,7 +122,14 @@ class ModelClass(Struct):
             tmp = _np.zeros_like(aa)
             tmp[ii] += 1.0
 #            gvec[ii, :] = (self.model(XX, aa + hstep*tmp, **kwargs) - self.model(XX, aa-hstep*tmp, **kwargs))/(2*hstep)
-            gvec[ii, :] = (self.model(XX, aa + hh*tmp, **kwargs) - self.model(XX, aa-hh*tmp, **kwargs))/(2*hh[ii])
+            # 1st derivative, 2nd order accurate
+#            gvec[ii, :] = (self.model(XX, aa + hh*tmp, **kwargs) - self.model(XX, aa-hh*tmp, **kwargs))/(2*hh[ii])
+            # 1st derivative, 4th order accurate
+            gvec[ii, :] = (self.model(XX, aa-2.0*hh*tmp, **kwargs) - 8.0*self.model(XX, aa-hh*tmp, **kwargs)
+                        + 8.0*self.model(XX, aa+hh*tmp, **kwargs) - self.model(XX, aa+2.0*hh*tmp, **kwargs))/(12.0*hh[ii])
+
+            # 2nd order accuratefor unequally spaced data: Lagrange interpolation
+#            gvec[ii, :] = (self.model(XX, aa -hh*tmp, **kwargs)*(2.0*aa[ii])/(()*())
         # end for
         return gvec
 
@@ -165,23 +162,7 @@ class ModelClass(Struct):
         else:
             hh = hstep
         # end if
-
-        # 5 pt stencil - 4th order accurate
-        dgdx = (-1.0*self.jacobian(XX+2.0*hh, aa, **kwargs) + 8.0*self.jacobian(XX+hh, aa, **kwargs)
-          -8.0*self.jacobian(XX-hh, aa, **kwargs) + 1.0*self.jacobian(XX-2.0*hh, aa, **kwargs))/(12.0*hh)
-
-#        numfit = _np.size(aa)
-#        dgdx = _np.zeros((numfit, _np.size(XX)), dtype=_np.float64)
-#        for ii in range(numfit):
-#            tmp = _np.zeros_like(aa)
-#            tmp[ii] = 1.0
-#            dgdx[ii, :] = (self.derivative(XX, aa + hh*tmp, **kwargs) - self.derivative(XX, aa-hh*tmp, **kwargs))/(2*hh[ii])
-#            # 3 pt stencil - 2nd order accurate
-#            dgdx[ii, :] = (self.derivative(XX, aa + hh*tmp, **kwargs) - self.derivative(XX, aa-hh*tmp, **kwargs))/(2*hh[ii])
-#            # 5 pt stencil - 4th order accurate
-#            dgdx[ii, :] = (-1.0*self.derivative(XX, aa+2.0*hh*tmp, **kwargs) + 8.0*self.derivative(XX, aa+hh*tmp, **kwargs)
-#              -8.0*self.derivative(XX, aa-hh*tmp, **kwargs) + 1.0*self.derivative(XX, aa-2.0*hh*tmp, **kwargs))/(12.0*hh[ii])
-        # end for
+        dgdx = self._1stderiv_fd(self.jacobian, XX, hh, aa, order=6, **kwargs)
         return dgdx
 
     def second_derivative(self, XX, aa=None, **kwargs):
@@ -208,15 +189,39 @@ class ModelClass(Struct):
         else:
             hh = hstep
         # end if
+        return self._2ndderiv_fd(self.model, XX, hh, aa, order=6, **kwargs)
 
-        # central difference all points - it is analytic! you can do this!
-        # return (self.derivative(XX+hh, aa, **kwargs) - self.derivative(XX-hh, aa, **kwargs))/(2*hh)
-        # 3-pt stencil, 2nd order accurate
-#        return ( self.model(XX-hh, aa, **kwargs ) -2*self.model(XX, aa, **kwargs ) + self.model(XX+hh, aa, **kwargs ) )/_np.power(hh, 2.0)
-        # 5-pt stencil, 4th order accurate
-        return ( -self.model(XX-2.0*hh, aa, **kwargs ) + 16.0*self.model(XX-hh, aa, **kwargs )
-                -30.0*self.model(XX, aa, **kwargs )
-                + 16.0*self.model(XX+hh, aa, **kwargs ) - self.model(XX+2.0*hh, aa, **kwargs ) )/(12.0*_np.power(hh,2.0))
+    def second_derivative_jacobian(self, XX, aa=None, **kwargs):
+        """
+        Returns the jacobian of the second derivative of the model.
+            f(x) = f(x, a, b, c)
+            out: [d3fdx2da(x), d3fdx2db(x), d3fdx2dc(x), ...]
+
+        Leave it to the user to define the method '_partial_deriv2' with an analytic Jacobian of the 2nd derivative.
+        Otherwise, calculate the jacobian of the 2nd derivative numerically by finite-differencing the model derivative.
+        """
+        XX, aa, kwargs = self.parse_in(XX, aa, **kwargs)
+        if hasattr(self, '_partial_deriv2') and self.analytic:
+            return self._partial_deriv2(XX, aa, **kwargs)
+        hstep = kwargs.setdefault('hstep', None)
+        if hstep is None:
+#            tst = self.second_derivative(XX, aa, **kwargs)
+#            dmax = _np.max((tst.max()/0.1, 5.0))
+#            dmax = _np.max(_np.vstack(_np.abs(aa)/0.1, dmax))   # maximum derivative, arbitraily say 10/0.2
+#            hh = _ut.cbrt(6.0*self.machine_epsilon/dmax)
+#            hh = hh*_np.ones_like(aa)
+
+            tst = self.derivative_jacobian(XX, aa, **kwargs)
+            tst = _np.diff(tst, axis=1)/_np.diff(XX)
+            dmax = _np.max((tst.max(), 5.0))
+#            dmax = _np.min((dmax,10))
+            hh = _ut.cbrt(6.0*self.machine_epsilon/dmax)
+            hh = _np.power(hh, 0.5)
+        else:
+            hh = hstep
+        # end if
+        d2gdx2 = self._2ndderiv_fd(self.jacobian, XX, hh, aa, order=6, **kwargs)
+        return d2gdx2
 
     def hessian(self, XX, aa=None, **kwargs):
         """
@@ -257,61 +262,56 @@ class ModelClass(Struct):
         return hess
     # end def
 
-    def second_derivative_jacobian(self, XX, aa=None, **kwargs):
-        """
-        Returns the jacobian of the second derivative of the model.
-            f(x) = f(x, a, b, c)
-            out: [d3fdx2da(x), d3fdx2db(x), d3fdx2dc(x), ...]
+    # ============================================================= #
 
-        Leave it to the user to define the method '_partial_deriv2' with an analytic Jacobian of the 2nd derivative.
-        Otherwise, calculate the jacobian of the 2nd derivative numerically by finite-differencing the model derivative.
-        """
-        XX, aa, kwargs = self.parse_in(XX, aa, **kwargs)
-        if hasattr(self, '_partial_deriv2') and self.analytic:
-            return self._partial_deriv2(XX, aa, **kwargs)
-        hstep = kwargs.setdefault('hstep', None)
-        if hstep is None:
-#            tst = self.second_derivative(XX, aa, **kwargs)
-#            dmax = _np.max((tst.max()/0.1, 5.0))
-#            dmax = _np.max(_np.vstack(_np.abs(aa)/0.1, dmax))   # maximum derivative, arbitraily say 10/0.2
-#            hh = _ut.cbrt(6.0*self.machine_epsilon/dmax)
-#            hh = hh*_np.ones_like(aa)
+    def _1stderiv_fd(self, func, XX, hh, aa, order=2, **kwargs):
+        if 1:
+#        if order<3:
+            # 2nd order accurate
+            return (-func(XX-hh, aa, **kwargs) + func(XX+hh, aa, **kwargs))/(2.0*hh)
+        elif order<5:
+            # 4th order accurate
+            return (func(XX-2*hh, aa, **kwargs) - 8.0*func(XX-hh, aa, **kwargs)
+                 + 8.0*func(XX+hh, aa, **kwargs) - func(XX+2.0*hh, aa, **kwargs))/(12.0*hh)
+        elif order<7:
+            # 6th order accurate
+            return (-func(XX-3.0*hh, aa, **kwargs) + 9.0*func(XX-2.0*hh, aa, **kwargs)
+                  -45.0*func(XX-hh, aa, **kwargs) + 45.0*func(XX+hh, aa, **kwargs)
+                  -9.0*func(XX+2.0*hh, aa, **kwargs) + func(XX+3.0*hh, aa, **kwargs))/(60.0*hh)
+        elif order<9:
+            # 8th order accurate
+            return (1.0/280.0*func(XX-4.0*hh, aa, **kwargs) -4.0/105.0*func(XX-3.0*hh, aa, **kwargs)
+                  + 1.0/5.0*func(XX-2.0*hh, aa, **kwargs) -4.0/5.0*func(XX-1.0*hh, aa, **kwargs)
+                  + 4.0/5.0*func(XX+1.0*hh, aa, **kwargs) -1.0/5.0*func(XX+2.0*hh, aa, **kwargs)
+                  + 4.0/105.0*func(XX+3.0*hh, aa, **kwargs) - 1.0/280.0*func(XX+4.0*hh, aa, **kwargs))/(hh)
 
-            tst = self.derivative_jacobian(XX, aa, **kwargs)
-            tst = _np.diff(tst, axis=1)/_np.diff(XX)
-            dmax = _np.max((tst.max(), 5.0))
-#            dmax = _np.min((dmax,10))
-            hh = _ut.cbrt(6.0*self.machine_epsilon/dmax)
-#            hh = _np.power(hh, 0.5)
-#            hh = _np.power(hh, 0.5)
-        else:
-            hh = hstep
-        # end if
+    def _2ndderiv_fd(self, func, XX, hh, aa, order=2, **kwargs):
+        if 1:
+#        if order<3:
+            # 2nd order accurate
+            return (func(XX-1.0*hh, aa, **kwargs) -2.0*func(XX, aa, **kwargs)+func(XX+1.0*hh, aa, **kwargs))/(_np.power(hh,2.0))
+        elif order<5:
+            # 4th order accurate
+            return (-1.0*func(XX-2.0*hh, aa, **kwargs)+16.0*func(XX-hh, aa, **kwargs)
+                -30.0*func(XX, aa, **kwargs)+16.0*func(XX+1.0*hh, aa, **kwargs)
+                    -1.0*func(XX+2.0*hh, aa, **kwargs))/(12.0*_np.power(hh,2.0))
+        elif order<7:
+            # 6th order accurate
+            return (1.0/90.0*func(XX-3.0*hh, aa, **kwargs)-3.0/20.0*func(XX-2*hh, aa, **kwargs)
+                  + 3.0/2.0*func(XX-hh, aa, **kwargs) - 49.0/18.0*func(XX, aa, **kwargs)
+                  + 3.0/2.0*func(XX+1.0*hh, aa, **kwargs) - 3.0/20.0*func(XX+2.0*hh, aa, **kwargs)
+                  + 1.0/90.0*func(XX+3.0*hh, aa, **kwargs) )/(_np.power(hh,2.0))
+        elif order<9:
+            # 8th order accurate
+            return (-1.0/560.0*func(XX-4.0*hh, aa, **kwargs) + 8.0/315.0*func(XX-3.0*hh, aa, **kwargs)
+                    -1.0/5.0*func(XX-2.0*hh, aa, **kwargs) +8.0/5.0*func(XX-1.0*hh, aa, **kwargs)
+                    -205.0/72.0*func(XX, aa, **kwargs)+8.0/5.0*func(XX+1.0*hh, aa, **kwargs)
+                    -1.0/5.0*func(XX+2.0*hh, aa, **kwargs)+8.0/315.0*func(XX+3.0*hh, aa, **kwargs)
+                    -1.0/560.0*func(XX+4.0*hh, aa, **kwargs) )/_np.power(hh, 2.0)
 
-        # 5-pt stencil - 4th order accurate
-        d2gdx2 = (-1.0*self.derivative_jacobian(XX+2.0*hh, aa, **kwargs) + 8.0*self.derivative_jacobian(XX+hh, aa, **kwargs)
-          -8.0*self.derivative_jacobian(XX-hh, aa, **kwargs) + 1.0*self.derivative_jacobian(XX-2.0*hh, aa, **kwargs))/(12.0*hh)
-        # 5-pt stencil - 4th order accurate 2nd derivative
-#        d2gdx2 = ( -self.jacobian(XX-2.0*hh, aa, **kwargs ) + 16.0*self.jacobian(XX-hh, aa, **kwargs )
-#                -30.0*self.jacobian(XX, aa, **kwargs )
-#                + 16.0*self.jacobian(XX+hh, aa, **kwargs ) - self.jacobian(XX+2.0*hh, aa, **kwargs ) )/(12.0*_np.power(hh,2.0))
-        return d2gdx2
-#        numfit = _np.size(aa)
-#        d2gdx2 = _np.zeros((numfit, _np.size(XX)), dtype=_np.float64)
-#        for ii in range(numfit):
-#            tmp = _np.zeros_like(aa)
-#            tmp[ii] = 1.0
-##            # 3-pt stencil - 2nd order accurate
-##            d2gdx2[ii, :] = (self.second_derivative(XX, aa + hh*tmp, **kwargs) - self.second_derivative(XX, aa-hh*tmp, **kwargs))/(2*hh[ii])
-#            # 5-pt stencil - 4th order accurate
-#            d2gdx2[ii, :] = (-1.0*self.second_derivative(XX, aa+2.0*hh*tmp, **kwargs) + 8.0*self.second_derivative(XX, aa+hh*tmp, **kwargs)
-#              -8.0*self.second_derivative(XX, aa-hh*tmp, **kwargs) + 1.0*self.second_derivative(XX, aa-2.0*hh*tmp, **kwargs))/(12.0*hh[ii])
-#        # end for
-#        return d2gdx2
+    # ============================================================= #
+    # ============================================================= #
 
-
-    # ====================================================== #
-    # ====================================================== #
 
     def update_minimal(self, XX, af, **kwargs):
         XX, af, kwargs = self.parse_in(XX, af, **kwargs)
@@ -2302,10 +2302,10 @@ class ModelEvenPoly(ModelClass):
         num_fit = _np.size(aa)  # Number of fitting parameters
         nx = _np.size(XX)
         d2fdx2 = _np.zeros((nx,), dtype=_np.float64)
-        for ii in range(2,num_fit):
+        for ii in range(1,num_fit):
             d2fdx2 += (2.0*ii)*(2.0*ii-1.0)*aa[-(ii+1)]*_np.power(XX, 2.0*ii-2.0)
         # end for
-        d2fdx2 += 2.0*aa[-2]
+#        d2fdx2 += 2.0*aa[-2]
         return d2fdx2
 #        return ModelPoly._deriv2(_np.power(XX, 2.0), aa, **kwargs)
 
@@ -2318,10 +2318,10 @@ class ModelEvenPoly(ModelClass):
         num_fit = _np.size(aa)  # Number of fitting parameters
         nx = _np.size(XX)
         d2gdx2 = _np.zeros((num_fit, nx), dtype=_np.float64)
-        for ii in range(2,num_fit):
+        for ii in range(1,num_fit):
             d2gdx2[ii, :] = (2.0*ii)*(2.0*ii-1.0)*_np.power(XX, 2.0*ii-2.0)
         # end for
-        d2gdx2[1,:] = 2.0
+#        d2gdx2[1,:] = 2.0
         return d2gdx2[::-1, :]
 #        return ModelPoly._partial_deriv2(_np.power(XX, 2.0), aa, **kwargs)
 
@@ -2441,8 +2441,7 @@ class ModelPowerLaw(ModelClass):
          With exponential cut-off:
          f  = a(n+2)*exp(a(n+1)*XX)*fc(x);
         """
-    #    num_fit = _np.size(af)  # Number of fitting parameters
-    #    npoly = (num_fit-1)-2
+        XX = _np.abs(XX)
         polys = ModelPoly._model(XX, aa[:-2])
         exp_factor = _np.exp(aa[-2]*XX)
         return aa[-1]*exp_factor*_np.power(XX, polys)
@@ -2464,6 +2463,7 @@ class ModelPowerLaw(ModelClass):
          dfcdx = XX^(-1)*prof*(polys+ddx(poly)*XX*log(XX),
          log is natural logarithm
         """
+        XX = _np.abs(XX)
         prof = ModelPowerLaw._model(XX, aa)
         polys = ModelPoly._model(XX, aa[:-2])
         dpolys = ModelPoly._deriv(XX, aa[:-2])
@@ -2490,6 +2490,7 @@ class ModelPowerLaw(ModelClass):
                                     + dpolydx/x - poly/x^2 )
                = dfdx*(dfdx/f) + f*( dpoly2dx2*ln|x| + 2*dpolydx/x - poly/x^2 )
         """
+        XX = _np.abs(XX)
         prof = ModelPowerLaw._model(XX, aa)
         dprofdx = ModelPowerLaw._deriv(XX, aa)
         polys = ModelPoly._model(XX, aa[:-2])
@@ -2520,6 +2521,7 @@ class ModelPowerLaw(ModelClass):
          gvec(-2, 1:nx) = XX*prof
          gvec(-1, 1:nx) = prof/a[-1]
         """
+        XX = _np.abs(XX)
         nx = _np.size(XX)
         num_fit = _np.size(aa)  # Number of fitting parameters
 
@@ -2584,6 +2586,7 @@ class ModelPowerLaw(ModelClass):
          gvec(-2, 1:nx) = XX*dprofdx
          gvec(-1, 1:nx) = dprofdx/a[-1]
         """
+        XX = _np.abs(XX)
         nx = _np.size(XX)
         num_fit = _np.size(aa)  # Number of fitting parameters
         npoly = len(aa[:-2])    #    npoly = num_fit-3?
@@ -2597,12 +2600,6 @@ class ModelPowerLaw(ModelClass):
                               + (1.0+ii*_np.log(_np.abs(XX)))*_np.power(XX, ii-1.0)*prof )
         # end for
         dgdx = dgdx[::-1, :]
-#        ii = 0
-#        for kk in range(npoly,0,-1):
-#            dgdx[ii, :] = (_np.power(XX, kk)*_np.log(_np.abs(XX))*dprofdx
-#                              + (1.0+kk*_np.log(_np.abs(XX)))*_np.power(XX, kk-1.0)*prof )
-#            ii += 1
-#        # endfor
         dgdx[-2, :] = XX*dprofdx
         dgdx[-1, :] = dprofdx/aa[-1]
         return dgdx
@@ -2628,6 +2625,7 @@ class ModelPowerLaw(ModelClass):
                + dfda*( d2polydx2*ln|x| + 2*dpolydx/x - poly/x^2 - dlnfdx^2)
                +    f*( d3polydx2da*ln|x| + 2*d2polydxda/x - dpolyda/x^2 )
        """
+        XX = _np.abs(XX)
         nx = _np.size(XX)
         na = _np.size(aa)
         f = ModelPowerLaw._model(XX, aa)
@@ -2873,6 +2871,7 @@ class ModelExponential(ModelClass):
     @staticmethod
     def _separate_model(XX, aa, **kwargs):
         a, b, c, d = tuple(aa)
+        XX = _np.abs(XX)
         prof1 = a*_np.exp(b* _np.power(XX, c))
         prof2 = a*_np.power(XX, d)
         return prof1, prof2
@@ -2890,6 +2889,7 @@ class ModelExponential(ModelClass):
     @staticmethod
     def _separate_deriv2(XX, aa, **kwargs):
         a, b, c, d = tuple(aa)
+        XX = _np.abs(XX)
         prof1, prof2 = ModelExponential._separate_model(XX, aa, **kwargs)
         dprof1dx, dprof2dx = ModelExponential._separate_deriv(XX, aa, **kwargs)
         d2prof1dx2 = b*c*_np.power(XX, c-1.0)*( (c-1.0)*prof1/XX + dprof1dx )
@@ -2915,8 +2915,8 @@ class ModelExponential(ModelClass):
     @staticmethod
     def _separate_deriv(XX, aa, **kwargs):
         prof1, prof2 = ModelExponential._separate_model(XX, aa)
-
         a, b, c, d = tuple(aa)
+        XX = _np.abs(XX)
         dprof1dx = b*c*_np.power(XX, c-1.0)*prof1
         dprof2dx = a*d*_np.power(XX, d-1.0)
         return dprof1dx, dprof2dx
@@ -2940,6 +2940,8 @@ class ModelExponential(ModelClass):
         prof = prof1 + prof2
 
         a, b, c, d = tuple(aa)
+        XX = _np.abs(XX)
+
         gvec[0, :] = prof/a
         gvec[1, :] = prof1*_np.power(XX, c)
         gvec[2, :] = _np.log10(_np.abs(XX))*_np.power(XX, c)*prof1
@@ -2975,6 +2977,8 @@ class ModelExponential(ModelClass):
         dprofdx = dprof1dx + dprof2dx
 
         a, b, c, d = tuple(aa)
+        XX = _np.abs(XX)
+
         dgdx[0, :] = dprofdx / a
         dgdx[1, :] = dprof1dx*( _np.power(XX, c) + 1.0/b )
         dgdx[2, :] = dprof1dx*( b*_np.log(_np.abs(XX))*_np.power(XX, c) + _np.log(_np.abs(XX)) + 1.0/c )
@@ -3020,8 +3024,10 @@ class ModelExponential(ModelClass):
         d2prof1dx2, d2prof2dx2 = ModelExponential._separate_deriv2(XX, aa, **kwargs)
         d2profdx2 = d2prof1dx2 + d2prof2dx2
 
-        d2gdx2 = _np.zeros( (num_fit,nx), dtype=float)
         a, b, c, d = tuple(aa)
+        XX = _np.abs(XX)
+
+        d2gdx2 = _np.zeros( (num_fit,nx), dtype=float)
         d2gdx2[0, :] = d2profdx2 / a
         d2gdx2[1, :] = d2prof1dx2*( _np.power(XX, c) + 1.0/b ) + dprof1dx*c*_np.power(XX, c-1.0)
         d2gdx2[2, :] = d2prof1dx2*( b*_np.log(_np.abs(XX))*_np.power(XX, c) + _np.log(_np.abs(XX)) + 1.0/c ) \
@@ -3140,7 +3146,7 @@ class ModelGaussian(ModelClass):
             ss = af[2]
         """
         AA, x0, ss = tuple(aa)
-        return AA*_np.exp(-(XX-x0)**2/(2.0*ss**2))
+        return AA*_np.exp(-_np.power(XX-x0, 2.0)/(2.0*_np.power(ss, 2.0)))
 
     @staticmethod
     def _deriv(XX, aa, **kwargs):
@@ -3154,8 +3160,25 @@ class ModelGaussian(ModelClass):
         dfdx = -(x-xo)/ss^2 *f
         """
         AA, x0, ss = tuple(aa)
-        prof = gaussian(XX, aa)
+        prof = ModelGaussian._model(XX, aa, **kwargs)
         return -1.0*(XX-x0)/_np.power(ss, 2.0) * prof
+
+    @staticmethod
+    def _deriv2(XX, aa, **kwargs):
+        """
+        2nd derivative of a Gaussian
+        f = A*exp(-(x-xo)**2.0/(2.0*ss**2.0))
+            A = af[0]
+            xo = af[1]
+            ss = af[2]
+
+        dfdx = -(x-xo)/ss^2 *f
+        d2fdx2 = -1/ss^2*f - (x-xo)/ss^2*dfdx
+        """
+        AA, x0, ss = tuple(aa)
+        prof = ModelGaussian._model(XX, aa, **kwargs)
+        dprofdx = ModelGaussian._deriv(XX, aa, **kwargs)
+        return -1.0*prof/_np.power(ss, 2.0) - dprofdx*(XX-x0)/_np.power(ss, 2.0)
 
     @staticmethod
     def _partial(XX, aa, **kwargs):
@@ -3166,16 +3189,20 @@ class ModelGaussian(ModelClass):
             xo = af[1]
             ss = af[2]
 
+        dfdx = -(x-xo)/ss^2 *f
+        d2fdx2 = -1/ss^2*f - (x-xo)/ss^2*dfdx
+
         dfdA = f/A
-        dfdxo = A*(x-xo)*exp(-(x-xo)**2.0/(2.0*ss**2.0))/ss^2 = (x-xo)/ss^2 * f
+        dfdxo = A*(x-xo)*exp(-(x-xo)**2.0/(2.0*ss**2.0))/ss^2
+              = (x-xo)/ss^2 * f
         dfdss =  (x-xo)^2/ss^3 * f
         """
         AA, x0, ss = tuple(aa)
-        prof = gaussian(XX, aa)
+        prof = ModelGaussian._model(XX, aa, **kwargs)
         gvec = _np.zeros( (3,_np.size(XX)), dtype=_np.float64)
         gvec[0,:] = prof/AA
-        gvec[1,:] = ((XX-x0)/(ss**2.0))*prof
-        gvec[2,:] = (((XX-x0)**2.0)/(ss**3.0)) * prof
+        gvec[1,:] = ((XX-x0)/_np.power(ss, 2.0))*prof
+        gvec[2,:] = (_np.power(XX-x0, 2.0)/_np.power(ss, 3.0)) * prof
         return gvec
 
     @staticmethod
@@ -3188,26 +3215,74 @@ class ModelGaussian(ModelClass):
             ss = af[2]
 
         dfdx = -(x-xo)/ss^2 *f
-        term1 = (-(x-xo)/ss^2)
+        d2fdx2 = -1/ss^2*f - (x-xo)/ss^2*dfdx
 
-        d^2f/dxdA = 0*f + df/dA * term1
-                  = partial_gaussian[0]*term1
-        d^2f/dxdxo = 1.0/(ss^2)*f + df/dxo * term1
-                   =  prof/(ss^2) + partial_gaussian[1]*term1
-        d^2f/dxdss = 2.0*(x-xo)/(ss^3)*f + df/dxo * term1
-                   = -2.0*term1*prof/ss + partial_gaussian[2]*term1
+        dfdA = f/A
+        dfdxo = A*(x-xo)*exp(-(x-xo)**2.0/(2.0*ss**2.0))/ss^2
+              = (x-xo)/ss^2 * f
+        dfdss =  (x-xo)^2/ss^3 * f
+
+        d2fdxdA = d/dx(f/A) = -(x-xo)/ss^2 * f/A
+                = dfdx/A
+        d2fdxdxo = f/(ss^2) + (x-xo)/ss^2 * dfdx
+                = -d2fdx2
+        d2fdxdss = 2*(x-xo)/ss^3 * f + (x-xo)^2/ss^3 * dfdx
+                =  -2*dfdx/ss + (x-xo)^2/ss^3 * dfdx
         """
         AA, x0, ss = tuple(aa)
 
-        prof = gaussian(XX, aa)
-        term1 = (-1.0*(XX-x0)/_np.power(ss,2.0))
-        gvec = partial_gaussian(XX, aa)
+#        prof = ModelGaussian._model(XX, aa, **kwargs)
+        dfdx = ModelGaussian._deriv(XX, aa, **kwargs)
+        d2fdx2 = ModelGaussian._deriv2(XX, aa, **kwargs)
 
         dgdx = _np.zeros( (3,_np.size(XX)), dtype=_np.float64)
-        dgdx[0,:] = gvec[0,:]*term1
-        dgdx[1,:] = prof/_np.power(ss,2.0) + gvec[1,:]*term1
-        dgdx[2,:] = -2.0*term1*prof/ss + gvec[2,:]*term1
+        dgdx[0,:] = dfdx/AA
+        dgdx[1,:] = -d2fdx2
+        dgdx[2,:] = -2.0*dfdx/ss + dfdx*_np.power(XX-x0,2.0)/_np.power(ss, 3.0)
         return dgdx
+
+    @staticmethod
+    def _partial_deriv2(XX, aa, **kwargs):
+        """
+        Jacobian of the derivative of a Gaussian
+        f = A*exp(-(x-xo)**2.0/(2.0*ss**2.0))
+            A = af[0]
+            xo = af[1]
+            ss = af[2]
+
+        dfdx = -(x-xo)/ss^2 *f
+        d2fdx2 = -1/ss^2*f - (x-xo)/ss^2*dfdx
+
+        dfdA = f/A
+        dfdxo = A*(x-xo)*exp(-(x-xo)**2.0/(2.0*ss**2.0))/ss^2
+              = (x-xo)/ss^2 * f
+        dfdss =  (x-xo)^2/ss^3 * f
+
+        d2fdxdA = d/dx(f/A) = -(x-xo)/ss^2 * f/A
+                = dfdx/A
+        d2fdxdxo = f/(ss^2) + (x-xo)/ss^2 * dfdx
+                = -d2fdx2
+        d2fdxdss = 2*(x-xo)/ss^3 * f + (x-xo)^2/ss^3 * dfdx
+                =  -2*dfdx/ss + (x-xo)^2/ss^3 * dfdx
+
+        d3fdx2dA = d2fdx2/A
+        d3fdx2dxo = -dfdxo/(ss^2) + dfdx/ss^2 - (x-xo)/ss^2 * d2fdxdxo
+                  = -(x-xo)/(ss^4)*f + dfdx/ss^2 + (x-xo)/ss^2 * d2fdx2
+        d3fdx2dss = -2*d2fdx2/ss + 2*(x-xo)/ss^3 *dfdx + (x-xo)^2/ss^3 *d2fdx2
+        """
+        AA, x0, ss = tuple(aa)
+        prof = ModelGaussian._model(XX, aa, **kwargs)
+        dfdx = ModelGaussian._deriv(XX, aa, **kwargs)
+        d2fdx2 = ModelGaussian._deriv2(XX, aa, **kwargs)
+
+#        term1 = (-1.0*(XX-x0)/_np.power(ss,2.0))
+#        gvec = ModelGaussian._partial(XX, aa, **kwargs)
+
+        d2gdx = _np.zeros( (3,_np.size(XX)), dtype=_np.float64)
+        d2gdx[0,:] = d2fdx2/AA
+        d2gdx[1,:] = -(XX-x0)*prof/_np.power(ss, 4.0) + dfdx/_np.power(ss, 2.0) + (XX-x0)*d2fdx2/_np.power(ss, 2.0)
+        d2gdx[2,:] = -2.0*d2fdx2/ss + 2.0*(XX-x0)/_np.power(ss, 3.0)*dfdx + _np.power(XX-x0, 2.0)*d2fdx2/_np.power(ss, 3.0)
+        return d2gdx
 
 #    @staticmethod
 #    def _hessian(XX, aa, **kwargs):
@@ -3325,6 +3400,10 @@ class ModelOffsetGaussian(ModelClass):
         return ModelGaussian._deriv(XX, aa[1:])
 
     @staticmethod
+    def _deriv2(XX, aa, **kwargs):
+        return ModelGaussian._deriv2(XX, aa[1:])
+
+    @staticmethod
     def _partial(XX, aa, **kwargs):
         return _np.concatenate(
                 (_np.ones((1,_np.size(XX)), dtype=_np.float64),
@@ -3335,6 +3414,12 @@ class ModelOffsetGaussian(ModelClass):
         return _np.concatenate(
                 (_np.zeros((1,_np.size(XX)), dtype=_np.float64),
                  ModelGaussian._partial_deriv(XX, aa[1:])), axis=0)
+
+    @staticmethod
+    def _partial_deriv2(XX, aa, **kwargs):
+        return _np.concatenate(
+                (_np.zeros((1,_np.size(XX)), dtype=_np.float64),
+                 ModelGaussian._partial_deriv2(XX, aa[1:])), axis=0)
 
 #    @staticmethod
 #    def _hessian(XX, aa):
@@ -3448,6 +3533,14 @@ class ModelOffsetNormal(ModelClass):
         return ModelNormal._deriv(XX, aa[1:])
 
     @staticmethod
+    def _deriv2(XX, aa, **kwargs):
+        """
+        derivative of a normalized Gaussian (unit area)
+        dfdx = -(x-xo)/ss^2 *f
+        """
+        return ModelNormal._deriv2(XX, aa[1:])
+
+    @staticmethod
     def _partial(XX, aa, **kwargs):
         """
         Jacobian of a normalized Gaussian (unit area)
@@ -3460,7 +3553,7 @@ class ModelOffsetNormal(ModelClass):
                 = sqrt(2*pi*ss**2.0)^-1 *1.0/abs(ss)
         dfdss =  (x-xo)^2/ss^3 * f + 1.0/abs(ss) * f
         """
-        return _np.concatenate((_np.ones(1,_np.size(XX)), ModelNormal._partial(XX, aa[1:])), axis=0)
+        return _np.concatenate((_np.ones((1,_np.size(XX)), dtype=_np.float64), ModelNormal._partial(XX, aa[1:])), axis=0)
 
     @staticmethod
     def _partial_deriv(XX, aa, **kwargs):
@@ -3476,7 +3569,23 @@ class ModelOffsetNormal(ModelClass):
         d2fdxds = 2*(x-xo)/ss^3 *f -(x-xo)/ss^2 *dfds
 
         """
-        return _np.concatenate((_np.zeros(1,_np.size(XX)), ModelNormal._partial_deriv(XX, aa[1:])), axis=0)
+        return _np.concatenate((_np.zeros((1,_np.size(XX)), dtype=_np.float64), ModelNormal._partial_deriv(XX, aa[1:])), axis=0)
+
+    @staticmethod
+    def _partial_deriv2(XX, aa, **kwargs):
+        """
+        Jacobian of the derivative of a normalized Gaussian (unit area)
+        f = A*exp(-(x-xo)**2.0/(2.0*ss**2.0))/sqrt(2*pi*ss^2.0)
+
+        dfdx = -(x-xo)/ss^2 *f
+
+        d2fdxdA0 = 0.0
+        d2fdxdA = dfdx/A = -(x-xo)/ss^2 *dfdA
+        d2fdxdxo = f/ss^2 -(x-xo)/ss^2 *dfdxo
+        d2fdxds = 2*(x-xo)/ss^3 *f -(x-xo)/ss^2 *dfds
+
+        """
+        return _np.concatenate((_np.zeros((1,_np.size(XX)), dtype=_np.float64), ModelNormal._partial_deriv2(XX, aa[1:])), axis=0)
 
 #    @staticmethod
 #    def _hessian(XX, aa):
@@ -3575,7 +3684,7 @@ class ModelNormal(ModelClass):
         """
         AA, x0, ss = tuple(aa)
         nn = _np.sqrt(2.0*_np.pi*_np.power(ss, 2.0))
-        return gaussian(XX,aa)/nn
+        return ModelGaussian._model(XX, aa, **kwargs)/nn
 
     @staticmethod
     def _deriv(XX, aa, **kwargs):
@@ -3590,7 +3699,23 @@ class ModelNormal(ModelClass):
         """
         AA, x0, ss = tuple(aa)
         nn = _np.sqrt(2.0*_np.pi*_np.power(ss, 2.0))
-        return deriv_gaussian(XX, aa)/nn
+        return ModelGaussian._deriv(XX, aa, **kwargs)/nn
+
+    @staticmethod
+    def _deriv2(XX, aa, **kwargs):
+        """
+        derivative of a normalized Gaussian (unit area)
+        f = A*exp(-(x-xo)**2.0/(2.0*ss**2.0))/sqrt(2*pi*ss^2.0)
+            A = af[0]
+            xo = af[1]
+            ss = af[2]
+
+        dfdx = -(x-xo)/ss^2 *f
+        d2fdx2 > see model gaussian
+        """
+        AA, x0, ss = tuple(aa)
+        nn = _np.sqrt(2.0*_np.pi*_np.power(ss, 2.0))
+        return ModelGaussian._deriv2(XX, aa, **kwargs)/nn
 
     @staticmethod
     def _partial(XX, aa, **kwargs):
@@ -3623,6 +3748,14 @@ class ModelNormal(ModelClass):
 
         dfdx = -(x-xo)/ss^2 *f
 
+        dfdA = f/A
+        dfdxo = (x-xo)/ss^2 * f
+        dfdss =  (x-xo)^2/ss^3 * f + A*exp(-(x-xo)**2.0/(2.0*ss**2.0))*d/ds( sqrt(2*pi*ss^2.0)**-1 )
+            d/ds( sqrt(2*pi*ss^2.0)**-1 ) = sqrt(2*pi)^-1 * d/ds( (ss^2.0)**-0.5 ) = sqrt(2*pi)^-1 * d/ds( abs(ss)^-1.0 )
+                = sqrt(2*pi)^-1 * (2*ss)*-0.5 * (ss^2.0)^-1.5 = sqrt(2*pi)^-1 *-ss/(ss^3.0) = sqrt(2*pi)^-1 *1.0/ss^2
+                = sqrt(2*pi*ss**2.0)^-1 *1.0/abs(ss)
+        dfdss =  (x-xo)^2/ss^3 * f + 1.0/abs(ss) * f
+
         d2fdxdA = dfdx/A = -(x-xo)/ss^2 *dfdA
         d2fdxdxo = f/ss^2 -(x-xo)/ss^2 *dfdxo
         d2fdxds = 2*(x-xo)/ss^3 *f -(x-xo)/ss^2 *dfds
@@ -3637,6 +3770,44 @@ class ModelNormal(ModelClass):
         dgdx[1,:] = prof/_np.power(XX, 2.0) - ((XX-x0)/_np.power(ss, 2.0))*gvec[1,:]
         dgdx[1,:] = 2.0*(XX-x0)*prof/_np.power(XX, 3.0) - ((XX-x0)/_np.power(ss, 2.0))*gvec[2,:]
         return dgdx
+
+    @staticmethod
+    def _partial_deriv2(XX, aa, **kwargs):
+        """
+        Jacobian of the derivative of a normalized Gaussian (unit area)
+        f = A*exp(-(x-xo)**2.0/(2.0*ss**2.0))/sqrt(2*pi*ss^2.0)
+
+        dfdx = -(x-xo)/ss^2 *f
+
+        dfdA = f/A
+        dfdxo = (x-xo)/ss^2 * f
+        dfdss =  (x-xo)^2/ss^3 * f + A*exp(-(x-xo)**2.0/(2.0*ss**2.0))*d/ds( sqrt(2*pi*ss^2.0)**-1 )
+            d/ds( sqrt(2*pi*ss^2.0)**-1 ) = sqrt(2*pi)^-1 * d/ds( (ss^2.0)**-0.5 ) = sqrt(2*pi)^-1 * d/ds( abs(ss)^-1.0 )
+                = sqrt(2*pi)^-1 * (2*ss)*-0.5 * (ss^2.0)^-1.5 = sqrt(2*pi)^-1 *-ss/(ss^3.0) = sqrt(2*pi)^-1 *1.0/ss^2
+                = sqrt(2*pi*ss**2.0)^-1 *1.0/abs(ss)
+        dfdss =  (x-xo)^2/ss^3 * f + 1.0/abs(ss) * f
+
+        d2fdxdA = dfdx/A = -(x-xo)/ss^2 *dfdA
+        d2fdxdxo = f/ss^2 -(x-xo)/ss^2 *dfdxo
+        d2fdxds = 2*(x-xo)/ss^3 *f -(x-xo)/ss^2 *dfds
+
+        d3fdx2dA = -dfdA/ss^2 - (x-xo)/ss^2*d2fdAdx
+        d3fdx2dxo = dfdx/ss^2-x/ss^2*dfdxo - (x-xo)/ss^2*d2fdxdxo
+        d3fdx2dss = 2.0/ss^3*f + 2*(x-xo)/ss^3*dfdx - dfdss/ss^2 - (x-xo)/ss^2*dfdssdx
+        """
+        AA, x0, ss = tuple(aa)
+        prof = ModelNormal._model(XX, aa, **kwargs)
+        dfdx = ModelNormal._deriv(XX, aa, **kwargs)
+        gvec = ModelNormal._partial(XX, aa, **kwargs)
+        dgdx = ModelNormal._partial_deriv(XX, aa, **kwargs)
+
+        d2gdx2 = _np.zeros((3,_np.size(XX)), dtype=_np.float64)
+        d2gdx2[0,:] = -gvec[0,:]/_np.power(ss,2.0)-(XX-x0)/_np.power(ss, 2.0)*dgdx[0,:]
+        d2gdx2[1,:] = dfdx/_np.power(ss, 2.0) - XX*gvec[1,:]/_np.power(ss, 2.0) - ((XX-x0)/_np.power(ss, 2.0))*dgdx[1,:]
+
+        d2gdx2[2,:] = 2.0*prof/_np.power(ss, 3.0) + 2.0*(XX-x0)*dfdx/_np.power(ss, 3.0) \
+             - gvec[2,:]/_np.power(ss,2.0)- ((XX-x0)/_np.power(ss, 2.0))*dgdx[2,:]
+        return d2gdx2
 
 #    @staticmethod
 #    def _hessian(XX, aa):
@@ -3807,9 +3978,33 @@ class ModelLogGaussian(ModelClass):
              = 10/ln(10) * dgdx/g
         or with less function calls
         dfdx = -10.0*(x-xo)/(ss**2.0 * _np.log(10))
+
+        d2fdx2 = -10.0/(ss**2.0 * _np.log(10)
         """
         AA, xo, ss = tuple(aa)
         return -10.0*(XX-xo)/(_np.power(ss, 2.0) * _np.log(10))
+
+    @staticmethod
+    def _deriv2(XX, aa, **kwargs):
+        """
+        f = 10*_np.log10( A*exp(-(x-xo)**2.0/(2.0*ss**2.0)) )
+          = 10/ln(10)*( ln(A) -(x-xo)**2.0/(2.0*ss**2.0)  )
+            A = af[0]
+            xo = af[1]
+            ss = af[2]
+
+
+        f = 10/ln(10)*ln(g)   where g is gaussian
+
+        dfdx = 10/ln(10) * dln(g)/dx
+             = 10/ln(10) * dgdx/g
+        or with less function calls
+        dfdx = -10.0*(x-xo)/(ss**2.0 * _np.log(10))
+
+        d2fdx2 = -10.0/(ss**2.0 * _np.log(10)
+        """
+        AA, xo, ss = tuple(aa)
+        return -10.0/(_np.power(ss, 2.0) * _np.log(10))
 
     @staticmethod
     def _partial(XX, aa, **kwargs):
@@ -3851,6 +4046,34 @@ class ModelLogGaussian(ModelClass):
         dgdx[1,:] = 10.0/(_np.log(10.0)*_np.power(ss,2.0))
         dgdx[2,:] = 20.0*(XX-x0)/(_np.log(10)*_np.power(ss,3.0))
         return dgdx
+
+    @staticmethod
+    def _partial_deriv2(XX, aa, **kwargs):
+        """
+        f = 10*_np.log10( A*exp(-(x-xo)**2.0/(2.0*ss**2.0)) )
+          = 10/ln(10)*( ln(A) -(x-xo)**2.0/(2.0*ss**2.0)  )
+
+        dfdx = -10.0*(x-xo)/(ss**2.0 * _np.log(10))
+            A = af[0]
+            xo = af[1]
+            ss = af[2]
+
+        dfdx = -(x-xo)/ss^2  * 10.0/ln(10)
+        d2fdx2 = -10.0/(ss**2.0 * _np.log(10)
+
+        d2f/dxdA = 0.0
+        d2f/dxdxo = 10.0/(_np.log(10.0)*ss^2)
+        d2f/dxdss = 20.0*(x-xo)/(_np.log(10.0)*ss^3)
+
+        d3f/dx2dA = 0.0
+        d3f/dx2dxo = 0.0
+        d3f/dx2dss = 20.0/(_np.log(10.0)*ss^3)
+        """
+        AA, x0, ss = tuple(aa)
+        d2gdx2 = _np.zeros( (3,_np.size(XX)), dtype=_np.float64)
+        d2gdx2[2,:] = 20.0/(_np.log(10)*_np.power(ss,3.0))
+        return d2gdx2
+
 
 #    @staticmethod
 #    def _hessian(XX, aa):
@@ -3950,35 +4173,102 @@ class ModelLorentzian(ModelClass):
     def _model(XX, aa, **kwargs):
         """
         Lorentzian normalization such that integration equals AA (af[0])
-            f = 0.5*A*s / ( (x-xo)**2.0 + 0.25*ss**2.0 ) / pi
+            f = 0.5*A*ss / ( (x-xo)**2.0 + 0.25*ss**2.0 ) / pi
         """
         AA, x0, ss = tuple(aa)
         return AA*0.5*ss/((XX-x0)*(XX-x0)+0.25*ss*ss)/_np.pi
 
     @staticmethod
     def _deriv(XX, aa, **kwargs):
+        """
+        ´Derivative of a Lorentzian normalization such that integration equals AA (af[0])
+            f = 0.5*A*ss / ( (x-xo)**2.0 + 0.25*ss**2.0 ) / pi
+
+        dfdx = -16*A*ss*(x-xo)/( ss^2 +4*(xo-x)^2)^2 / pi
+        """
         AA, x0, ss = tuple(aa)
         return -1.0*AA*16.0*(XX-x0)*ss/(_np.pi*_np.power(4.0*(XX-x0)*(XX-x0)+ss*ss, 2.0))
 
     @staticmethod
+    def _deriv2(XX, aa, **kwargs):
+        """
+        ´Derivative of a Lorentzian normalization such that integration equals AA (af[0])
+            f = 0.5*A*ss / ( (x-xo)**2.0 + 0.25*ss**2.0 ) / pi
+
+        dfdx = -16*A*ss*(x-xo)/( ss^2 +4*(xo-x)^2)^2 / pi
+        d2fdx2 = -16*A*ss*( ss^2-12*(x-xo)^2 )/( ss^2 +4*(x-xo)^2)^3 / pi
+        """
+        AA, x0, ss = tuple(aa)
+        return -1.0*AA*16.0*ss*(ss*ss-12.0*(XX-x0)*(XX-x0))/(_np.pi*_np.power(4.0*(XX-x0)*(XX-x0)+ss*ss, 3.0))
+
+    @staticmethod
     def _partial(XX, aa, **kwargs):
+        """
+        Jacobian of a Lorentzian normalization such that integration equals AA (af[0])
+            f = 0.5*A*ss / ( (x-xo)**2.0 + 0.25*ss**2.0 ) / pi
+
+        dfdx = -16*A*ss*(x-xo)/( ss^2 +4*(xo-x)^2)^2 / pi
+        d2fdx2 = -16*A*ss*( ss^2-12*(x-xo)^2 )/( ss^2 +4*(x-xo)^2)^3 / pi
+
+        dfdA = f/A
+        dfdxo = A*ss*(x-xo)/( ss^2/4.0 + (x-xo)^2 )^2  / pi
+        dfds = -2*A*(ss^2-4*(x-xo)^2)/( b^2 + 4*(x-xo)^2 )^2 / pi
+        """
         AA, x0, ss = tuple(aa)
 
         gvec = _np.zeros( (3,_np.size(XX)), dtype=_np.float64)
         gvec[0,:] = 0.5*ss/((XX-x0)*(XX-x0)+0.25*ss*ss)/_np.pi
         gvec[1,:] = AA*ss*(XX-x0)/_np.power((XX-x0)*(XX-x0)+0.25*ss*ss, 2.0 )/_np.pi
-        gvec[2,:] = AA*(-0.125*ss*ss+0.5*XX*XX-XX*x0+0.5*x0*x0)/_np.power(0.25*ss*ss+(XX-x0)*(XX-x0), 2.0)/_np.pi
+        gvec[2,:] = -2.0*AA*(ss*ss-4.0*(XX-x0)*(XX-x0))/_np.power(ss*ss+4.0*(XX-x0)*(XX-x0), 2.0)/_np.pi
         return gvec
 
     @staticmethod
     def _partial_deriv(XX, aa, **kwargs):
+        """
+        Jacobian of the derivative of a Lorentzian normalization such that
+        integration equals AA (af[0])
+            f = 0.5*A*ss / ( (x-xo)**2.0 + 0.25*ss**2.0 ) / pi
+
+        dfdx = -16*A*ss*(x-xo)/( ss^2 +4*(xo-x)^2)^2 / pi
+        d2fdx2 = -16*A*ss*( ss^2-12*(x-xo)^2 )/( ss^2 +4*(x-xo)^2)^3 / pi
+
+        dfdA = f/A
+        dfdxo = A*ss*(x-xo)/( ss^2/4.0 + (x-xo)^2 )^2  / pi
+        dfds = -2*A*(ss^2-4*(x-xo)^2)/( b^2 + 4*(x-xo)^2 )^2 / pi
+
+        d2fdxdA = -16*ss*(x-xo)/( ss^2 +4*(xo-x)^2)^2 / pi
+        """
         AA, x0, ss = tuple(aa)
 
-        gvec = _np.zeros( (3,_np.size(XX)), dtype=_np.float64)
-        gvec[0,:] = -1.0*16.0*(XX-x0)*ss/(_np.pi*_np.power(4.0*(XX-x0)*(XX-x0)+ss*ss, 2.0))
-        gvec[1,:] = 16.0*AA*ss*(-12.0*x0*x0+24.0*x0*XX+ss*ss-12.0*XX*XX)/(_np.pi*_np.power(4.0*x0*x0-8.0*x0*XX+ss*ss+4.0*XX*XX, 3.0))
-        gvec[2,:] = 16.0*AA*(XX-x0)*(3.0*ss*ss-4.0*(XX*XX-2.0*XX*x0+x0*x0))/(_np.pi*_np.power(ss*ss+4.0*(XX*XX-2.0*XX*x0+x0*x0), 3.0))
-        return gvec
+        dgdx = _np.zeros( (3,_np.size(XX)), dtype=_np.float64)
+        dgdx[0,:] = -1.0*16.0*(XX-x0)*ss/(_np.pi*_np.power(4.0*(XX-x0)*(XX-x0)+ss*ss, 2.0))
+        dgdx[1,:] = 16.0*AA*ss*(ss*ss-12.0*(XX-x0)*(XX-x0))/_np.power(ss*ss+4*_np.power(XX-x0, 2.0),3.0)/_np.pi
+        dgdx[2,:] = 16.0*AA*(XX-x0)*(3.0*ss*ss-4.0*(XX*XX-2.0*XX*x0+x0*x0))/(_np.pi*_np.power(ss*ss+4.0*(XX*XX-2.0*XX*x0+x0*x0), 3.0))
+        return dgdx
+
+    @staticmethod
+    def _partial_deriv2(XX, aa, **kwargs):
+        """
+        Jacobian of the 2nd derivative of a Lorentzian normalization such that
+        integration equals AA (af[0])
+            f = 0.5*A*ss / ( (x-xo)**2.0 + 0.25*ss**2.0 ) / pi
+
+        dfdx = -16*A*ss*(x-xo)/( ss^2 +4*(xo-x)^2)^2 / pi
+        d2fdx2 = -16*A*ss*( ss^2-12*(x-xo)^2 )/( ss^2 +4*(x-xo)^2)^3 / pi
+
+        dfdA = f/A
+        dfdxo = A*ss*(x-xo)/( ss^2/4.0 + (x-xo)^2 )^2  / pi
+        dfds = -2*A*(ss^2-4*(x-xo)^2)/( b^2 + 4*(x-xo)^2 )^2 / pi
+
+        d2fdxdA = -16*ss*(x-xo)/( ss^2 +4*(xo-x)^2)^2 / pi
+        """
+        AA, x0, ss = tuple(aa)
+
+        d2gdx2 = _np.zeros( (3,_np.size(XX)), dtype=_np.float64)
+        d2gdx2[0,:] = -1.0*16.0*(XX-x0)*ss/(_np.pi*_np.power(4.0*(XX-x0)*(XX-x0)+ss*ss, 2.0))
+        d2gdx2[1,:] = 16.0*AA*ss*(ss*ss-12.0*(XX-x0)*(XX-x0))/_np.power(ss*ss+4*_np.power(XX-x0, 2.0),3.0)/_np.pi
+        d2gdx2[2,:] = 16.0*AA*(XX-x0)*(3.0*ss*ss-4.0*(XX*XX-2.0*XX*x0+x0*x0))/(_np.pi*_np.power(ss*ss+4.0*(XX*XX-2.0*XX*x0+x0*x0), 3.0))
+        return dgdx
 
 #    @staticmethod
 #    def _hessian(XX, aa):
@@ -6681,9 +6971,24 @@ if __name__ == '__main__':
 #    mod = ModelPowerLaw.test_numerics(npoly=3)
 #    mod = ModelPowerLaw.test_numerics(npoly=4)
 #    mod = ModelPowerLaw.test_numerics(npoly=8)
-    mod = ModelParabolic.test_numerics()
+#    mod = ModelParabolic.test_numerics()
 #    mod = ModelExponential.test_numerics()
-
+    mod = ModelGaussian.test_numerics()
+#    mod = ModelOffsetGaussian.test_numerics()
+#    mod = ModelOffsetNormal.test_numerics()
+#    mod = ModelNormal.test_numerics()
+#    mod = ModelLogGaussian.test_numerics()
+#    mod = ModelLorentzian.test_numerics()
+#    mod = ModelPseudoVoigt.test_numerics()
+#    mod = ModelLogLorentzian.test_numerics()
+#    mod = ModelDoppler.test_numerics()
+#    mod = ModelLogDoppler.test_numerics()
+#    mod = _ModelTwoPower.test_numerics()
+#    mod = ModelTwoPower.test_numerics()
+#    mod = ModelExpEdge.test_numerics()
+#    mod = ModelQuasiParabolic.test_numerics()
+#    mod = ModelFlattop.test_numerics()
+#    mod = ModelMassberg.test_numerics()
 #    Fs = 1.0
 #    XX = _np.linspace(-0.5, 0.5, num=int(1.5*10e-3*10.0e6/8))
 #    model_order = 2

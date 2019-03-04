@@ -2042,23 +2042,23 @@ if __name__=="__main__":
 #        out, ft = doppler_test(scale_by_data=False, logdata=False, Fs=1.0, fmax=None)
 #    print(out)
 
-    test_fit(_ms.model_sines, nfreqs=1,  Fs=10e3, numpts=int(6.0*1e3/33.0), fmod=33.0)
-    test_fit(_ms.model_sines, nfreqs=3, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0)
-    test_fit(_ms.model_sines, nfreqs=7, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
-    test_fit(_ms.model_fourier, nfreqs=3, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0)
-    test_fit(_ms.model_fourier, nfreqs=14, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square')
-#    test_fit(_ms.model_fourier, nfreqs=6, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
-#    test_fit(_ms.model_fourier, nfreqs=10, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
-#    test_fit(_ms.model_fourier, nfreqs=14, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
-##
-    test_qparab_fit(nohollow=False)
-    test_qparab_fit(nohollow=True)
-    ft = test_fitNL(False)
-    ft = test_fitNL(True)  # issue with interpolation when x>1 and x<0?
-
-    test_fit(_ms.model_line)
-    test_fit(_ms.model_gaussian, Fs=10e3, numpts=int(10e3*6*1.2/33.0))    # check initial conditions
-    test_fit(_ms.model_normal, Fs=10e3, numpts=int(10e3*6*1.2/33.0))    # check initial conditions
+#    test_fit(_ms.model_sines, nfreqs=1,  Fs=10e3, numpts=int(6.0*1e3/33.0), fmod=33.0)
+#    test_fit(_ms.model_sines, nfreqs=3, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0)
+#    test_fit(_ms.model_sines, nfreqs=7, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
+#    test_fit(_ms.model_fourier, nfreqs=3, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0)
+#    test_fit(_ms.model_fourier, nfreqs=14, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square')
+##    test_fit(_ms.model_fourier, nfreqs=6, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
+##    test_fit(_ms.model_fourier, nfreqs=10, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
+##    test_fit(_ms.model_fourier, nfreqs=14, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
+###
+#    test_qparab_fit(nohollow=False)
+#    test_qparab_fit(nohollow=True)
+#    ft = test_fitNL(False)
+#    ft = test_fitNL(True)  # issue with interpolation when x>1 and x<0?
+#
+#    test_fit(_ms.model_line)
+#    test_fit(_ms.model_gaussian, Fs=10e3, numpts=int(10e3*6*1.2/33.0))    # check initial conditions
+#    test_fit(_ms.model_normal, Fs=10e3, numpts=int(10e3*6*1.2/33.0))    # check initial conditions
 #    test_fit(_ms.model_lorentzian, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
 ##    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=0, tbnds=[-0.5,0.5], num=18750)
 ##    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=1, tbnds=[-0.5,0.5], num=18750)
@@ -2079,11 +2079,11 @@ if __name__=="__main__":
 #    test_fit(_ms.model_evenpoly, npoly=3)
 #    test_fit(_ms.model_evenpoly, npoly=6)
 #    test_fit(_ms.model_evenpoly, npoly=10)
-#    test_fit(_ms.model_PowerLaw, npoly=2)   # check derivatives, uncertainty wrong
-#    test_fit(_ms.model_PowerLaw, npoly=3)   # check derivatives, uncertainty wrong
-#    test_fit(_ms.model_PowerLaw, npoly=4)   # check derivatives, uncertainty wrong
-#    test_fit(_ms.model_Exponential)
-#    test_fit(_ms.model_parabolic)
+    test_fit(_ms.model_PowerLaw, npoly=4)   # check derivatives, uncertainty wrong
+    test_fit(_ms.model_PowerLaw, npoly=5)   # check derivatives, uncertainty wrong
+    test_fit(_ms.model_PowerLaw, npoly=6)   # check derivatives, uncertainty wrong
+    test_fit(_ms.model_Exponential)
+    test_fit(_ms.model_parabolic)
 
 #    # double check math! --- put in abs(XX) where necessary,
 #    # use subfunctions/ chain rule for derivatives
