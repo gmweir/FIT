@@ -4005,7 +4005,7 @@ class ModelLogGaussian(ModelClass):
         d2fdx2 = -10.0/(ss**2.0 * _np.log(10)
         """
         AA, xo, ss = tuple(aa)
-        return -10.0/(_np.power(ss, 2.0) * _np.log(10))
+        return (-10.0/(_np.power(ss, 2.0) * _np.log(10)))*_np.ones_like(XX)
 
     @staticmethod
     def _partial(XX, aa, **kwargs):
@@ -4348,38 +4348,38 @@ class ModelPseudoVoigt(ModelClass):
     @staticmethod
     def _model(XX, aa, **kwargs):
         return (aa[0]*ModelLorentzian._model(XX, aa[1:4], **kwargs)
-                (1.0-aa[0])*ModelNormal._model(XX, aa[4:], **kwargs))
+               + (1.0-aa[0])*ModelNormal._model(XX, aa[4:], **kwargs))
 
     @staticmethod
     def _deriv(XX, aa, **kwargs):
         return (aa[0]*ModelLorentzian._deriv(XX, aa[1:4], **kwargs)
-                (1.0-aa[0])*ModelNormal._deriv(XX, aa[4:], **kwargs))
+               + (1.0-aa[0])*ModelNormal._deriv(XX, aa[4:], **kwargs))
 
     @staticmethod
     def _deriv2(XX, aa, **kwargs):
         return (aa[0]*ModelLorentzian._deriv2(XX, aa[1:4], **kwargs)
-                (1.0-aa[0])*ModelNormal._deriv2(XX, aa[4:], **kwargs))
+               + (1.0-aa[0])*ModelNormal._deriv2(XX, aa[4:], **kwargs))
 
     @staticmethod
     def _partial(XX, aa, **kwargs):
-        gvec = _np.concatenate( (ModelLorentzian._model(XX, aa[1:4], **kwargs)
-                                - ModelNormal._model(XX, aa[4:], **kwargs),
+        gvec = _np.concatenate( (_np.atleast_2d(ModelLorentzian._model(XX, aa[1:4], **kwargs)
+                                - ModelNormal._model(XX, aa[4:], **kwargs)),
                             aa[0]*ModelLorentzian._partial(XX, aa[1:4], **kwargs),
                            (1.0-aa[0])*ModelNormal._partial(XX, aa[4:], **kwargs)), axis=0)
         return gvec
 
     @staticmethod
     def _partial_deriv(XX, aa, **kwargs):
-        dgdx = _np.concatenate( (ModelLorentzian._deriv(XX, aa[1:4], **kwargs)
-                                - ModelNormal._deriv(XX, aa[4:], **kwargs),
+        dgdx = _np.concatenate( (_np.atleast_2d(ModelLorentzian._deriv(XX, aa[1:4], **kwargs)
+                                - ModelNormal._deriv(XX, aa[4:], **kwargs)),
                                  aa[0]*ModelLorentzian._partial_deriv(XX, aa[1:4], **kwargs),
                            (1.0-aa[0])*ModelNormal._partial_deriv(XX, aa[4:], **kwargs)), axis=0)
         return dgdx
 
     @staticmethod
     def _partial_deriv2(XX, aa, **kwargs):
-        d2gdx2 = _np.concatenate( (ModelLorentzian._deriv2(XX, aa[1:4], **kwargs)
-                                - ModelNormal._deriv2(XX, aa[4:], **kwargs),
+        d2gdx2 = _np.concatenate( (_np.atleast_2d(ModelLorentzian._deriv2(XX, aa[1:4], **kwargs)
+                                - ModelNormal._deriv2(XX, aa[4:], **kwargs)),
                                  aa[0]*ModelLorentzian._partial_deriv2(XX, aa[1:4], **kwargs),
                            (1.0-aa[0])*ModelNormal._partial_deriv2(XX, aa[4:], **kwargs)), axis=0)
         return d2gdx2
@@ -4861,18 +4861,34 @@ class ModelLogDoppler(ModelDoppler):
     def __init__(self, XX, af=None, **kwargs):
         model_order = kwargs.setdefault('model_order', 2)
         noshift = kwargs.setdefault('noshift', True)
+        Fs = kwargs.setdefault('Fs', 1.0)
+        self._af = ModelNormal._af
+        self._LB = ModelNormal._LB
+        self._UB = ModelNormal._UB
+        self._fixed = ModelNormal._fixed
+
         self._af[0] = 1e-3
         self._LB[0] = -_np.inf
         self._UB[0] = 10.0
         if model_order>0:
+            self._af = _np.asarray(self._af.tolist()+ModelLorentzian._af.tolist())
+            self._LB = _np.asarray(self._LB.tolist()+ModelLorentzian._LB.tolist())
+            self._UB = _np.asarray(self._UB.tolist()+ModelLorentzian._UB.tolist())
+
             self._af[3] = 1
             self._LB[3] = -_np.inf
             self._UB[3] = 10.0
+            self._fixed = _np.asarray(self._fixed.tolist()+ModelLorentzian._fixed.tolist())
             if noshift: self._fixed[4] = 1 # end if
         if model_order>1:
+            self._af = _np.asarray(self._af.tolist()+ModelNormal._af.tolist())
+            self._LB = _np.asarray(self._LB.tolist()+ModelNormal._LB.tolist())
+            self._UB = _np.asarray(self._UB.tolist()+ModelNormal._UB.tolist())
             self._af[6] = 1e-3
             self._LB[6] = -_np.inf
             self._UB[6] = 10.0
+            self._fixed = _np.asarray(self._fixed.tolist()+ModelNormal._fixed.tolist())
+            self._af[7] *= -1.0
         # end if
         super(ModelDoppler, self).__init__(XX, af, **kwargs)
         if noshift and model_order>0:
@@ -5225,7 +5241,7 @@ class _ModelTwoPower(ModelClass):
             - (d-1.0)*_np.power(XX, c)*_np.log(_np.abs(XX))*_ModelTwoPower._deriv(XX, [1.0, c, -1.0]))
 
         d2gdx2[2,:] = d2fdx2*(_np.power(d, -1.0) + _np.log(_np.abs(_ModelTwoPower._model_base(XX, [c, d-1.0]))))
-        d2gdx2[2,:] += dfdx*(_ModelTwoPower._deriv(XX, [c, d-1.0])/(a*_ModelTwoPower._model_base(XX, [c, d-1.0])))
+        d2gdx2[2,:] += dfdx*(_ModelTwoPower._deriv(XX, [a, c, d-1.0])/(a*_ModelTwoPower._model_base(XX, [c, d-1.0])))
         return d2gdx2
 
 #    @staticmethod
@@ -5321,6 +5337,17 @@ class ModelTwoPower(ModelClass):
         return (1.0-b)*_ModelTwoPower._deriv(XX, [a, c, d])
 
     @staticmethod
+    def _deriv2(XX, aa, **kwargs):
+        """
+        f/a = (1-b)*(1-x^c)^d + b
+        dfdx = a*(1-b)*c*d*x^(c-1)*(1-x^c)^(d-1)
+             = (1-b)*_deriv_twopower
+
+        """
+        a, b, c, d = tuple(aa)
+        return (1.0-b)*_ModelTwoPower._deriv2(XX, [a, c, d])
+
+    @staticmethod
     def _partial(XX, aa, **kwargs):
         """
         f/a = (1-b)*(1-x^c)^d + b
@@ -5395,9 +5422,9 @@ class ModelTwoPower(ModelClass):
         dgdx[2, :] += dfdx*( 1.0/XX
                 - (d-1.0)*c*_np.power(XX, c-1.0)*_np.log(_np.abs(XX))/_ModelTwoPower._model_base(XX,[c, 1.0])
                 - (d-1.0)*_np.power(XX, c)*1.0/XX/_ModelTwoPower._model_base(XX,[c, 1.0])
-                + (d-1.0)*_np.power(XX, c)*_np.log(_np.abs(XX))*a*_ModelTwoPower._deriv(XX,[c, 1.0])/_np.power(_ModelTwoPower._model(XX,[c, 1.0]), 2.0))
+                + (d-1.0)*_np.power(XX, c)*_np.log(_np.abs(XX))*a*_ModelTwoPower._deriv(XX,[a, c, 1.0])/_np.power(_ModelTwoPower._model(XX,[a, c, 1.0]), 2.0))
         dgdx[3, :] = d2fdx2*( 1.0/d + _np.log(_np.abs(_ModelTwoPower._model_base(XX, [c, 1.0]))) )
-        dgdx[3, :] += dfdx*( _ModelTwoPower._deriv(XX, [c, 1.0])/_ModelTwoPower._model(XX, [c, 1.0]))
+        dgdx[3, :] += dfdx*( _ModelTwoPower._deriv(XX, [a, c, 1.0])/_ModelTwoPower._model(XX, [a, c, 1.0]))
         return dgdx
 
 #    @staticmethod
@@ -7331,34 +7358,34 @@ if __name__ == '__main__':
 #    XX = _np.linspace(1e-3, 0.99, num=61)
 #    XX = _np.linspace(1e-3, 0.99, num=100)
 
-    mod = ModelLine().test_numerics()
-    mod = ModelSines().test_numerics()
-    mod = ModelSines().test_numerics(nfreqs=5, fmod=5.0, shape='square', duty=0.40)
-    mod = ModelFourier().test_numerics() # broken
-    mod = ModelFourier.test_numerics(nfreqs=5, shape='square', duty=0.40)
-    mod = ModelPoly.test_numerics(npoly=1)
-    mod = ModelPoly.test_numerics(npoly=2)
-    mod = ModelPoly.test_numerics(npoly=5)
-    mod = ModelPoly.test_numerics(npoly=12)
-    mod = ModelProdExp.test_numerics(npoly=1)
-    mod = ModelProdExp.test_numerics(npoly=2)
-    mod = ModelProdExp.test_numerics(npoly=5)
-    mod = ModelProdExp.test_numerics(npoly=12)
-    mod = ModelEvenPoly.test_numerics(npoly=1)
-    mod = ModelEvenPoly.test_numerics(npoly=2)
-    mod = ModelEvenPoly.test_numerics(npoly=3)
-    mod = ModelEvenPoly.test_numerics(npoly=4)
-    mod = ModelEvenPoly.test_numerics(npoly=8)
-    mod = ModelPowerLaw.test_numerics(npoly=2)
-    mod = ModelPowerLaw.test_numerics(npoly=3)
-    mod = ModelPowerLaw.test_numerics(npoly=4)
-    mod = ModelPowerLaw.test_numerics(npoly=8)
-    mod = ModelParabolic.test_numerics()
-    mod = ModelExponential.test_numerics()
-    mod = ModelGaussian.test_numerics()
-    mod = ModelOffsetGaussian.test_numerics()
-    mod = ModelOffsetNormal.test_numerics()
-    mod = ModelNormal.test_numerics()
+#    mod = ModelLine().test_numerics()
+#    mod = ModelSines().test_numerics()
+#    mod = ModelSines().test_numerics(nfreqs=5, fmod=5.0, shape='square', duty=0.40)
+#    mod = ModelFourier().test_numerics() # broken
+#    mod = ModelFourier.test_numerics(nfreqs=5, shape='square', duty=0.40)
+#    mod = ModelPoly.test_numerics(npoly=1)
+#    mod = ModelPoly.test_numerics(npoly=2)
+#    mod = ModelPoly.test_numerics(npoly=5)
+#    mod = ModelPoly.test_numerics(npoly=12)
+#    mod = ModelProdExp.test_numerics(npoly=1)
+#    mod = ModelProdExp.test_numerics(npoly=2)
+#    mod = ModelProdExp.test_numerics(npoly=5)
+#    mod = ModelProdExp.test_numerics(npoly=12)
+#    mod = ModelEvenPoly.test_numerics(npoly=1)
+#    mod = ModelEvenPoly.test_numerics(npoly=2)
+#    mod = ModelEvenPoly.test_numerics(npoly=3)
+#    mod = ModelEvenPoly.test_numerics(npoly=4)
+#    mod = ModelEvenPoly.test_numerics(npoly=8)
+#    mod = ModelPowerLaw.test_numerics(npoly=2)
+#    mod = ModelPowerLaw.test_numerics(npoly=3)
+#    mod = ModelPowerLaw.test_numerics(npoly=4)
+#    mod = ModelPowerLaw.test_numerics(npoly=8)
+#    mod = ModelParabolic.test_numerics()
+#    mod = ModelExponential.test_numerics()
+#    mod = ModelGaussian.test_numerics()
+#    mod = ModelOffsetGaussian.test_numerics()
+#    mod = ModelOffsetNormal.test_numerics()
+#    mod = ModelNormal.test_numerics()
     mod = ModelLogGaussian.test_numerics()
     mod = ModelLorentzian.test_numerics()
     mod = ModelPseudoVoigt.test_numerics()
