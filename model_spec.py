@@ -2732,7 +2732,7 @@ def partial_parabolic(XX, aa):
 def partial_deriv_parabolic(XX, aa):
     return ModelParabolic._partial_deriv(XX, aa)
 
-def model_parabolic(XX, af, **kwargs):
+def model_parabolic(XX=None, af=None, **kwargs):
     return _model(ModelParabolic, XX, af, **kwargs)
 
 # =========================================== #
@@ -4261,14 +4261,20 @@ class ModelLorentzian(ModelClass):
         dfds = -2*A*(ss^2-4*(x-xo)^2)/( b^2 + 4*(x-xo)^2 )^2 / pi
 
         d2fdxdA = -16*ss*(x-xo)/( ss^2 +4*(xo-x)^2)^2 / pi
+        d2fdxdxo = 16*AA*ss*(ss^2-12*(XX-x0)^2)/(ss^2+4*(XX-x0)^2)^3/pi
+        d2fdxdss = 16*AA*(XX-x0)*(3*ss^2-4(XX^2-2XX*x0+x0^2))/(pi*(ss^2+4(XX^2-2XX*x0+x0^2))^3)
+
+        d3fdx2dA = -16*ss*( ss^2-12*(x-xo)^2 )/( ss^2 +4*(x-xo)^2)^3 / pi
+        d3fdx2dxo = 768 AA*ss*(x0-x)*(b^2-4*(c-x)^2)/(b^2+4*(x0-XX)^2)^4/pi
+        d3fdx2dss = 48*AA*(ss^4-24*ss^2*(x-xo)^2+16*(c-x)^4)/(b^2+4*(x0-XX)^2)^4/pi
         """
         AA, x0, ss = tuple(aa)
 
         d2gdx2 = _np.zeros( (3,_np.size(XX)), dtype=_np.float64)
-        d2gdx2[0,:] = -1.0*16.0*(XX-x0)*ss/(_np.pi*_np.power(4.0*(XX-x0)*(XX-x0)+ss*ss, 2.0))
-        d2gdx2[1,:] = 16.0*AA*ss*(ss*ss-12.0*(XX-x0)*(XX-x0))/_np.power(ss*ss+4*_np.power(XX-x0, 2.0),3.0)/_np.pi
-        d2gdx2[2,:] = 16.0*AA*(XX-x0)*(3.0*ss*ss-4.0*(XX*XX-2.0*XX*x0+x0*x0))/(_np.pi*_np.power(ss*ss+4.0*(XX*XX-2.0*XX*x0+x0*x0), 3.0))
-        return dgdx
+        d2gdx2[0,:] = -1.0*16.0*ss*( ss*ss-12.0*(XX-x0)*(XX-x0) )/_np.power( ss*ss +4.0*(XX-x0)*(XX-x0), 3.0) / _np.pi
+        d2gdx2[1,:] =768.0*AA*ss*(x0-XX)*(ss*ss-4.0*_np.power(XX-x0,4.0))/_np.power(ss*ss+4.0*_np.power(XX-x0,2.0), 4.0)/_np.pi
+        d2gdx2[2,:] = 48.0*AA*(_np.power(ss,4.0)-24.0*ss*ss*_np.power(XX-x0,2.0)+16.0*_np.power(XX-x0,4.0))/_np.power(ss*ss+4.0*_np.power(XX-x0,2.0), 4.0)/_np.pi
+        return d2gdx2
 
 #    @staticmethod
 #    def _hessian(XX, aa):
@@ -4340,27 +4346,42 @@ class ModelPseudoVoigt(ModelClass):
 
     @staticmethod
     def _model(XX, aa, **kwargs):
-        return (aa[0]*ModelLorentzian._model(XX, aa[1:4])
-                (1.0-aa[0])*ModelNormal._model(XX, aa[4:]))
+        return (aa[0]*ModelLorentzian._model(XX, aa[1:4], **kwargs)
+                (1.0-aa[0])*ModelNormal._model(XX, aa[4:], **kwargs))
 
     @staticmethod
     def _deriv(XX, aa, **kwargs):
-        return (aa[0]*ModelLorentzian._deriv(XX, aa[1:4])
-                (1.0-aa[0])*ModelNormal._deriv(XX, aa[4:]))
+        return (aa[0]*ModelLorentzian._deriv(XX, aa[1:4], **kwargs)
+                (1.0-aa[0])*ModelNormal._deriv(XX, aa[4:], **kwargs))
+
+    @staticmethod
+    def _deriv2(XX, aa, **kwargs):
+        return (aa[0]*ModelLorentzian._deriv2(XX, aa[1:4], **kwargs)
+                (1.0-aa[0])*ModelNormal._deriv2(XX, aa[4:], **kwargs))
 
     @staticmethod
     def _partial(XX, aa, **kwargs):
-        gvec = _np.concatenate( (ModelPseudoVoigt.model/aa[0],
-                            aa[0]*ModelLorentzian._partial(XX, aa[1:4]),
-                           (1.0-aa[0])*ModelNormal._partial(XX, aa[4:])), axis=0)
+        gvec = _np.concatenate( (ModelLorentzian._model(XX, aa[1:4], **kwargs)
+                                - ModelNormal._model(XX, aa[4:], **kwargs),
+                            aa[0]*ModelLorentzian._partial(XX, aa[1:4], **kwargs),
+                           (1.0-aa[0])*ModelNormal._partial(XX, aa[4:], **kwargs)), axis=0)
         return gvec
 
     @staticmethod
     def _partial_deriv(XX, aa, **kwargs):
-        dgdx = _np.concatenate( (ModelPseudoVoigt.derivative/aa[0],
-                                 aa[0]*ModelLorentzian._partial_deriv(XX, aa[1:4]),
-                           (1.0-aa[0])*ModelNormal._partial_deriv(XX, aa[4:])), axis=0)
+        dgdx = _np.concatenate( (ModelLorentzian._deriv(XX, aa[1:4], **kwargs)
+                                - ModelNormal._deriv(XX, aa[4:], **kwargs),
+                                 aa[0]*ModelLorentzian._partial_deriv(XX, aa[1:4], **kwargs),
+                           (1.0-aa[0])*ModelNormal._partial_deriv(XX, aa[4:], **kwargs)), axis=0)
         return dgdx
+
+    @staticmethod
+    def _partial_deriv2(XX, aa, **kwargs):
+        d2gdx2 = _np.concatenate( (ModelLorentzian._deriv2(XX, aa[1:4], **kwargs)
+                                - ModelNormal._deriv2(XX, aa[4:], **kwargs),
+                                 aa[0]*ModelLorentzian._partial_deriv2(XX, aa[1:4], **kwargs),
+                           (1.0-aa[0])*ModelNormal._partial_deriv2(XX, aa[4:], **kwargs)), axis=0)
+        return d2gdx2
 
 #    @staticmethod
 #    def _hessian(XX, aa):
