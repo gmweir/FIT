@@ -26,6 +26,7 @@ try:
     __import__('mpfit')
     __mpfitonpath__ = True
     from mpfit import mpfit as LMFIT
+#    __mpfitonpath__ = True
 except:
     __mpfitonpath__ = False
 # end try

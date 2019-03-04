@@ -5454,6 +5454,21 @@ class ModelFlattop(ModelClass):
         return -1.0*a*c*temp/(XX*_np.power(1.0+temp,2.0))
 
     @staticmethod
+    def _deriv2(XX, aa, **kwargs):
+        """
+        prof ~ f(x) = a / (1 + (x/b)^c)
+        dfdx = -1*c*x^(c-1)*b^-c* a/(1+(x/b)^c)^2
+             = -a*c*(x/b)^c/(x*(1+(x/b)^c)^2)
+             = -a*c*(x/b)^c/(x/b^(2c)*(b^c+x^c)^2)
+             = -a*c*(x*b)^c/(x*(b^c+x^c)^2)
+        d2fdx2 = -a*c^2*(x/b)^(c-1)/(x^2*(1+(x/b)^c)^2)
+                + a*c*(x/b)^c/(x*(1+(x/b)^c)^2)
+        """
+        a, b, c = tuple(aa)
+        temp = _np.power(XX/b, c)
+        return -1.0*a*c*temp/(XX*_np.power(1.0+temp,2.0))
+
+    @staticmethod
     def _partial(XX, aa, **kwargs):
         """
         prof ~ f(x) = a / (1 + (x/b)^c)
@@ -6666,7 +6681,7 @@ if __name__ == '__main__':
 #    mod = ModelPowerLaw.test_numerics(npoly=3)
 #    mod = ModelPowerLaw.test_numerics(npoly=4)
 #    mod = ModelPowerLaw.test_numerics(npoly=8)
-#    mod = ModelParabolic.test_numerics()
+    mod = ModelParabolic.test_numerics()
 #    mod = ModelExponential.test_numerics()
 
 #    Fs = 1.0
@@ -6728,3 +6743,5 @@ if __name__ == '__main__':
 
 # ========================================================================== #
 # ========================================================================== #
+
+
