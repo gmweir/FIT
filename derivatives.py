@@ -183,15 +183,15 @@ def findiff1d(xvar, u, varu=None, order=1):
 
     if nc > 5 and order > 2:
         # 4th order accurate centered finite differencing across middle
-        dudx[0:nr, 2:-3] = (8*(u[0:nr, 3:-2] - u[0:nr, 1:-4])
-                            + (u[0:nr, 4:-1] - u[0:nr, 0:-5]))/(12*dx)
+        dudx[0:nr, 2:-3] = (8.0*(u[0:nr, 3:-2] - u[0:nr, 1:-4])
+                            + (u[0:nr, 4:-1] - u[0:nr, 0:-5]))/(12.0*dx)
     # endif
 
     if nc > 7 and order > 4:
         # 6th order accurate across middle:
-        dudx[0:nr, 3:-4] = (45*(u[0:nr, 4:-3] - u[0:nr, 2:-5])
-                            - 9*(u[0:nr, 5:-2] - u[0:nr, 1:-6])
-                            + (u[0:nr, 6:-1] - u[0:nr, 0:-7]))/(60*dx)
+        dudx[0:nr, 3:-4] = (45.0*(u[0:nr, 4:-3] - u[0:nr, 2:-5])
+                            - 9.0*(u[0:nr, 5:-2] - u[0:nr, 1:-6])
+                            + (u[0:nr, 6:-1] - u[0:nr, 0:-7]))/(60.0*dx)
     # endif
 
     # =============================================================== #
