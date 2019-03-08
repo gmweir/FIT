@@ -20,591 +20,10 @@ import matplotlib.pyplot as _plt
 from pybaseutils import utils as _ut
 #from pybaseutils.utils import properror, sech
 
-try:
-    from FIT.finite_differences import FiniteDifferences as Struct_FD
-except:
-    from .finite_differences import FiniteDifferences as Struct_FD
-# end try
+from FIT.model import ModelClass
 
 # ========================================================================== #
 # ========================================================================== #
-
-class ModelClass(Struct_FD):
-    def __init__(self, XX=None, af=None, **kwargs):
-        LB, UB, fixed = self.defaults(**kwargs)
-        if af is None:   af = _np.copy(self._af)    # end if
-        self.af = _np.copy(af)
-        self.Lbounds = _np.copy(LB)
-        self.Ubounds = _np.copy(UB)
-        self.fixed = _np.copy(fixed)
-        kwargs.setdefault('analytic', True) # default to analytic derivatives/jacob. etc.
-#        kwargs.setdefault('analytic', False) # default to analytic derivatives/jacob. etc.
-        self.__dict__.update(kwargs)
-        self.kwargs = kwargs
-        if XX is not None:
-            self.update(XX=XX)
-    # end def __init__
-
-
-    def model(self, XX, aa=None, **kwargs):
-        """
-        Returns the model.
-            f(x) = f(x, a, b, c, ...)
-            out: f(x)
-        """
-        XX, aa, kwargs = self.parse_in(XX, aa, **kwargs)
-        return self._model(XX, aa, **kwargs)
-
-    def derivative(self, XX, aa=None, **kwargs):
-        """
-        Returns the derivative of the model.
-            f(x) = f(x, a, b, c, ...)
-            out: dfdx
-
-        Leave it to the user to define the method '_deriv' with an analytic derivative.
-        otherwise, calculate the derivative numerically by finite-differencing the model.
-        """
-        XX, aa, kwargs = self.parse_in(XX, aa, **kwargs)
-        if hasattr(self, '_deriv') and self.analytic:
-            return self._deriv(XX, aa, **kwargs)
-
-        if 'hh' not in kwargs:
-            tst = self.model(XX, aa, **kwargs)
-            dmax = _np.max((tst.max()/0.2, 5.0))
-
-            dmax = _np.max((_np.max(_np.abs(aa))/0.2, dmax))   # maximum derivative, arbitraily say 10/0.2
-            hh = _ut.cbrt(6.0*self.machine_epsilon/dmax)
-            kwargs.setdefault('hh', hh)
-        # end if
-
-        # check the model for boundary conditions (non-negative, etc.)
-        kwargs.setdefault('order', 6)
-
-#        if hasattr(self, 'badleftboundary') and self.badleftboundary:
-#            # Use
-
-        return self._1stderiv_fd(self.model, XX=XX, aa=aa, **kwargs)
-        # end if
-    # end def derivative
-
-    def jacobian(self, XX, aa=None, **kwargs):
-        """
-        Returns the jacobian of the model.
-            f(x) = f(x, a, b, c)
-            out: [dfda(x), dfdb(x), dfdc(x), ...]
-
-        Leave it to the user to define the method '_partial' with an analytic Jacobian.
-        Otherwise, calculate the jacobian numerically by finite-differencing the model.
-        """
-        XX, aa, kwargs = self.parse_in(XX, aa, **kwargs)
-        if hasattr(self, '_partial') and self.analytic:
-            return self._partial(XX, aa, **kwargs)
-        if 'hh' not in kwargs:
-            tst = self.model(XX, aa, **kwargs)
-            dmax = _np.max((tst.max()/0.2, 5.0))
-
-            dmax = _np.max((_np.max(_np.abs(aa))/0.2, dmax))   # maximum derivative, arbitraily say 10/0.2
-            hh = _ut.cbrt(6.0*self.machine_epsilon/dmax)
-            hh = hh*_np.ones_like(aa)
-            kwargs.setdefault('hh', hh)
-        # end if
-        order = kwargs.setdefault('order', 6)
-
-        def func(ai, xi, **kwargs):
-            return self.model(xi, ai, **kwargs)
-
-        numfit = _np.size(aa)
-        gvec = _np.zeros((numfit, _np.size(XX)), dtype=_np.float64)
-        for ii in range(numfit):
-            msk = _np.zeros(aa.shape, dtype=bool)
-            msk[ii] = True
-            gvec[ii, :] = self._1stderiv_fd(func, XX=aa, aa=XX, msk=msk, **kwargs)
-#        # end for
-        return gvec
-
-    def derivative_jacobian(self, XX, aa=None, **kwargs):
-        """
-        Returns the jacobian of the derivative of the model.
-            f(x) = f(x, a, b, c)
-            out: [d2fdxda(x), d2fdxdb(x), d2fdxdc(x), ...]
-
-        Leave it to the user to define the method '_partial_deriv' with an analytic Jacobian of the derivative.
-        Otherwise, calculate the jacobian of the derivative numerically by finite-differencing the model derivative.
-        """
-        XX, aa, kwargs = self.parse_in(XX, aa, **kwargs)
-        if hasattr(self, '_partial_deriv') and self.analytic:
-            return self._partial_deriv(XX, aa, **kwargs)
-        if 'hx' not in kwargs:
-            tst = self.model(XX, aa, **kwargs)
-            dmax = _np.max((tst.max()/0.2, 5.0))
-
-            dmax = _np.max((_np.max(_np.abs(aa))/0.2, dmax))   # maximum derivative, arbitraily say 10/0.2
-            hx = _ut.cbrt(6.0*self.machine_epsilon/dmax)
-            kwargs.setdefault('hx', hx)
-        # end if
-        if 'ha' not in kwargs:
-            tst = self.model(XX, aa, **kwargs)
-            dmax = _np.max((tst.max()/0.2, 5.0))
-
-            dmax = _np.max((_np.max(_np.abs(aa))/0.2, dmax))   # maximum derivative, arbitraily say 10/0.2
-            ha = _ut.cbrt(6.0*self.machine_epsilon/dmax)
-            ha = ha*_np.ones_like(aa)
-            kwargs.setdefault('ha', ha)
-        # end if
-        order = kwargs.setdefault('order', 4)
-        if order<5:
-            numfit = _np.size(aa)
-            dgdx = _np.zeros((numfit, _np.size(XX)), dtype=_np.float64)
-            for ii in range(numfit):
-                msk = _np.zeros(aa.shape, dtype=bool)
-                msk[ii] = True
-                dgdx[ii, :] = self._2ndderiv_mixedfd(self.model, XX=XX, aa=aa, msk=msk, **kwargs)
-            # end for
-        else:
-            # use reversal of differentiation orders to do it on one-step here
-            #    based on the jacobian (if numerical, this degrades accuracy)
-            # for simple models (line/sine):
-            #    passes at 4th order for rtol, atol = (1e-5, 1e-4)
-            #    passes at 6th order for rtol, atol = (1e-4, 1e-4)
-            #    passes at 8th order for rtol, atol = (1e-5, 1e-4),
-            dgdx = self._1stderiv_fd(self.jacobian, XX=XX, hh=hx, aa=aa, **kwargs)
-        return dgdx
-
-    def second_derivative(self, XX, aa=None, **kwargs):
-        """
-        Returns the 2nd derivative of the model.
-            f(x) = f(x, a, b, c, ...)
-            out: d2fdx2
-
-        Leave it to the user to define the method '_deriv2' with an analytic 2nd derivative.
-        otherwise, calculate the derivative numerically by finite-differencing the model.
-        """
-        XX, aa, kwargs = self.parse_in(XX, aa, **kwargs)
-        if hasattr(self, '_deriv2') and self.analytic:
-            return self._deriv2(XX, aa, **kwargs)
-        if 'hh' not in kwargs:
-            tst = self.derivative(XX, aa, **kwargs)
-            dmax = _np.max((tst.max()/0.2, 5.0))
-#            dmax = 1
-#            dmax = _np.max((_np.max(_np.abs(aa))/0.2, dmax))   # maximum derivative, arbitraily say 10/0.2
-            hh = _ut.cbrt(6.0*self.machine_epsilon/dmax)
-            hh = _np.power(hh, 0.5)
-#            hh = 10.0*hh
-            kwargs.setdefault('hh', hh)
-        # end if
-        # 2nd order accurate will not pass standard numpy assertion test: atol=1e-5, rtol=1e-8
-        # 4th order accurate passes standard numpy assertion test: atol=1e-5, rtol=1e-8
-        # 6th order and 8th order also passes
-        order = kwargs.setdefault('order', 8)
-        return self._2ndderiv_fd(self.model, XX=XX, aa=aa, **kwargs)
-
-    def second_derivative_jacobian(self, XX, aa=None, **kwargs):
-        """
-        Returns the jacobian of the second derivative of the model.
-            f(x) = f(x, a, b, c)
-            out: [d3fdx2da(x), d3fdx2db(x), d3fdx2dc(x), ...]
-
-        Leave it to the user to define the method '_partial_deriv2' with an analytic Jacobian of the 2nd derivative.
-        Otherwise, calculate the jacobian of the 2nd derivative numerically by finite-differencing the model derivative.
-        """
-        XX, aa, kwargs = self.parse_in(XX, aa, **kwargs)
-        if hasattr(self, '_partial_deriv2') and self.analytic:
-            return self._partial_deriv2(XX, aa, **kwargs)
-        if 'hx' not in kwargs:
-            tst = self.model(XX, aa, **kwargs)
-            dmax = _np.max((tst.max()/0.2, 5.0))
-
-            dmax = _np.max((_np.max(_np.abs(aa))/0.2, dmax))   # maximum derivative, arbitraily say 10/0.2
-            hx = _ut.cbrt(6.0*self.machine_epsilon/dmax)
-            hx = _np.power(hx, 0.5)
-            kwargs.setdefault('hx', hx)
-        # end if
-        if 'ha' not in kwargs:
-            tst = self.model(XX, aa, **kwargs)
-            dmax = _np.max((tst.max()/0.2, 5.0))
-
-            dmax = _np.max((_np.max(_np.abs(aa))/0.2, dmax))   # maximum derivative, arbitraily say 10/0.2
-            ha = _ut.cbrt(6.0*self.machine_epsilon/dmax)
-            ha = ha*_np.ones_like(aa)
-            kwargs.setdefault('ha', ha)
-        # end if
-        order = kwargs.setdefault('order', 2)
-
-        if order<2:
-            numfit = _np.size(aa)
-            d2gdx2 = _np.zeros((numfit, _np.size(XX)), dtype=_np.float64)
-            for ii in range(numfit):
-                msk = _np.zeros(aa.shape, dtype=bool)
-                msk[ii] = True
-                d2gdx2[ii, :] = self._3rdderiv_mixedfd(self.model, XX=XX, aa=aa, msk=msk, **kwargs)
-    #        # end for
-        else:
-            # Numerically unstable to take 2nd derivative of a numerical derivative
-            # this is only for testing!
-            if 'hh' not in kwargs:
-    #            tst = self.second_derivative(XX, aa, **kwargs)
-    #            dmax = _np.max((tst.max()/0.1, 5.0))
-    #            dmax = _np.max(_np.vstack(_np.abs(aa)/0.1, dmax))   # maximum derivative, arbitraily say 10/0.2
-    #            hh = _ut.cbrt(6.0*self.machine_epsilon/dmax)
-    #            hh = hh*_np.ones_like(aa)
-
-                tst = self.derivative_jacobian(XX, aa, **kwargs)
-                tst = _np.diff(tst, axis=1)/_np.diff(XX)
-                dmax = _np.max((tst.max(), 5.0))
-    #            dmax = _np.min((dmax,10))
-                hh = _ut.cbrt(6.0*self.machine_epsilon/dmax)
-                hh = _np.power(hh, 0.5)
-                kwargs.setdefault('hh', hh)
-            # end if
-            d2gdx2 = self._2ndderiv_fd(self.jacobian, XX=XX, aa=aa, **kwargs)
-        return d2gdx2
-
-    def hessian(self, XX, aa=None, **kwargs):
-        """
-        Returns the hessian of the model
-            f(x) = f(x, a, b, c)
-            out: [[d2fda2(x), d2fdbda(x), d2fdcda(x), ...]
-                  [d2fdadb(x), d2fdb2(x), d2fdcdb(x), ...]
-                  [               ...                    ] ]
-
-        Leave it to the user to define the method '_hessian' with an analytic Hessian.
-        Otherwise, calculate the hessian numerically by finite-differencing the jacobian.
-        """
-        XX, aa, kwargs = self.parse_in(XX, aa, **kwargs)
-        if hasattr(self, '_hessian') and self.analytic:
-            return self._hessian(XX, aa, **kwargs)
-        hstep = kwargs.setdefault('hstep', None)
-        if hstep is None:
-            tst = self.jacobian(XX, aa, **kwargs)
-            dmax = _np.max((tst.flatten().max()/0.2, 5.0))
-            dmax = _np.max(_np.max(aa)/0.2, dmax)   # maximum derivative, arbitraily say 10/0.2
-            hh = _ut.cbrt(6.0*self.machine_epsilon/dmax)
-#            hh = _np.power(hh, 0.5)
-            hh = hh*_np.ones_like(hh)
-
-#            hh = _np.sqrt(self.machine_epsilon)*aa
-#            if (hh<100*self.machine_epsilon).any():
-#                hh[hh<_np.sqrt(self.machine_epsilon)] = _np.sqrt(self.machine_epsilon)
-        else:
-            hh = hstep
-        # end if
-        numfit = _np.size(aa)
-        hess = _np.zeros((numfit, numfit, _np.size(XX)), dtype=_np.float64)
-        for ii in range(numfit):
-            tmp = _np.zeros_like(aa)
-            tmp[ii] = 1.0
-            hess[ii, :, :] = (self.jacobian(XX, aa + hh*tmp, **kwargs) - self.jacobian(XX, aa-hh*tmp, **kwargs))/(2*hh[ii]) # TODO!: use second derivative of model wrt a
-        # end for
-        return hess
-    # end def
-
-
-    # ============================================================= #
-    # ============================================================= #
-
-
-    def update_minimal(self, XX, af, **kwargs):
-        XX, af, kwargs = self.parse_in(XX, af, **kwargs)
-        self.prof = self.model(XX, aa=af, **kwargs)
-        self.gvec = self.jacobian(XX, aa=af, **kwargs)
-        return self.prof, self.gvec
-
-    def update(self, XX=None, af=None, **kwargs):
-        XX, af, kwargs = self.parse_in(XX, af, **kwargs)
-        self.XX = _np.copy(XX)
-        self.af = _np.copy(af)
-        self.kwargs = kwargs
-        self.prof = self.model(XX, aa=af, **kwargs)
-        self.gvec = self.jacobian(XX, aa=af, **kwargs)
-        self.dprofdx = self.derivative(XX, aa=af, **kwargs)
-        self.dgdx = self.derivative_jacobian(XX, aa=af, **kwargs)
-        self.updatevar(**kwargs)
-
-        return self.prof, self.gvec, self.dprofdx, self.dgdx
-    # end def
-
-    def updatevar(self, **kwargs):
-        if 'covmat' in kwargs:
-            self.covmat = kwargs['covmat']
-        if hasattr(self, 'covmat'):
-            self.varprof = self.properror(self.XX, self.covmat, self.gvec)
-            self.vardprofdx = self.properror(self.XX, self.covmat, self.dgdx)
-        # end if
-    # end def
-
-    @staticmethod
-    def properror(XX, covmat, gvec):
-        return _ut.properror(XX, covmat, gvec)
-
-
-    def defaults(self, **kwargs):
-        if 'Lbounds' in kwargs:
-            LB = kwargs.setdefault('Lbounds', self._LB)
-            UB = kwargs.setdefault('Ubounds', self._UB)
-        else:
-            LB = kwargs.setdefault('LB', self._LB)
-            UB = kwargs.setdefault('UB', self._UB)
-        fixed = kwargs.setdefault('fixed', self._fixed)
-        return LB, UB, fixed
-
-    # ====================================================== #
-    # ====================================================== #
-
-    def checkbounds(self, dat, ain, mag=None):
-        LB = _np.copy(self.Lbounds)
-        UB = _np.copy(self.Ubounds)
-        ain = _checkbounds(ain, LB=LB, UB=UB)
-        return dat, ain
-
-    # ============================= #
-
-    def scalings(self, xdat, ydat, **kwargs):
-        self.xdat, self.ydat = _np.copy(xdat), _np.copy(ydat)
-        if not hasattr(self, 'xoffset'):
-            self.xoffset = _np.nanmin(xdat)
-        if not hasattr(self, 'xslope'):
-            self.xslope = _np.nanmax(xdat) - _np.nanmin(xdat)
-        if not hasattr(self, 'offset'):
-            self.offset = _np.nanmin(ydat)
-        if not hasattr(self, 'slope'):
-            self.slope = _np.nanmax(ydat)-_np.nanmin(ydat)
-    # end def
-
-    def scaledat(self, xdat, ydat, vdat, vxdat=None, **kwargs):
-        """
-        When fitting problems it is convenient to scale it to order 1:
-            slope = _np.nanmax(pdat)-_np.nanmin(pdat)
-            offset = _np.nanmin(pdat)
-
-            pdat = (pdat-offset)/slope
-            vdat = vdat/slope**2.0
-
-        In general we cannot scale both x- and y-data due to non-linearities.
-        Return scalings on all data by default, but overwrite in each model with NL
-        (x-xmin)/(xmax-xmin) = (x-xoffset)/xslope
-        """
-        self.scalings(xdat, ydat, **kwargs)
-        self.xdat = (xdat-self.xoffset)/self.xslope
-        self.ydat = (ydat-self.offset)/self.slope
-        self.vdat = vdat/(self.slope*self.slope)
-        self.scaled = True
-        if hasattr(self, 'XX'):
-            self.XX = (self.XX-self.xoffset)/self.xslope
-        if vxdat is None:
-            self.vxdat = None
-            return self.xdat, self.ydat, self.vdat
-        else:
-            self.vxdat = _np.copy(vxdat)/(self.xslope*self.xslope)
-            return self.xdat, self.ydat, self.vdat, self.vxdat
-        # end if
-    # end def
-
-    def unscaledat(self, **kwargs):
-        """
-        After fitting, then the algebra necessary to unscale the problem to original
-        units is:
-            prof = slope*prof+offset
-            varp = varp*slope**2.0
-
-            dprofdx = (slope*dprofdx)
-            vardprofdx = slope**2.0 * vardprofdx
-
-        Note that when scaling the problem, it is best to propagate errors from
-        covariance / gvec / dgdx before rescaling because that is arbitrarily complex
-
-        In general we cannot scale both x- and y-data due to non-linearities.
-        Return scalings on all data by default, but overwrite in each model with NL
-        (x-xmin)/(xmax-xmin) = (x-xoffset)/xslope
-        """
-#        if not hasattr(self, 'xslope'):  self.xslope = 1.0   # end if
-#        if not hasattr(self, 'xoffset'): self.xoffset = 0.0  # end if
-#        if not hasattr(self, 'slope'):   self.slope = 1.0    # end if
-#        if not hasattr(self, 'offset'):  self.offset = 0.0   # end if
-        self.update(**kwargs)
-        if self.scaled:
-            # Fitted data
-            self.xdat = self.xdat*self.xslope+self.xoffset
-            self.ydat = self.ydat*self.slope+self.offset
-            self.vdat = self.vdat*self.slope*self.slope
-            if hasattr(self, 'vxdat') and self.vxdat is not None:
-                self.vxdat = self.vxdat*self.xslope*self.xslope
-            # end if
-            if hasattr(self, 'XX') and self.XX is not None:
-                self.XX = self.XX*self.xslope + self.xoffset
-            # Scaling model parameters to reproduce original data
-            self.af = self.unscaleaf(self.af)
-
-            # unscale the input covariance if there is one from a fitter
-            if hasattr(self, 'covmat'):
-                self.covmat = self.unscalecov(self.covmat)
-            # end if
-
-            # Update with the unscaled parameters
-            self.update()
-
-            # Calculated quantities  (if covmat already exists, this was done
-            # in update through propper error propagation)
-            if not hasattr(self, 'covmat'):
-                self.varprof *= self.slope*self.slope
-                self.vardprofdx *= (self.slope*self.slope)/(self.xslope*self.xslope)
-            # end if
-            self.scaled = False
-       # end if
-        if hasattr(self, 'vxdat') and self.vxdat is not None:
-            return self.xdat, self.ydat, self.vdat, self.vxdat
-        else:
-            return self.xdat, self.ydat, self.vdat
-        # end if
-    # end def
-
-#    @staticmethod
-#    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
-#        ain = _np.copy(ain)
-#        aout = _np.copy(ain)
-#        print('Unscaling model parameters not supported: \n'+
-#              '   Either not implemented in model or \n'+
-#              '   there is a nonlinearity in the analytic model that precludes analytic scaling!')
-    def unscaleaf(self, ain):
-        return NotImplementedError
-    # end def
-
-    def unscalecov(self, covin):
-        return NotImplementedError
-
-    # ========================================================= #
-
-    @classmethod
-    def test_numerics(cls, **kwargs):
-        num = kwargs.pop('num', 21)
-        start = kwargs.pop('start', 1e-3)
-        stop = kwargs.pop('stop', 0.99)
-        endpoint = kwargs.pop('endpoint', True)
-        dtyp = kwargs.pop('dtype', None)
-        XX = kwargs.pop('XX', _np.linspace(start=start, stop=stop, num=int(num), endpoint=endpoint, dtype=dtyp))
-
-        # call the analytic version and the numerical derivative version
-        modanal = cls(XX, **kwargs)
-        modnum = cls(XX, modanal.af, analytic=False)
-#        na = len(modanal.af)
-
-        # Manually call the second derivative because it is not calculated by default
-        modnum.d2profdx2 = modnum.second_derivative(XX)
-        modanal.d2profdx2 = modanal.second_derivative(XX)
-        modnum.d2gdx2 = modnum.second_derivative_jacobian(XX)
-        modanal.d2gdx2 = modanal.second_derivative_jacobian(XX)
-
-        # ======= #
-
-        # plot the model and its derivatives from both forms.  It should match.
-
-        def getylims(func1, func2, _ax):
-            ylims = _ax.get_ylim()
-            mn = _np.min((_np.nanmin(func1.flatten()), _np.nanmin(func2.flatten()), ylims[0]))
-            mx = _np.max((_np.nanmax(func1.flatten()), _np.nanmax(func2.flatten()), ylims[1]))
-            if mn == 0:     mn = -0.1*(ylims[1]-ylims[0])   # end if
-            if mx == 0:     mx = 0.1*(ylims[1]-ylims[0])    # end if
-            ylims = (_np.nanmin((0.8*mn, 1.2*mn)), _np.nanmax((0.8*mx, 1.2*mx)))
-            return ylims
-
-        _plt.figure()
-        _ax1 = _plt.subplot(3,2,1)
-        _ax1.plot(XX, modnum.prof, '-')
-        _ax1.plot(XX, modanal.prof, '.')
-        ylims = getylims(modnum.prof, modanal.prof, _ax1)
-        _ax1.set_ylim(ylims)
-        _ax1.set_title('model')
-
-        _ax2 = _plt.subplot(3,2,2, sharex=_ax1)
-        _ax2.plot(XX, modnum.gvec.T, '-')
-        _ax2.plot(XX, modanal.gvec.T, '.')
-        ylims = getylims(modnum.gvec, modanal.gvec, _ax2)
-        _ax2.set_ylim(ylims)
-        _ax2.set_title('jacobian')
-
-        _ax3 = _plt.subplot(3,2,3, sharex=_ax1)
-        _ax3.plot(XX, modnum.dprofdx, '-')
-        _ax3.plot(XX, modanal.dprofdx, '.')
-        ylims = getylims(modnum.dprofdx, modanal.dprofdx, _ax3)
-        _ax3.set_ylim(ylims)
-#        _ax3.set_title('derivative')
-        _ax3.set_ylabel('deriv')
-
-        _ax4 = _plt.subplot(3,2,4, sharex=_ax1)
-        _ax4.plot(XX, modnum.dgdx.T, '-')
-        _ax4.plot(XX, modanal.dgdx.T, '.')
-        ylims = getylims(modnum.dgdx, modanal.dgdx, _ax4)
-        _ax4.set_ylim(ylims)
-#        _ax4.set_title('deriv jacobian')
-
-        _ax5 = _plt.subplot(3,2,5, sharex=_ax1)
-        _ax5.plot(XX, modnum.d2profdx2, '-')
-        _ax5.plot(XX, modanal.d2profdx2, '.')
-        ylims = getylims(modnum.d2profdx2, modanal.d2profdx2, _ax5)
-        _ax5.set_ylim(ylims)
-#        _ax5.set_title('2nd deriv')
-        _ax5.set_ylabel('2nd deriv')
-
-        _ax6 = _plt.subplot(3,2,6, sharex=_ax1)
-        _ax6.plot(XX, modnum.d2gdx2.T, '-')
-        _ax6.plot(XX, modanal.d2gdx2.T, '.')
-        ylims = getylims(modnum.d2gdx2, modanal.d2gdx2, _ax6)
-        _ax6.set_ylim(ylims)
-#        _ax6.set_title('2nd deriv jacobian')
-
-        _plt.tight_layout()
-
-        # ======= #
-
-        try:
-            ii = -1
-            # Check the maximum error between quantities
-    #        rtol, atol = (1e-5, 1e-8)
-            rtol, atol = (1e-5, _np.max((1e-8, _np.nanmax(1e-8*modanal.prof))))
-            aerr = _np.nanmax(modnum.prof - modanal.prof)
-            rerr = 1.0-_np.nanmax(modnum.prof/modanal.prof)
-            assert _ut.allclose(modnum.prof, modanal.prof, rtol=rtol, atol=atol, equal_nan=True)  # same functions, this has to be true
-    ##        assert _ut.allclose(modnum.gvec, modanal.gvec, rtol=rtol, atol=atol, equal_nan=True)  # jacobian of model
-
-    ##        rtol, atol = (1e-4, 1e-5)
-            rtol, atol = (1e-5, _np.max((1e-8, _np.nanmax(1e-8*modanal.dprofdx))))
-            aerr = _np.nanmax(modnum.dprofdx - modanal.dprofdx)
-            rerr = 1.0-_np.nanmax(modnum.dprofdx/modanal.dprofdx)
-            assert _ut.allclose(modnum.dprofdx, modanal.dprofdx, rtol=rtol, atol=atol, equal_nan=True)  # derivative of model
-    ##        assert _ut.allclose(modnum.dgdx, modanal.dgdx, rtol=rtol, atol=atol, equal_nan=True)  # jacobian of the model derivative
-
-    ##        rtol, atol = (1e-3, 1e-4)
-            rtol, atol = (1e-5, _np.max((1e-8, _np.nanmax(1e-8*modanal.d2profdx2))))
-            aerr = _np.nanmax(modnum.d2profdx2 - modanal.d2profdx2)
-            rerr = 1.0-_np.nanmax(modnum.d2profdx2/modanal.d2profdx2)
-            assert _ut.allclose(modnum.d2profdx2, modanal.d2profdx2, rtol=rtol, atol=atol, equal_nan=True)  # model second derivative
-    ##        assert _ut.allclose(modnum.d2gdx2, modanal.d2gdx2, rtol=rtol, atol=atol, equal_nan=True)  # jacobian of the model second derivative
-
-            for ii in range(modanal.gvec.shape[0]):
-#                print(ii)
-#                rtol, atol = (1e-5, 1e-8)
-                rtol, atol = (1e-5, _np.max((1e-8, _np.nanmax(1e-8*modanal.gvec[ii,:]))))  # mixed 2nd deriv implemented up to 4th order
-                aerr = _np.nanmax(modnum.gvec[ii,:] - modanal.gvec[ii,:])
-                rerr = 1.0-_np.nanmax(modnum.gvec[ii,:]/modanal.gvec[ii,:])
-                assert _ut.allclose(modnum.gvec[ii,:], modanal.gvec[ii,:], rtol=rtol, atol=atol, equal_nan=True)  # jacobian of model
-
-#                rtol, atol = (1e-4, 1e-3)
-                rtol, atol = (1e-4, _np.max((1e-3, _np.nanmax(1e-3*modanal.dgdx[ii,:]))))  # mixed 2nd deriv implemented up to 4th order
-                rerr = 1.0-_np.nanmax(modnum.dgdx[ii,:]/modanal.dgdx[ii,:])
-                aerr = 1.0-_np.nanmax(modnum.dgdx[ii,:] - modanal.dgdx[ii,:])
-#                _np.testing.assert_allclose(modnum.dgdx[ii,:], modanal.dgdx[ii,:], rtol=rtol)
-                assert _ut.allclose(modnum.dgdx[ii,:], modanal.dgdx[ii,:], rtol=rtol, atol=atol, equal_nan=True)  # jacobian of the model derivative
-
-                rtol, atol = (1e-3, _np.max((1e-3, _np.nanmax(1e-3*modanal.d2gdx2[ii,:])))) # mixed 3rd deriv. implemented only up to 2nd order
-                aerr = _np.nanmax(modnum.d2gdx2[ii,:] - modanal.d2gdx2[ii,:])
-                rerr = 1.0-_np.nanmax(modnum.d2gdx2[ii,:]/modanal.d2gdx2[ii,:])
-                assert _ut.allclose(modnum.d2gdx2[ii,:], modanal.d2gdx2[ii,:], rtol=rtol, atol=atol, equal_nan=True)  # jacobian of the model second derivative
-        except:
-            print('Numerical testing failed at parameter %i \n abs. err. level %e\n rel. err. level %e'%(ii, aerr, rerr))
-            raise
-        # end try
-    # end def test numerics
-# end def class
-
 
 
 #class MultiModel(ModelClass):
@@ -2504,6 +1923,15 @@ class ModelPowerLaw(ModelClass):
         self.nonnegative = True
     # end def __init__
 
+#    def leftboundary(self, XX, aa, **kwargs):
+#        """
+#        Create boundary conditions for derivatives at the
+#        left boundary.  Note that derivatives of powers laws
+#        do not behave well at 0
+#        """
+#
+#        return
+
     @staticmethod
     def _model(XX, aa, **kwargs):
         """
@@ -2687,18 +2115,21 @@ class ModelPowerLaw(ModelClass):
 #        XX = _np.abs(XX)
         nx = _np.size(XX)
         num_fit = _np.size(aa)  # Number of fitting parameters
-        npoly = len(aa[:-2])    #    npoly = num_fit-3?
+#        npoly = len(aa[:-2])    #    npoly = num_fit-3?
 
         prof = ModelPowerLaw._model(XX, aa)
         dprofdx = ModelPowerLaw._deriv(XX, aa)
 
         dgdx = _np.zeros((num_fit, nx), dtype=_np.float64)
-        for ii in range(2, npoly+2):
-            dgdx[ii, :] = (_np.power(XX, ii)*_np.log(_np.abs(XX))*dprofdx
-                              + (1.0+ii*_np.log(_np.abs(XX)))*_np.power(XX, ii-1.0)*prof )
+        for ii in range(2, num_fit):
+            dgdx[ii, :] = (ii-2.0)*_np.power(XX, ii-3.0)*_np.log(_np.abs(XX)) * prof
+            dgdx[ii, :] += _np.power(XX, ii-2.0)*_np.log(_np.abs(XX)) * dprofdx
+            dgdx[ii, :] += _np.power(XX, ii-2.0)*prof/XX
+#            dgdx[ii, :] = (_np.power(XX, ii)*_np.log(_np.abs(XX))*dprofdx
+#                              + (1.0+ii*_np.log(_np.abs(XX)))*_np.power(XX, ii-1.0)*prof )
         # end for
         dgdx = dgdx[::-1, :]
-        dgdx[-2, :] = XX*dprofdx
+        dgdx[-2, :] = XX*dprofdx + prof
         dgdx[-1, :] = dprofdx/aa[-1]
         return dgdx
 
@@ -2946,18 +2377,46 @@ def model_Exponential(XX=None, af=None, **kwargs):
 class ModelExponential(ModelClass):
     """
     --- Exponential on Background ---
-    Model - y = a1*(exp(a2*XX^a3) + XX^a4)
+    Model - y = a*(exp(b*XX^c) + XX^d)
 
-    af    - estimate of fitting parameters
+    af    - estimate of fitting parameters [a, b, c, d]
     XX    - independent variables
+
+    domain on profile::  x>0
+        prof is real for x real and (c>0 and x>0 and d>0)
+                                  or (c<=0 and x>0)
+                                  or (d<=0 and x>0)
+
+    domain on jacobian of derivative: x>0
+        d2fdx2db is real for x real and (c<=1 and x>0) or (c>1 and x>=0)
+
+    domain on jacobian of 2nd derivative:   x>0 generally
+        d3fdx2db is real for x real and (c<=2 and x>0) or (c>2 and x>=0)
+
     """
     _af = 0.1*_np.ones((4,), dtype=_np.float64)
     _LB = _np.array([1e-18, -_np.inf, -_np.inf, -_np.inf], dtype=_np.float64)
     _UB = _np.array([_np.inf, _np.inf, _np.inf, _np.inf], dtype=_np.float64)
     _fixed = _np.zeros( (4,), dtype=int)
+#    leftboundary = 0.0
     def __init__(self, XX, af=None, **kwargs):
         super(ModelExponential, self).__init__(XX, af, **kwargs)
     # end def __init__
+
+    @staticmethod
+    def absX(XX):
+        return _np.copy(_np.abs(XX))
+
+    @staticmethod
+    def _separate_model(XX, aa, **kwargs):
+        """
+         f     = a*(exp(b*XX^c) + XX^d) = f1+f2;
+        """
+        XX = ModelExponential.absX(XX)
+        a, b, c, d = tuple(aa)
+        prof1 = a*_np.exp(b* _np.power(XX, c))
+        prof2 = a*_np.power(XX, d)
+        return prof1, prof2
 
     @staticmethod
     def _model(XX, aa, **kwargs):
@@ -2968,57 +2427,108 @@ class ModelExponential(ModelClass):
         return prof1 + prof2
 
     @staticmethod
-    def _separate_model(XX, aa, **kwargs):
+    def _separate_deriv(XX, aa, **kwargs):
+        """
+        f     = a*(exp(b*XX^c) + XX^d) = f1+f2;
+
+        dfdx  = a*(b*c*XX^(c-1)*exp(b*XX^c) + d*XX^(d-1))
+               = b*c*XX^(c-1) * (a*exp(b*XX^c))  + a*d*XX^(d-1)
+               = b*c*XX^(c-1) * prof1 + dprof2dx
+
+        dfdx  = a*(b*c*XX^(c-1)*exp(b*XX^c) + d*XX^(d-1))
+              = b*c*x^(c-1)*f1 + d*f2/x
+
+        df1dx = b*c*x^(c-1)*f1
+        df2dx = d*f2/x
+              = a*d*x^(d-1)
+        """
+        prof1, prof2 = ModelExponential._separate_model(XX, aa)
+
+        XX = ModelExponential.absX(XX)
         a, b, c, d = tuple(aa)
-        XX = _np.abs(XX)
-        prof1 = a*_np.exp(b* _np.power(XX, c))
-        prof2 = a*_np.power(XX, d)
-        return prof1, prof2
+        dprof1dx = b*c*_np.power(XX, c-1.0)*prof1
+        dprof2dx = a*d*_np.power(XX, d-1.0)
+#        dprof2dx = d*prof2/XX
+        return dprof1dx, dprof2dx
 
     @staticmethod
     def _deriv(XX, aa, **kwargs):
         """
-         dfdx  = a*(b*c*XX^(c-1)*exp(b*XX^c) + d*XX^(d-1))
+        f     = a*(exp(b*XX^c) + XX^d) = f1+f2;
+
+        dfdx  = a*(b*c*XX^(c-1)*exp(b*XX^c) + d*XX^(d-1))
                = b*c*XX^(c-1) * (a*exp(b*XX^c))  + a*d*XX^(d-1)
                = b*c*XX^(c-1) * prof1 + dprof2dx
+
+        dfdx  = a*(b*c*XX^(c-1)*exp(b*XX^c) + d*XX^(d-1))
+              = b*c*x^(c-1)*f1 + d*f2/x
+
+        df1dx = b*c*x^(c-1)*f1
+        df2dx = d*f2/x
+              = a*d*x^(d-1)
         """
         dprof1dx, dprof2dx = ModelExponential._separate_deriv(XX, aa)
         return dprof1dx+dprof2dx
 
     @staticmethod
     def _separate_deriv2(XX, aa, **kwargs):
+        """
+        f     = a*(exp(b*XX^c) + XX^d) = f1+f2;
+
+        dfdx  = a*(b*c*XX^(c-1)*exp(b*XX^c) + d*XX^(d-1))
+               = b*c*XX^(c-1) * (a*exp(b*XX^c))  + a*d*XX^(d-1)
+               = b*c*XX^(c-1) * prof1 + dprof2dx
+
+        dfdx  = a*(b*c*XX^(c-1)*exp(b*XX^c) + d*XX^(d-1))
+              = b*c*x^(c-1)*f1 + d*f2/x
+
+        df1dx = b*c*x^(c-1)*f1
+        df2dx = d*f2/x
+              = a*d*x^(d-1)
+
+        d2f1dx2 = a*b*c*x^(c-2)*exp(b*x^c)*(b*c*x^c+c-1.0)
+                = b*c*x^(c-2)*f1*( b*c*x^c+c-1.0 )
+        d2f2dx2 = a*(d-1)*d*x^(d-2)
+        """
         a, b, c, d = tuple(aa)
-        XX = _np.abs(XX)
         prof1, prof2 = ModelExponential._separate_model(XX, aa, **kwargs)
-        dprof1dx, dprof2dx = ModelExponential._separate_deriv(XX, aa, **kwargs)
-        d2prof1dx2 = b*c*_np.power(XX, c-1.0)*( (c-1.0)*prof1/XX + dprof1dx )
-        d2prof2dx2 = (d-1.0)*prof2/XX
+#        dprof1dx, dprof2dx = ModelExponential._separate_deriv(XX, aa, **kwargs)
+
+        XX = ModelExponential.absX(XX)
+#        d2prof1dx2 = b*c*_np.power(XX, c-1.0)*( (c-1.0)*prof1/XX + dprof1dx )
+#        d2prof2dx2 = (d-1.0)*prof2/XX
+        d2prof1dx2 = b*c*_np.power(XX, c-2.0)*prof1*(b*c*_np.power(XX, c)+c-1.0)
+        d2prof2dx2 = a*(d-1.0)*d*_np.power(XX, d-2.0)
         return d2prof1dx2, d2prof2dx2
 
     @staticmethod
     def _deriv2(XX, aa, **kwargs):
         """
-         dfdx  = a*(b*c*XX^(c-1)*exp(b*XX^c) + d*XX^(d-1))
+        f     = a*(exp(b*XX^c) + XX^d) = f1+f2;
+
+        dfdx  = a*(b*c*XX^(c-1)*exp(b*XX^c) + d*XX^(d-1))
                = b*c*XX^(c-1) * (a*exp(b*XX^c))  + a*d*XX^(d-1)
                = b*c*XX^(c-1) * prof1 + dprof2dx
 
-         d2fdx2 = b*c*(c-1)*XX^(c-2)*prof1
-                 + b*c*XX^(c-1)*dprof1dx
-                 + a*d*(d-1)*XX^(d-2)
-                = b*c*XX^(c-1)*( (c-1)*prof1/XX + dprof1dx )
-                  + (d-1)*prof2/XX
+        dfdx  = a*(b*c*XX^(c-1)*exp(b*XX^c) + d*XX^(d-1))
+              = b*c*x^(c-1)*f1 + d*f2/x
+
+        df1dx = b*c*x^(c-1)*f1
+        df2dx = d*f2/x
+              = a*d*x^(d-1)
+
+        d2f1dx2 = a*b*c*x^(c-2)*exp(b*x^c)*(b*c*x^c+c-1.0)
+                = b*c*x^(c-2)*f1*( b*c*x^c+c-1.0 )
+        d2f2dx2 = a*(d-1)*d*x^(d-2)
+
+        d2fdx2 = b*c*(c-1)*XX^(c-2)*prof1
+               + b*c*XX^(c-1)*dprof1dx
+               + a*d*(d-1)*XX^(d-2)
+               = b*c*XX^(c-1)*( (c-1)*prof1/XX + dprof1dx )
+               + (d-1)*prof2/XX
         """
         d2prof1dx2, d2prof2dx2 = ModelExponential._separate_deriv2(XX, aa, **kwargs)
         return d2prof1dx2 + d2prof2dx2
-
-    @staticmethod
-    def _separate_deriv(XX, aa, **kwargs):
-        prof1, prof2 = ModelExponential._separate_model(XX, aa)
-        a, b, c, d = tuple(aa)
-        XX = _np.abs(XX)
-        dprof1dx = b*c*_np.power(XX, c-1.0)*prof1
-        dprof2dx = a*d*_np.power(XX, d-1.0)
-        return dprof1dx, dprof2dx
 
     @staticmethod
     def _partial(XX, aa, **kwargs):
@@ -3027,9 +2537,9 @@ class ModelExponential(ModelClass):
          dfdx  = a*(b*c*XX^(c-1)*exp(b*XX^c) + d*XX^(d-1))
 
          dfda = f/a
-         dfdb = XX^c*f1;
-         dfdc = f1*XX^c*log10(XX)
-         dfdd = a*XX^d*log10(XX) = log10(XX)*f2;
+         dfdb = XX^c*f1
+         dfdc = f1*b*XX^c*log(XX)
+         dfdd = a*XX^d*log(XX) = log(XX)*f2
         """
         nx = _np.size(XX)
         num_fit = _np.size(aa)
@@ -3039,12 +2549,13 @@ class ModelExponential(ModelClass):
         prof = prof1 + prof2
 
         a, b, c, d = tuple(aa)
-        XX = _np.abs(XX)
+        XX = ModelExponential.absX(XX)
 
+#        gvec[0, :] = _np.exp(b* _np.power(XX, c)) + _np.power(XX, d)
         gvec[0, :] = prof/a
         gvec[1, :] = prof1*_np.power(XX, c)
-        gvec[2, :] = _np.log10(_np.abs(XX))*_np.power(XX, c)*prof1
-        gvec[3, :] = _np.log10(_np.abs(XX))*prof2
+        gvec[2, :] = b*_np.log(_np.abs(XX))*_np.power(XX, c)*prof1
+        gvec[3, :] = _np.log(_np.abs(XX))*prof2
 #        gvec[2, :] = b*prof1*_np.log(_np.abs(XX))*_np.power(XX, c)
 #        gvec[3, :] = a*_np.log(_np.abs(XX))*_np.power(XX, d)
         return gvec
@@ -3076,7 +2587,7 @@ class ModelExponential(ModelClass):
         dprofdx = dprof1dx + dprof2dx
 
         a, b, c, d = tuple(aa)
-        XX = _np.abs(XX)
+        XX = ModelExponential.absX(XX)
 
         dgdx[0, :] = dprofdx / a
         dgdx[1, :] = dprof1dx*( _np.power(XX, c) + 1.0/b )
@@ -3124,7 +2635,7 @@ class ModelExponential(ModelClass):
         d2profdx2 = d2prof1dx2 + d2prof2dx2
 
         a, b, c, d = tuple(aa)
-        XX = _np.abs(XX)
+        XX = ModelExponential.absX(XX)
 
         d2gdx2 = _np.zeros( (num_fit,nx), dtype=float)
         d2gdx2[0, :] = d2profdx2 / a
@@ -3239,7 +2750,9 @@ class ModelGaussian(ModelClass):
     def _model(XX, aa, **kwargs):
         """
         model of a Gaussian
-        f = A*exp(-(x-xo)**2.0/(2.0*ss**2.0))
+        f = A*exp(-(x-xo)**2.0/(2.0*ss**2.0))/sqrt(2*pi*ss^2.0)
+          = g/nn              where g = Gaussian
+                              and   nn = sqrt(2*pi*ss^2.0)
             A = af[0]
             xo = af[1]
             ss = af[2]
@@ -3790,11 +3303,9 @@ class ModelNormal(ModelClass):
         """
         derivative of a normalized Gaussian (unit area)
         f = A*exp(-(x-xo)**2.0/(2.0*ss**2.0))/sqrt(2*pi*ss^2.0)
-            A = af[0]
-            xo = af[1]
-            ss = af[2]
-
-        dfdx = -(x-xo)/ss^2 *f
+          = g/nn              where g = Gaussian
+                              and   nn = sqrt(2*pi*ss^2.0)
+        dfdx = -(x-xo)/ss^2 *f  = dgdx/nn
         """
         AA, x0, ss = tuple(aa)
         nn = _np.sqrt(2.0*_np.pi*_np.power(ss, 2.0))
@@ -3805,12 +3316,10 @@ class ModelNormal(ModelClass):
         """
         derivative of a normalized Gaussian (unit area)
         f = A*exp(-(x-xo)**2.0/(2.0*ss**2.0))/sqrt(2*pi*ss^2.0)
-            A = af[0]
-            xo = af[1]
-            ss = af[2]
-
-        dfdx = -(x-xo)/ss^2 *f
-        d2fdx2 > see model gaussian
+          = g/nn              where g = Gaussian
+                              and   nn = sqrt(2*pi*ss^2.0)
+        dfdx = -(x-xo)/ss^2 *f = dgdx/nn
+        d2fdx2 = d2gdx2/nn
         """
         AA, x0, ss = tuple(aa)
         nn = _np.sqrt(2.0*_np.pi*_np.power(ss, 2.0))
@@ -3821,22 +3330,27 @@ class ModelNormal(ModelClass):
         """
         Jacobian of a normalized Gaussian (unit area)
         f = A*exp(-(x-xo)**2.0/(2.0*ss**2.0))/sqrt(2*pi*ss^2.0)
+          = g/nn              where g = Gaussian
+                              and   nn = sqrt(2*pi*ss^2.0)
+        dfdx = -(x-xo)/ss^2 *f = dgdx/nn
+        d2fdx2 = d2gdx2/nn
 
-        dfdA = f/A
-        dfdxo = (x-xo)/ss^2 * f
-        dfdss =  (x-xo)^2/ss^3 * f + A*exp(-(x-xo)**2.0/(2.0*ss**2.0))*d/ds( sqrt(2*pi*ss^2.0)**-1 )
-            d/ds( sqrt(2*pi*ss^2.0)**-1 ) = sqrt(2*pi)^-1 * d/ds( (ss^2.0)**-0.5 ) = sqrt(2*pi)^-1 * d/ds( abs(ss)^-1.0 )
-                = sqrt(2*pi)^-1 * (2*ss)*-0.5 * (ss^2.0)^-1.5 = sqrt(2*pi)^-1 *-ss/(ss^3.0) = sqrt(2*pi)^-1 *1.0/ss^2
-                = sqrt(2*pi*ss**2.0)^-1 *1.0/abs(ss)
-        dfdss =  (x-xo)^2/ss^3 * f + 1.0/abs(ss) * f
+        dfdA = f/A                      = dgdA/nn
+        dfdxo = (x-xo)/ss^2 * f         = dgdxo/nn
+        dfdss = dgdss/nn - dnds*g/nn^2  = (dgdss - dnds*f)/nn
+          where dnds = 0.5*2*2pi*ss/nn = 2pi*ss/nn = sqrt(2pi)*sign(ss)
         """
         AA, x0, ss = tuple(aa)
+        nn = _np.sqrt(2.0*_np.pi*_np.power(ss, 2.0))
+        dnds = _np.sqrt(2.0*_np.pi)*_np.sign(ss)
+
+        prof = ModelNormal._model(XX, aa, **kwargs)
+        g1 = ModelGaussian._partial(XX, aa, **kwargs)
+
         gvec = _np.zeros( (3,_np.size(XX)), dtype=_np.float64)
-        prof = normal(XX, aa)
-        gvec = _np.zeros( (3,_np.size(XX)), dtype=_np.float64)
-        gvec[0,:] = prof/AA
-        gvec[1,:] = ((XX-x0)/(ss**2.0))*prof
-        gvec[1,:] = (((XX-x0)**2.0)/(ss**3.0)) * prof -prof/_np.abs(ss)
+        gvec[0,:] = g1[0,:]/nn
+        gvec[1,:] = g1[1,:]/nn
+        gvec[2,:] = (g1[2,:]-dnds*prof)/nn
         return gvec
 
     @staticmethod
@@ -3844,30 +3358,31 @@ class ModelNormal(ModelClass):
         """
         Jacobian of the derivative of a normalized Gaussian (unit area)
         f = A*exp(-(x-xo)**2.0/(2.0*ss**2.0))/sqrt(2*pi*ss^2.0)
+          = g/nn              where g = Gaussian
+                              and   nn = sqrt(2*pi*ss^2.0)
+        dfdx = -(x-xo)/ss^2 *f = dgdx/nn
+        d2fdx2 = d2gdx2/nn
 
-        dfdx = -(x-xo)/ss^2 *f
+        dfdA = f/A                      = dgdA/nn
+        dfdxo = (x-xo)/ss^2 * f         = dgdxo/nn
+        dfdss = dgdss/nn - dnds*g/nn^2  = (dgdss - dnds*f)/nn
+          where dnds = 0.5*2*2pi*ss/nn = 2pi*ss/nn = sqrt(2pi)*sign(ss)
 
-        dfdA = f/A
-        dfdxo = (x-xo)/ss^2 * f
-        dfdss =  (x-xo)^2/ss^3 * f + A*exp(-(x-xo)**2.0/(2.0*ss**2.0))*d/ds( sqrt(2*pi*ss^2.0)**-1 )
-            d/ds( sqrt(2*pi*ss^2.0)**-1 ) = sqrt(2*pi)^-1 * d/ds( (ss^2.0)**-0.5 ) = sqrt(2*pi)^-1 * d/ds( abs(ss)^-1.0 )
-                = sqrt(2*pi)^-1 * (2*ss)*-0.5 * (ss^2.0)^-1.5 = sqrt(2*pi)^-1 *-ss/(ss^3.0) = sqrt(2*pi)^-1 *1.0/ss^2
-                = sqrt(2*pi*ss**2.0)^-1 *1.0/abs(ss)
-        dfdss =  (x-xo)^2/ss^3 * f + 1.0/abs(ss) * f
-
-        d2fdxdA = dfdx/A = -(x-xo)/ss^2 *dfdA
-        d2fdxdxo = f/ss^2 -(x-xo)/ss^2 *dfdxo
-        d2fdxds = 2*(x-xo)/ss^3 *f -(x-xo)/ss^2 *dfds
-
+        d2fdxdA = dfdx/A = d2gdxdA/nn
+        d2fdxdxo = d2gdxdxo/nn
+        d2fdxdss = (d2gdxdss - dnds*dfdx)/nn
         """
         AA, x0, ss = tuple(aa)
-        gvec = _np.zeros( (3,_np.size(XX)), dtype=_np.float64)
-        prof = normal(XX, aa)
-        gvec = partial_normal(XX, aa)
+        nn = _np.sqrt(2.0*_np.pi*_np.power(ss, 2.0))
+        dnds = _np.sqrt(2.0*_np.pi)*_np.sign(ss)
+
+        dfdx = ModelNormal._deriv(XX, aa, **kwargs)
+        dg = ModelGaussian._partial_deriv(XX, aa, **kwargs)
+
         dgdx = _np.zeros((3,_np.size(XX)), dtype=_np.float64)
-        dgdx[0,:] = -(XX-x0)/_np.power(ss, 2.0)*gvec[0,:]
-        dgdx[1,:] = prof/_np.power(XX, 2.0) - ((XX-x0)/_np.power(ss, 2.0))*gvec[1,:]
-        dgdx[1,:] = 2.0*(XX-x0)*prof/_np.power(XX, 3.0) - ((XX-x0)/_np.power(ss, 2.0))*gvec[2,:]
+        dgdx[0,:] = dg[0,:]/nn
+        dgdx[1,:] = dg[1,:]/nn
+        dgdx[2,:] = (dg[2,:]-dnds*dfdx)/nn
         return dgdx
 
     @staticmethod
@@ -3875,37 +3390,35 @@ class ModelNormal(ModelClass):
         """
         Jacobian of the derivative of a normalized Gaussian (unit area)
         f = A*exp(-(x-xo)**2.0/(2.0*ss**2.0))/sqrt(2*pi*ss^2.0)
+          = g/nn              where g = Gaussian
+                              and   nn = sqrt(2*pi*ss^2.0)
+        dfdx = -(x-xo)/ss^2 *f = dgdx/nn
+        d2fdx2 = d2gdx2/nn
 
-        dfdx = -(x-xo)/ss^2 *f
+        dfdA = f/A                      = dgdA/nn
+        dfdxo = (x-xo)/ss^2 * f         = dgdxo/nn
+        dfdss = dgdss/nn - dnds*g/nn^2  = (dgdss - dnds*f)/nn
+          where dnds = 0.5*2*2pi*ss/nn = 2pi*ss/nn = sqrt(2pi)*sign(ss)
 
-        dfdA = f/A
-        dfdxo = (x-xo)/ss^2 * f
-        dfdss =  (x-xo)^2/ss^3 * f + A*exp(-(x-xo)**2.0/(2.0*ss**2.0))*d/ds( sqrt(2*pi*ss^2.0)**-1 )
-            d/ds( sqrt(2*pi*ss^2.0)**-1 ) = sqrt(2*pi)^-1 * d/ds( (ss^2.0)**-0.5 ) = sqrt(2*pi)^-1 * d/ds( abs(ss)^-1.0 )
-                = sqrt(2*pi)^-1 * (2*ss)*-0.5 * (ss^2.0)^-1.5 = sqrt(2*pi)^-1 *-ss/(ss^3.0) = sqrt(2*pi)^-1 *1.0/ss^2
-                = sqrt(2*pi*ss**2.0)^-1 *1.0/abs(ss)
-        dfdss =  (x-xo)^2/ss^3 * f + 1.0/abs(ss) * f
+        d2fdxdA = dfdx/A = d2gdxdA/nn
+        d2fdxdxo = d2gdxdxo/nn
+        d2fdxdss = (d2gdxdss - dnds*dfdx)/nn
 
-        d2fdxdA = dfdx/A = -(x-xo)/ss^2 *dfdA
-        d2fdxdxo = f/ss^2 -(x-xo)/ss^2 *dfdxo
-        d2fdxds = 2*(x-xo)/ss^3 *f -(x-xo)/ss^2 *dfds
-
-        d3fdx2dA = -dfdA/ss^2 - (x-xo)/ss^2*d2fdAdx
-        d3fdx2dxo = dfdx/ss^2-x/ss^2*dfdxo - (x-xo)/ss^2*d2fdxdxo
-        d3fdx2dss = 2.0/ss^3*f + 2*(x-xo)/ss^3*dfdx - dfdss/ss^2 - (x-xo)/ss^2*dfdssdx
+        d3fdx2dA = d3gdx2dA/nn
+        d3fdx2dxo = d3gdx2dxo/nn
+        d3fdx2dss = (d3gdx2dss - dnds*d2fdx2)/nn
         """
         AA, x0, ss = tuple(aa)
-        prof = ModelNormal._model(XX, aa, **kwargs)
-        dfdx = ModelNormal._deriv(XX, aa, **kwargs)
-        gvec = ModelNormal._partial(XX, aa, **kwargs)
-        dgdx = ModelNormal._partial_deriv(XX, aa, **kwargs)
+        nn = _np.sqrt(2.0*_np.pi*_np.power(ss, 2.0))
+        dnds = _np.sqrt(2.0*_np.pi)*_np.sign(ss)
+
+        d2fdx2 = ModelNormal._deriv2(XX, aa, **kwargs)
+        dg2 = ModelGaussian._partial_deriv2(XX, aa, **kwargs)
 
         d2gdx2 = _np.zeros((3,_np.size(XX)), dtype=_np.float64)
-        d2gdx2[0,:] = -gvec[0,:]/_np.power(ss,2.0)-(XX-x0)/_np.power(ss, 2.0)*dgdx[0,:]
-        d2gdx2[1,:] = dfdx/_np.power(ss, 2.0) - XX*gvec[1,:]/_np.power(ss, 2.0) - ((XX-x0)/_np.power(ss, 2.0))*dgdx[1,:]
-
-        d2gdx2[2,:] = 2.0*prof/_np.power(ss, 3.0) + 2.0*(XX-x0)*dfdx/_np.power(ss, 3.0) \
-             - gvec[2,:]/_np.power(ss,2.0)- ((XX-x0)/_np.power(ss, 2.0))*dgdx[2,:]
+        d2gdx2[0,:] = dg2[0,:]/nn
+        d2gdx2[1,:] = dg2[1,:]/nn
+        d2gdx2[2,:] = (dg2[2,:]-dnds*d2fdx2)/nn
         return d2gdx2
 
 #    @staticmethod
@@ -4035,7 +3548,7 @@ class ModelLogGaussian(ModelClass):
         f = 10*_np.log10( A*exp(-(x-xo)**2.0/(2.0*ss**2.0)) )
           = 10/ln(10)*( ln(A) -(x-xo)**2.0/(2.0*ss**2.0)  )
      """
-    _af = _np.asarray([1.0, -0.3, 0.1], dtype=_np.float64)
+    _af = _np.asarray([1.0, 0.3, 0.1], dtype=_np.float64)
     _LB = _np.asarray([ 1e-18, -_np.inf, -_np.inf], dtype=_np.float64)
     _UB = _np.asarray([_np.inf, _np.inf,  _np.inf], dtype=_np.float64)
     _fixed = _np.zeros( (3,), dtype=int)
@@ -4059,7 +3572,8 @@ class ModelLogGaussian(ModelClass):
             c = 10/ln(10)*( ln(A) - xo**2.0 / (2.0*ss**2.0) )
         """
         AA, x0, ss = tuple(aa)
-        return (10.0/_np.log(10))*_np.abs(_np.log(AA)-_np.power(XX-x0, 2.0)/(2.0*_np.power(ss, 2.0)))
+#        return 10.0*_np.log10(ModelGaussian._model(XX, aa, **kwargs))
+        return (10.0/_np.log(10.0))*(_np.log(AA)-_np.power(XX-x0, 2.0)/(2.0*_np.power(ss, 2.0)))
 
     @staticmethod
     def _deriv(XX, aa, **kwargs):
@@ -4075,13 +3589,14 @@ class ModelLogGaussian(ModelClass):
 
         dfdx = 10/ln(10) * dln(g)/dx
              = 10/ln(10) * dgdx/g
-        or with less function calls
-        dfdx = -10.0*(x-xo)/(ss**2.0 * _np.log(10))
+             or with less function calls
 
-        d2fdx2 = -10.0/(ss**2.0 * _np.log(10)
+        dfdx = -10.0*(x-xo)/(ss**2.0 * _np.log(10))
         """
         AA, xo, ss = tuple(aa)
-        return -10.0*(XX-xo)/(_np.power(ss, 2.0) * _np.log(10))
+        return -10.0*(XX-xo)/(_np.log(10.0)*_np.power(ss, 2.0))
+#        return (10.0*ModelGaussian._deriv(XX, aa, **kwargs)/
+#               (_np.log(10)*ModelGaussian._model(XX, aa, **kwargs)))
 
     @staticmethod
     def _deriv2(XX, aa, **kwargs):
@@ -4100,10 +3615,13 @@ class ModelLogGaussian(ModelClass):
         or with less function calls
         dfdx = -10.0*(x-xo)/(ss**2.0 * _np.log(10))
 
-        d2fdx2 = -10.0/(ss**2.0 * _np.log(10)
+        d2fdx2 = d/dx dlngdx = d/dx dgdx/g = d2gdx2/g-dgdx^2/g^2
+               = d2gdx2/g - (dlngdx)^2
+        or with less function calls:
+        d2fdx2 = -10.0/(ss**2.0 * _np.log(10))
         """
         AA, xo, ss = tuple(aa)
-        return (-10.0/(_np.power(ss, 2.0) * _np.log(10)))*_np.ones_like(XX)
+        return (-10.0/(_np.power(ss, 2.0) * _np.log(10.0)))*_np.ones_like(XX)
 
     @staticmethod
     def _partial(XX, aa, **kwargs):
@@ -4128,6 +3646,10 @@ class ModelLogGaussian(ModelClass):
         f = 10*_np.log10( A*exp(-(x-xo)**2.0/(2.0*ss**2.0)) )
           = 10/ln(10)*( ln(A) -(x-xo)**2.0/(2.0*ss**2.0)  )
 
+        dfdA = 10/(A*ln(10))
+        dfdxo = 10*(x-xo)/(ss^2 * ln(10))
+        dfdss =  10*(x-xo)^2/(ss^3 * ln(10))
+
         dfdx = -10.0*(x-xo)/(ss**2.0 * _np.log(10))
             A = af[0]
             xo = af[1]
@@ -4143,7 +3665,7 @@ class ModelLogGaussian(ModelClass):
 
         dgdx = _np.zeros( (3,_np.size(XX)), dtype=_np.float64)
         dgdx[1,:] = 10.0/(_np.log(10.0)*_np.power(ss,2.0))
-        dgdx[2,:] = 20.0*(XX-x0)/(_np.log(10)*_np.power(ss,3.0))
+        dgdx[2,:] = 20.0*(XX-x0)/(_np.log(10.0)*_np.power(ss,3.0))
         return dgdx
 
     @staticmethod
@@ -4170,7 +3692,7 @@ class ModelLogGaussian(ModelClass):
         """
         AA, x0, ss = tuple(aa)
         d2gdx2 = _np.zeros( (3,_np.size(XX)), dtype=_np.float64)
-        d2gdx2[2,:] = 20.0/(_np.log(10)*_np.power(ss,3.0))
+        d2gdx2[2,:] = 20.0/(_np.log(10.0)*_np.power(ss,3.0))
         return d2gdx2
 
 
@@ -4283,10 +3805,18 @@ class ModelLorentzian(ModelClass):
         ´Derivative of a Lorentzian normalization such that integration equals AA (af[0])
             f = 0.5*A*ss / ( (x-xo)**2.0 + 0.25*ss**2.0 ) / pi
 
+        dfdx = -2*(x-xo)*f/( ss^2/4 +(x-xo)^2)
+            or
         dfdx = -16*A*ss*(x-xo)/( ss^2 +4*(xo-x)^2)^2 / pi
         """
         AA, x0, ss = tuple(aa)
-        return -1.0*AA*16.0*(XX-x0)*ss/(_np.pi*_np.power(4.0*(XX-x0)*(XX-x0)+ss*ss, 2.0))
+        prof = ModelLorentzian._model(XX, aa, **kwargs)
+        denom = ((XX-x0)*(XX-x0)+0.25*ss*ss)
+        dx = 2*(XX-x0)
+
+        dfdx = -1*prof*dx/denom
+        return dfdx
+#        return -1.0*AA*16.0*(XX-x0)*ss/(_np.pi*_np.power(4.0*(XX-x0)*(XX-x0)+ss*ss, 2.0))
 
     @staticmethod
     def _deriv2(XX, aa, **kwargs):
@@ -4294,11 +3824,24 @@ class ModelLorentzian(ModelClass):
         ´Derivative of a Lorentzian normalization such that integration equals AA (af[0])
             f = 0.5*A*ss / ( (x-xo)**2.0 + 0.25*ss**2.0 ) / pi
 
+        dfdx = -2*(x-xo)*f/( ss^2/4 +(x-xo)^2)
+        d2fdx2 = -2*(f+(x-xo)*dfdx)/( ss^2/4 +(x-xo)^2)
+                 + 4*(x-xo)^2*f/( ss^2/4 +(x-xo)^2)^2
+               = -2*(f+(x-xo)*dfdx)/( ss^2/4 +(x-xo)^2)
+                -2*(x-xo)*dfdx/( ss^2/4 +(x-xo)^2)
+               = -2*(f+2*(x-xo)*dfdx)/( ss^2/4 +(x-xo)^2)
+            or
         dfdx = -16*A*ss*(x-xo)/( ss^2 +4*(xo-x)^2)^2 / pi
         d2fdx2 = -16*A*ss*( ss^2-12*(x-xo)^2 )/( ss^2 +4*(x-xo)^2)^3 / pi
         """
         AA, x0, ss = tuple(aa)
-        return -1.0*AA*16.0*ss*(ss*ss-12.0*(XX-x0)*(XX-x0))/(_np.pi*_np.power(4.0*(XX-x0)*(XX-x0)+ss*ss, 3.0))
+        prof = ModelLorentzian._model(XX, aa, **kwargs)
+        dfdx = ModelLorentzian._deriv(XX, aa, **kwargs)
+        denom = ((XX-x0)*(XX-x0)+0.25*ss*ss)
+        dx = 2*(XX-x0)
+        d2fdx2 = -2*(prof+dx*dfdx)/denom
+        return d2fdx2
+#        return -1.0*AA*16.0*ss*(ss*ss-12.0*(XX-x0)*(XX-x0))/(_np.pi*_np.power(4.0*(XX-x0)*(XX-x0)+ss*ss, 3.0))
 
     @staticmethod
     def _partial(XX, aa, **kwargs):
@@ -4306,19 +3849,39 @@ class ModelLorentzian(ModelClass):
         Jacobian of a Lorentzian normalization such that integration equals AA (af[0])
             f = 0.5*A*ss / ( (x-xo)**2.0 + 0.25*ss**2.0 ) / pi
 
+        #  These forms work, but they are really hard to debug
         dfdx = -16*A*ss*(x-xo)/( ss^2 +4*(xo-x)^2)^2 / pi
         d2fdx2 = -16*A*ss*( ss^2-12*(x-xo)^2 )/( ss^2 +4*(x-xo)^2)^3 / pi
 
         dfdA = f/A
         dfdxo = A*ss*(x-xo)/( ss^2/4.0 + (x-xo)^2 )^2  / pi
         dfds = -2*A*(ss^2-4*(x-xo)^2)/( b^2 + 4*(x-xo)^2 )^2 / pi
+
+         ----------------
+
+        dfdx = -2*(x-xo)*f/( ss^2/4 +(x-xo)^2)
+        d2fdx2 = -2*(f+2*(x-xo)*dfdx)/( ss^2/4 +(x-xo)^2)
+
+        dfdA = f/A
+        dfdxo = -0.5*A*ss*2*-1*(x-xo) / ( (x-xo)**2.0 + 0.25*ss**2.0 )^2 / pi
+              = 2*f*(x-xo) / ( (x-xo)**2.0 + 0.25*ss**2.0 )
+        dfds = -0.5*A*ss*( 0.25*2*ss ) / ( (x-xo)**2.0 + 0.25*ss**2.0 )^2 / pi
+               + f/s
+             = f/s-f*( 0.5*ss ) / ( (x-xo)**2.0 + 0.25*ss**2.0 )
         """
         AA, x0, ss = tuple(aa)
+        prof = ModelLorentzian._model(XX, aa, **kwargs)
+        denom = ((XX-x0)*(XX-x0)+0.25*ss*ss)
+        dx0 = -2*(XX-x0)
 
         gvec = _np.zeros( (3,_np.size(XX)), dtype=_np.float64)
-        gvec[0,:] = 0.5*ss/((XX-x0)*(XX-x0)+0.25*ss*ss)/_np.pi
-        gvec[1,:] = AA*ss*(XX-x0)/_np.power((XX-x0)*(XX-x0)+0.25*ss*ss, 2.0 )/_np.pi
-        gvec[2,:] = -2.0*AA*(ss*ss-4.0*(XX-x0)*(XX-x0))/_np.power(ss*ss+4.0*(XX-x0)*(XX-x0), 2.0)/_np.pi
+        gvec[0,:] = prof/AA
+        gvec[1,:] = -prof*dx0/denom
+        gvec[2,:] = prof/ss - 0.5*prof*ss/denom
+
+#        gvec[0,:] = 0.5*ss/((XX-x0)*(XX-x0)+0.25*ss*ss)/_np.pi
+#        gvec[1,:] = AA*ss*(XX-x0)/_np.power((XX-x0)*(XX-x0)+0.25*ss*ss, 2.0 )/_np.pi
+#        gvec[2,:] = -2.0*AA*(ss*ss-4.0*(XX-x0)*(XX-x0))/_np.power(ss*ss+4.0*(XX-x0)*(XX-x0), 2.0)/_np.pi
         return gvec
 
     @staticmethod
@@ -4328,21 +3891,41 @@ class ModelLorentzian(ModelClass):
         integration equals AA (af[0])
             f = 0.5*A*ss / ( (x-xo)**2.0 + 0.25*ss**2.0 ) / pi
 
-        dfdx = -16*A*ss*(x-xo)/( ss^2 +4*(xo-x)^2)^2 / pi
-        d2fdx2 = -16*A*ss*( ss^2-12*(x-xo)^2 )/( ss^2 +4*(x-xo)^2)^3 / pi
+        ------------------------
+
+        dfdx = -2*(x-xo)*f/( ss^2/4 +(x-xo)^2)
+        d2fdx2 = -2*(f+2*(x-xo)*dfdx)/( ss^2/4 +(x-xo)^2)
 
         dfdA = f/A
-        dfdxo = A*ss*(x-xo)/( ss^2/4.0 + (x-xo)^2 )^2  / pi
-        dfds = -2*A*(ss^2-4*(x-xo)^2)/( b^2 + 4*(x-xo)^2 )^2 / pi
+        dfdxo = 2*f*(x-xo) / ( (x-xo)**2.0 + 0.25*ss**2.0 )
+        dfds = f/s-f*( 0.5*ss ) / ( (x-xo)**2.0 + 0.25*ss**2.0 )
 
-        d2fdxdA = -16*ss*(x-xo)/( ss^2 +4*(xo-x)^2)^2 / pi
+        d2fdxdA = dfdx/A
+        d2fdxdxo = 2*dfdx*(x-xo) / ( (x-xo)^2.0 + 0.25*ss^2.0 )
+                 + 2*f / ( (x-xo)^2.0 + 0.25*ss^2.0 )
+                 - 4*f*(x-xo)^2 / ( (x-xo)^2.0 + 0.25*ss^2.0 )^2
+                = (2*dfdx*(x-xo)+2f) / ( (x-xo)^2.0 + 0.25*ss^2.0 )
+                 + 2*dfdx*(x-xo)/ ( (x-xo)^2.0 + 0.25*ss^2.0 )
+                = 2*(2*dfdx*(x-xo)+f) / ( (x-xo)^2.0 + 0.25*ss^2.0 )
+        d2fdxds = dfdx/s
+                - dfdx*( 0.5*ss ) / ( (x-xo)**2.0 + 0.25*ss**2.0 )
+                + f*( 0.5*ss )*2*(x-xo) / ( (x-xo)**2.0 + 0.25*ss**2.0 )^2
+                = dfdx/s - ss*dfdx/( (x-xo)**2.0 + 0.25*ss**2.0 )
         """
         AA, x0, ss = tuple(aa)
+        prof = ModelLorentzian._model(XX, aa, **kwargs)
+        dfdx = ModelLorentzian._deriv(XX, aa, **kwargs)
+        denom = ((XX-x0)*(XX-x0)+0.25*ss*ss)
+        dx = 2*(XX-x0)
 
         dgdx = _np.zeros( (3,_np.size(XX)), dtype=_np.float64)
-        dgdx[0,:] = -1.0*16.0*(XX-x0)*ss/(_np.pi*_np.power(4.0*(XX-x0)*(XX-x0)+ss*ss, 2.0))
-        dgdx[1,:] = 16.0*AA*ss*(ss*ss-12.0*(XX-x0)*(XX-x0))/_np.power(ss*ss+4*_np.power(XX-x0, 2.0),3.0)/_np.pi
-        dgdx[2,:] = 16.0*AA*(XX-x0)*(3.0*ss*ss-4.0*(XX*XX-2.0*XX*x0+x0*x0))/(_np.pi*_np.power(ss*ss+4.0*(XX*XX-2.0*XX*x0+x0*x0), 3.0))
+        dgdx[0,:] = dfdx/AA
+        dgdx[1,:] = 2*(prof+dx*dfdx)/denom
+        dgdx[2,:] = dfdx/ss - ss*dfdx/denom
+
+#        dgdx[0,:] = -1.0*16.0*(XX-x0)*ss/(_np.pi*_np.power(4.0*(XX-x0)*(XX-x0)+ss*ss, 2.0))
+#        dgdx[1,:] = 16.0*AA*ss*(ss*ss-12.0*(XX-x0)*(XX-x0))/_np.power(ss*ss+4*_np.power(XX-x0, 2.0),3.0)/_np.pi
+#        dgdx[2,:] = 16.0*AA*(XX-x0)*(3.0*ss*ss-4.0*(XX*XX-2.0*XX*x0+x0*x0))/(_np.pi*_np.power(ss*ss+4.0*(XX*XX-2.0*XX*x0+x0*x0), 3.0))
         return dgdx
 
     @staticmethod
@@ -4352,6 +3935,7 @@ class ModelLorentzian(ModelClass):
         integration equals AA (af[0])
             f = 0.5*A*ss / ( (x-xo)**2.0 + 0.25*ss**2.0 ) / pi
 
+        # these generally work, but I cannot debug d2fdx2dxo.  rewriting!
         dfdx = -16*A*ss*(x-xo)/( ss^2 +4*(xo-x)^2)^2 / pi
         d2fdx2 = -16*A*ss*( ss^2-12*(x-xo)^2 )/( ss^2 +4*(x-xo)^2)^3 / pi
 
@@ -4366,13 +3950,44 @@ class ModelLorentzian(ModelClass):
         d3fdx2dA = -16*ss*( ss^2-12*(x-xo)^2 )/( ss^2 +4*(x-xo)^2)^3 / pi
         d3fdx2dxo = 768 AA*ss*(x0-x)*(b^2-4*(c-x)^2)/(b^2+4*(x0-XX)^2)^4/pi
         d3fdx2dss = 48*AA*(ss^4-24*ss^2*(x-xo)^2+16*(c-x)^4)/(b^2+4*(x0-XX)^2)^4/pi
+
+        ---------------------------
+        Reformulated:
+        dfdx = -2*(x-xo)*f/( ss^2/4 +(x-xo)^2)
+        d2fdx2 = -2*(f+2*(x-xo)*dfdx)/( ss^2/4 +(x-xo)^2)
+
+        dfdA = f/A
+        dfdxo = 2*f*(x-xo) / ( (x-xo)**2.0 + 0.25*ss**2.0 )
+        dfds = f/s-f*( 0.5*ss ) / ( (x-xo)**2.0 + 0.25*ss**2.0 )
+
+        d2fdxdA = dfdx/A
+        d2fdxdxo = 2*(2*dfdx*(x-xo)+f) / ( (x-xo)^2.0 + 0.25*ss^2.0 )
+        d2fdxds = dfdx/s - ss*dfdx/( (x-xo)**2.0 + 0.25*ss**2.0 )
+
+        d3fdx2dA = d2fdx2/A
+        d3fdx2dxo = 2*(2*d2fdx2*(x-xo)+2*dfdx+dfdx) / ( (x-xo)^2.0 + 0.25*ss^2.0 )
+                  - 2*(x-xo)*2*(2*dfdx*(x-xo)+f) / ( (x-xo)^2.0 + 0.25*ss^2.0 )^2
+                  = 2*(2*d2fdx2*(x-xo)+3*dfdx - 2*(x-xo)*d2fdxdxo) / ( (x-xo)^2.0 + 0.25*ss^2.0 )
+        d3fdx2ds = d2fdx2/s - ss*d2fdx2/( (x-xo)**2.0 + 0.25*ss**2.0 )
+                + 2*(x-xo)* ss*dfdx/( (x-xo)**2.0 + 0.25*ss**2.0 )^2
+                 = d2fdx2/s - ss*d2fdx2/( (x-xo)**2.0 + 0.25*ss**2.0 )
+                + 2*(x-xo)* ss*dfdx/( (x-xo)**2.0 + 0.25*ss**2.0 )^2
         """
         AA, x0, ss = tuple(aa)
+#        prof = ModelLorentzian._model(XX, aa, **kwargs)
+        dfdx = ModelLorentzian._deriv(XX, aa, **kwargs)
+        d2fdx2 = ModelLorentzian._deriv2(XX, aa, **kwargs)
+        d2fdxdxo = ModelLorentzian._partial_deriv(XX, aa, **kwargs)[1,:]
+        denom = ((XX-x0)*(XX-x0)+0.25*ss*ss)
+        dx = 2*(XX-x0)
 
         d2gdx2 = _np.zeros( (3,_np.size(XX)), dtype=_np.float64)
-        d2gdx2[0,:] = -1.0*16.0*ss*( ss*ss-12.0*(XX-x0)*(XX-x0) )/_np.power( ss*ss +4.0*(XX-x0)*(XX-x0), 3.0) / _np.pi
-        d2gdx2[1,:] =768.0*AA*ss*(x0-XX)*(ss*ss-4.0*_np.power(XX-x0,4.0))/_np.power(ss*ss+4.0*_np.power(XX-x0,2.0), 4.0)/_np.pi
-        d2gdx2[2,:] = 48.0*AA*(_np.power(ss,4.0)-24.0*ss*ss*_np.power(XX-x0,2.0)+16.0*_np.power(XX-x0,4.0))/_np.power(ss*ss+4.0*_np.power(XX-x0,2.0), 4.0)/_np.pi
+        d2gdx2[0,:] = d2fdx2/AA
+        d2gdx2[1,:] = (2.0*d2fdx2*dx+6.0*dfdx-dx*d2fdxdxo)/denom
+        d2gdx2[2,:] = d2fdx2/ss - ss*d2fdx2/denom + dx*ss*dfdx/_np.power(denom, 2.0)
+#        d2gdx2[0,:] = -1.0*16.0*ss*( ss*ss-12.0*(XX-x0)*(XX-x0) )/_np.power( ss*ss +4.0*(XX-x0)*(XX-x0), 3.0) / _np.pi
+#        d2gdx2[1,:] =768.0*AA*ss*(x0-XX)*(ss*ss-4.0*_np.power(x0-XX,4.0))/_np.power(ss*ss+4.0*_np.power(x0-XX,2.0), 4.0)/_np.pi
+#        d2gdx2[2,:] = 48.0*AA*(_np.power(ss,4.0)-24.0*ss*ss*_np.power(XX-x0,2.0)+16.0*_np.power(XX-x0,4.0))/_np.power(ss*ss+4.0*_np.power(XX-x0,2.0), 4.0)/_np.pi
         return d2gdx2
 
 #    @staticmethod
@@ -4440,6 +4055,9 @@ class ModelPseudoVoigt(ModelClass):
     _UB = _np.concatenate(([1.0], ModelLorentzian._UB, ModelNormal._UB), axis=0)
     _fixed = _np.zeros( (7,), dtype=int)
     def __init__(self, XX, af=None, **kwargs):
+        # initialize with the two profiles overlapping in position
+        self._af[5] = self._af[2]
+
         super(ModelPseudoVoigt, self).__init__(XX, af, **kwargs)
     # end def __init__
 
@@ -4578,7 +4196,7 @@ class ModelLogLorentzian(ModelClass):
               - 10*log10((x-xo)**2.0 + 0.25*ss**2.0 )
               shifted log of a quadratic
         """
-#        return 10.0*_np.log(lorentzian(XX, aa))/_np.log(10)
+#        return 10.0*_np.log(lorentzian(XX, aa))/_np.log(10.0)
         AA, x0, ss = tuple(aa)
         return ( 10.0*_np.log10(0.5) + 10.0*_np.log10(AA)  + 10.0*_np.log10(ss) - 10.0*_np.log10(_np.pi)
                - 10.0*_np.log10(_np.abs(_np.power(XX-x0, 2.0) + 0.25*_np.power(ss, 2.0) ) ) )
@@ -4594,7 +4212,7 @@ class ModelLogLorentzian(ModelClass):
                  = -2.0*(x-xo)*10.0/((x-xo)**2.0 + 0.25*ss**2.0 )/_np.log(10)
         """
         AA, x0, ss = tuple(aa)
-        return -20.0*(XX-x0)/( _np.log(10) *( _np.power(XX-x0, 2.0)+0.25*_np.power(ss, 2.0)) )
+        return -20.0*(XX-x0)/( _np.log(10.0) *( _np.power(XX-x0, 2.0)+0.25*_np.power(ss, 2.0)) )
 
     @staticmethod
     def _deriv2(XX, aa, **kwargs):
@@ -4607,7 +4225,7 @@ class ModelLogLorentzian(ModelClass):
                  = -2.0*(x-xo)*10.0/((x-xo)**2.0 + 0.25*ss**2.0 )/_np.log(10)
         """
         AA, x0, ss = tuple(aa)
-        return -80.0*(ss*ss-4.0*_np.power(XX-x0,2.0))/( _np.log(10) *_np.power( 4.0*_np.power(XX-x0, 2.0)+_np.power(ss, 2.0), 2.0) )
+        return -80.0*(ss*ss-4.0*_np.power(XX-x0,2.0))/( _np.log(10.0) *_np.power( 4.0*_np.power(XX-x0, 2.0)+_np.power(ss, 2.0), 2.0) )
 
     @staticmethod
     def _partial(XX, aa, **kwargs):
@@ -4678,7 +4296,7 @@ class ModelLogLorentzian(ModelClass):
         AA, x0, ss = tuple(aa)
 
         d2gdx2 = _np.zeros( (3,_np.size(XX)), dtype=_np.float64)
-        d2gdx2[1,:] = 640.0*(XX-x0)*(3.0*ss*ss-4.0*_np.power(XX-x0,2.0))/(_np.log(10.0)*_np.power(ss*ss+4.0*_np.power(XX-x0,2.0), 3.0))
+        d2gdx2[1,:] = -640.0*(XX-x0)*(3.0*ss*ss-4.0*_np.power(XX-x0,2.0))/(_np.log(10.0)*_np.power(ss*ss+4.0*_np.power(XX-x0,2.0), 3.0))
         d2gdx2[2,:] = 160.0*ss*(ss*ss-12.0*_np.power(XX-x0,2.0))/(_np.log(10.0)*_np.power(ss*ss+4.0*_np.power(XX-x0,2.0), 3.0))
         return d2gdx2
 
@@ -5076,16 +4694,23 @@ class ModelLogDoppler(ModelDoppler):
         d2fdxda = d(df/dx)/da
                 = 10.0/ln(10) d(dy/dx/y)/da
                 = 10.0/ln(10) * ( 1/y*d2ydxda - dyda/y^2 )
+
+        dfda = d/da lny = dyda/y
+        d2fdxda = d/x (dyda/y) = d2ydxda/y - dyda*dydx/y^2
+        d3fdx2da = d3ydx2da/y - dydx*d2ydxda/y^2
+                 - d2ydxda*dydx/y^2 - dyda*d2ydx2/y2 + 2*dyda*dydx^2/y^3
+                 = (d3ydx2da*y^-1 -2*d2ydxda*dydx*y^-2 - dyda*d2ydx2*y-2 + 2*dyda*dydx^2*y-3)
         """
         kwargs.setdefault('model_order', 2)
-        prof = ModelDoppler._model(XX, aa, **kwargs)
-        gvec = ModelDoppler._partial(XX, aa, **kwargs)
-        dgdx = ModelDoppler._partial_deriv(XX, aa, **kwargs)
-        dlngdx = _np.zeros_like(gvec)
+        y = ModelDoppler._model(XX, aa, **kwargs)
+        dydx = ModelDoppler._deriv(XX, aa, **kwargs)
+        dyda = ModelDoppler._partial(XX, aa, **kwargs)
+        d2ydxda = ModelDoppler._partial_deriv(XX, aa, **kwargs)
+        dlngdx = _np.zeros_like(dyda)
         for ii in range(len(aa)):
-            dlngdx[ii,:] = dgdx[ii,:]/prof -gvec[ii,:]/(prof*prof)
+            dlngdx[ii,:] = d2ydxda[ii,:]/y - dyda[ii,:]*dydx/_np.power(y, 2.0)
         # end for
-        return 10.0*dlngdx/_np.log(10)
+        return 10.0*dlngdx/_np.log(10.0)
 
     @staticmethod
     def _partial_deriv2(XX, aa, **kwargs):
@@ -5095,23 +4720,38 @@ class ModelLogDoppler(ModelDoppler):
 
         d3fdx2da = d/dx d(df/dx)/da
                 = 10.0/ln(10) * ( d3ydx2da/y - d2ydxda*dydx/y2 + 2*dydx*dyda/y^3 - d2ydxda/y^2 )
+
+        dfda = d/da lny = dyda/y
+        d2fdxda = d/x (dyda/y) = d2ydxda/y - dyda*dydx/y^2
+        d3fdx2da = d3ydx2da/y - dydx*d2ydxda/y^2
+                 - d2ydxda*dydx/y^2 - dyda*d2ydx2/y2 + 2*dyda*dydx^2/y^3
+                 = (d3ydx2da*y^-1 -2*d2ydxda*dydx*y^-2 - dyda*d2ydx2*y-2 + 2*dyda*dydx^2*y-3)
         """
         kwargs.setdefault('model_order', 2)
         y = ModelDoppler._model(XX, aa, **kwargs)
         dydx = ModelDoppler._deriv(XX, aa, **kwargs)
+        d2ydx2 = ModelDoppler._deriv2(XX, aa, **kwargs)
+
+        y = _np.atleast_2d(y)
+        dydx = _np.atleast_2d(dydx)
+        d2ydx2 = _np.atleast_2d(d2ydx2)
+
         dyda = ModelDoppler._partial(XX, aa, **kwargs)
         d2ydxda = ModelDoppler._partial_deriv(XX, aa, **kwargs)
         d3ydx2da = ModelDoppler._partial_deriv2(XX, aa, **kwargs)
 
-        y = _np.atleast_2d(y)
-        dydx = _np.atleast_2d(dydx)
-
-        d2gdx2 = _np.zeros_like(dyda)
+        d2lngdx2 = _np.zeros_like(dyda)
         for ii in range(len(aa)):
-            d2gdx2[ii,:] = (d3ydx2da[ii,:]/y - d2ydxda[ii,:]*dydx/_np.power(y, 2.0)
-                    + 2.0*dydx*dyda[ii,:]/_np.power(y, 3.0) - d2ydxda[ii,:]/_np.power(y,2.0))
+            d2lngdx2[ii,:] = ( d3ydx2da[ii,:]/y -2.0*d2ydxda[ii,:]*dydx/_np.power(y, 2.0)
+            - dyda[ii,:]*d2ydx2/_np.power(y, 2.0) + 2.0*dyda[ii,:]*_np.power(dydx, 2.0)/_np.power(y, 3.0) )
         # end for
-        return 10.0*d2gdx2/_np.log(10)
+        return 10.0*d2lngdx2/_np.log(10.0)
+#
+#        d2gdx2 = _np.zeros_like(dyda)
+#        for ii in range(len(aa)):
+#            d2gdx2[ii,:] = (d3ydx2da[ii,:]/y - d2ydxda[ii,:]*dydx/_np.power(y, 2.0)
+#                    + 2.0*dydx*dyda[ii,:]/_np.power(y, 3.0) - d2ydxda[ii,:]/_np.power(y,2.0))
+#        # end for
 
 #    @staticmethod
 #    def _hessian(XX, aa):
@@ -5187,6 +4827,17 @@ class _ModelTwoPower(ModelClass):
     _LB = _np.asarray([  1e-18,   1e-18, -_np.inf], dtype=_np.float64)
     _UB = _np.asarray([_np.inf, _np.inf, _np.inf], dtype=_np.float64)
     _fixed = _np.zeros( (3,), dtype=int)
+
+    # Neumann boundary condition on left boundary
+    #        dydx(xlim) = 0.0
+    leftboundary = 0.0
+#    leftboundary = {'x':0.0, 'neumann': True, 'value': 0.0}
+
+    # Dirichlet boundary condition on right boundary
+    # this model requires dirichlet boundary condition on right
+    #        y(xlim) = 0.0
+    rightboundary = 1.0
+#    rightboundary = {'x':1.0, 'dirichlet': False, 'value': 0.0}
     # _rzero = 1.0
     def __init__(self, XX, af=None, **kwargs):
         # kwargs.setdefault('rzero', self._rzero)
@@ -5210,7 +4861,6 @@ class _ModelTwoPower(ModelClass):
         prof[XX>=1] = -1.0*_np.power(1.0-_np.power(_np.abs(XX[XX>=1]), -c), d)
         return prof
 
-
     @staticmethod
     def _model(XX, aa, **kwargs):
         """
@@ -5225,11 +4875,38 @@ class _ModelTwoPower(ModelClass):
         return a*_ModelTwoPower._model_base(XX, [c,d])
 
     @staticmethod
+    def _partial(XX, aa, **kwargs):
+        """
+            f = a*(1.0 - x^c)^d
+
+         dfda = f/a = _twopower/a
+         dfdc = -a*d*(1.0 - x^c)^(d-1)*x^c*ln|x|
+              = -d*x^c*ln(x)*_twopower(x, [c, d-1])
+         dfdd = a*(1.0 - x^c)^d * ln|1.0 - x^c|
+              = a*(1.0 - x^c)^d * ln1p|-x^c|
+       """
+        XX = _np.copy(XX)
+        a, c, d = tuple(aa)
+
+        gvec = _np.zeros((3,_np.size(XX)), dtype=_np.float64)
+        gvec[0,:] = _ModelTwoPower._model_base(XX, [c, d])
+        gvec[1,:] = -1.0*d*_np.power(XX, c)*_np.log(_np.abs(XX))*_ModelTwoPower._model(XX, [a, c, d-1.0])
+#        gvec[2,:] = _ModelTwoPower._model(XX, aa)*_np.log(_np.abs(_ModelTwoPower._model(XX, [1.0, c, 1.0])))
+        gvec[2,:] = _ModelTwoPower._model(XX, aa)*_np.log1p(-_np.abs(_np.power(XX, c)))
+        return gvec
+
+    @staticmethod
     def _deriv(XX, aa, **kwargs):
         """
             f = a*(1.0 - x^c)^d
          dfdx = -a*c*d*x^(c-1)*(1.0 - x**c)**(d-1)
               = -c*d*x^(c-1)*_twopower(x, [c, d-1])
+
+         dfda = f/a = _twopower/a
+         dfdc = -a*d*(1.0 - x^c)^(d-1)*x^c*ln|x|
+              = -d*x^c*ln(x)*_twopower(x, [c, d-1])
+         dfdd = a*(1.0 - x^c)^d * ln|1.0 - x^c|
+              = a*(1.0 - x^c)^d * ln1p|-x^c|
        """
         XX = _np.copy(_np.abs(XX))
         a, c, d = tuple(aa)
@@ -5238,60 +4915,29 @@ class _ModelTwoPower(ModelClass):
         return dfdx
 
     @staticmethod
-    def _deriv2(XX, aa, **kwargs):
-        """
-            f = a*(1.0 - x^c)^d
-         dfdx = -a*c*d*x^(c-1)*(1.0 - x**c)**(d-1)
-              = -c*d*x^(c-1)*_twopower(x, [c, d-1])
-         d2fdx2 = -a*c*d*(c-1)*x^(c-2)*(1.0 - x**c)**(d-1)
-                  +a*c^2*d*(d-1)*x^(2c-2)*(1.0 - x**c)**(d-2)
-
-       """
-        XX = _np.copy(_np.abs(XX))
-        a, c, d = tuple(aa)
-        d2fdx2 = c*c*d*(d-1)*_np.power(XX, 2*c-2.0)*_ModelTwoPower._model(XX, [a, c, d-2.0])
-        d2fdx2 -= c*d*(c-1)*_np.power(XX, c-2.0)*_ModelTwoPower._model(XX, [a, c, d-1.0])
-        return d2fdx2
-
-    @staticmethod
-    def _partial(XX, aa, **kwargs):
-        """
-            f = a*(1.0 - x^c)^d
-         dfdx = -a*c*d*x^(c-1)*(1.0 - x**c)**(d-1)
-
-         dfda = f/a = _twopower/a
-         dfdc = -a*d*(1.0 - x^c)^(d-1)*x^c*ln|x|
-              = -d*x^c*ln(x)*_twopower(x, [c, d-1])
-         dfdd = a*(1.0 - x^c)^d * ln|1.0 - x^c|
-              = _twopower * ln|_twopower(x, [1.0, c, 1.0])|
-       """
-        XX = _np.copy(XX)
-        a, c, d = tuple(aa)
-
-        gvec = _np.zeros((3,_np.size(XX)), dtype=_np.float64)
-        gvec[0,:] = _ModelTwoPower._model_base(XX, [c, d])
-        gvec[1,:] = -1.0*d*_np.power(XX, c)*_np.log(_np.abs(XX))*_ModelTwoPower._model(XX, [a, c, d-1.0])
-        gvec[2,:] = _ModelTwoPower._model(XX, aa)*_np.log(_np.abs(_ModelTwoPower._model(XX, [1.0, c, 1.0])))
-        return gvec
-
-    @staticmethod
     def _partial_deriv(XX, aa, **kwargs):
         """
             f = a*(1.0 - x^c)^d
          dfdx = -a*c*d*x^(c-1)*(1.0 - x**c)**(d-1)
+              = -c*d*x^(c-1)*_twopower(x, [c, d-1])
 
          dfda = f/a = _twopower/a
          dfdc = -a*d*(1.0 - x^c)^(d-1)*x^c*ln|x|
               = -d*x^c*ln(x)*_twopower(x, [c, d-1])
          dfdd = a*(1.0 - x^c)^d * ln|1.0 - x^c|
-              = _twopower * ln|_twopower(x, [1.0, c, 1.0])|
+              = a*(1.0 - x^c)^d * ln1p|-x^c|
 
         d2fdxda = dfdx/a
-        d2fdxdc = dfdx/c + ln|x|*dfdx - a*c*d*x^(c-1)*(d-1)*(1.0 - x^c)^(d-2)*-1*x^c*ln|x|
-                = dfdx/c + ln|x|*dfdx - a*c*d*x^(c-1)*(d-1)*(1.0 - x^c)^(d-2)*-1*x^c*ln|x|
-                = dfdx/c + ln|x|*dfdx - dfdx*(d-1)*x^c*ln|x|*(1.0 - x^c)^-1
-                = dfdx*(1.0/c + ln|x| - (d-1)*x^c*ln|x|*_twopower(x, [1.0, c, -1.0]))
-        d2fdxdd = dfdx/d + dfdx*ln|(1.0 - x^c)^(d-1)|
+        d2fdxdc = a*d*x^(c-1)*(1-x^c)^(d-2)*(c*ln|x|*(d*x^c-1)+x^c-1)
+                = d*x^(c-1)*_twopower(x, [a, c, d-2.0])*(c*ln|x|*(d*x^c-1)+x^c-1)
+        d2fdxdc = -a*c*x^(c-1)*(1-x^c)^(d-1)*( -d*ln|1-x^c| - 1)
+                = -1*c*x^(c-1)*_twopower(x, [a, c, d-1.0])*( d*ln1p(-x^c) + 1)
+
+#        d2fdxdc = dfdx/c + ln|x|*dfdx - a*c*d*x^(c-1)*(d-1)*(1.0 - x^c)^(d-2)*-1*x^c*ln|x|
+#                = dfdx/c + ln|x|*dfdx - a*c*d*x^(c-1)*(d-1)*(1.0 - x^c)^(d-2)*-1*x^c*ln|x|
+#                = dfdx/c + ln|x|*dfdx - dfdx*(d-1)*x^c*ln|x|*(1.0 - x^c)^-1
+#                = dfdx*(1.0/c + ln|x| - (d-1)*x^c*ln|x|*_twopower(x, [1.0, c, -1.0]))
+#        d2fdxdd = dfdx/d + dfdx*ln|(1.0 - x^c)^(d-1)|
        """
         XX = _np.copy(XX)
         a, c, d = tuple(aa)
@@ -5299,47 +4945,106 @@ class _ModelTwoPower(ModelClass):
 
         dgdx = _np.zeros((3,_np.size(XX)), dtype=_np.float64)
         dgdx[0,:] = dfdx/a
-        dgdx[1,:] = dfdx*(_np.power(c, -1.0) + _np.log(_np.abs(XX))
-            - (d-1.0)*_np.power(XX, c)*_np.log(_np.abs(XX))*_ModelTwoPower._model(XX, [1.0, c, -1.0]))
-        dgdx[2,:] = dfdx*(_np.power(d, -1.0) + _np.log(_np.abs(_ModelTwoPower._model_base(XX, [c, d-1.0]))))
+        dgdx[1,:] = d*_np.power(XX,c-1.0)*_ModelTwoPower._model(XX, [a, c, d-2.0])*(
+                c*_np.log(_np.abs(XX))*(d*_np.power(XX,c)-1.0)+_np.power(XX,c)-1.0)
+        dgdx[2,:] = -1.0*c*_np.power(XX,c-1.0)*_ModelTwoPower._model(XX, [a, c, d-1.0])*( d*_np.log1p(-_np.power(XX,c)) + 1.0)
+#        dgdx[1,:] = dfdx*(_np.power(c, -1.0) + _np.log(_np.abs(XX))
+#            - (d-1.0)*_np.power(XX, c)*_np.log(_np.abs(XX))*_ModelTwoPower._model(XX, [1.0, c, -1.0]))
+#        dgdx[2,:] = dfdx*(_np.power(d, -1.0) + _np.log(_np.abs(_ModelTwoPower._model_base(XX, [c, d-1.0]))))
         return dgdx
+
+    @staticmethod
+    def _deriv2(XX, aa, **kwargs):
+        """
+            f = a*(1.0 - x^c)^d
+         dfdx = -a*c*d*x^(c-1)*(1.0 - x**c)**(d-1)
+              = -c*d*x^(c-1)*_twopower(x, [c, d-1])
+
+         d2fdx2 = -a*c*d*(c-1)*x^(c-2)*(1.0 - x**c)**(d-1)
+                  +a*c^2*d*(d-1)*x^(2c-2)*(1.0 - x**c)**(d-2)
+
+         dfda = f/a = _twopower/a
+         dfdc = -a*d*(1.0 - x^c)^(d-1)*x^c*ln|x|
+              = -d*x^c*ln(x)*_twopower(x, [c, d-1])
+         dfdd = a*(1.0 - x^c)^d * ln|1.0 - x^c|
+              = a*(1.0 - x^c)^d * ln1p|-x^c|
+
+        d2fdxda = dfdx/a
+        d2fdxdc = a*d*x^(c-1)*(1-x^c)^(d-2)*(c*ln|x|*(d*x^c-1)+x^c-1)
+                = d*x^(c-1)*_twopower(x, [a, c, d-2.0])*(c*ln|x|*(d*x^c-1)+x^c-1)
+        d2fdxdc = -a*c*x^(c-1)*(1-x^c)^(d-1)*( -d*ln|1-x^c| - 1)
+                = -1*c*x^(c-1)*_twopower(x, [a, c, d-1.0])*( d*ln1p(-x^c) + 1)
+
+       """
+        XX = _np.copy(_np.abs(XX))
+        a, c, d = tuple(aa)
+        d2fdx2 = c*c*d*(d-1.0)*_np.power(XX, 2.0*c-2.0)*_ModelTwoPower._model(XX, [a, c, d-2.0])
+        d2fdx2 -= c*d*(c-1.0)*_np.power(XX, c-2.0)*_ModelTwoPower._model(XX, [a, c, d-1.0])
+        return d2fdx2
 
     @staticmethod
     def _partial_deriv2(XX, aa, **kwargs):
         """
             f = a*(1.0 - x^c)^d
          dfdx = -a*c*d*x^(c-1)*(1.0 - x**c)**(d-1)
+              = -c*d*x^(c-1)*_twopower(x, [c, d-1])
+
+         d2fdx2 = -a*c*d*(c-1)*x^(c-2)*(1.0 - x**c)**(d-1)
+                  +a*c^2*d*(d-1)*x^(2c-2)*(1.0 - x**c)**(d-2)
 
          dfda = f/a = _twopower/a
          dfdc = -a*d*(1.0 - x^c)^(d-1)*x^c*ln|x|
               = -d*x^c*ln(x)*_twopower(x, [c, d-1])
          dfdd = a*(1.0 - x^c)^d * ln|1.0 - x^c|
-              = _twopower * ln|_twopower(x, [1.0, c, 1.0])|
+              = a*(1.0 - x^c)^d * ln1p|-x^c|
 
         d2fdxda = dfdx/a
-        d2fdxdc = dfdx/c + ln|x|*dfdx - a*c*d*x^(c-1)*(d-1)*(1.0 - x^c)^(d-2)*-1*x^c*ln|x|
-                = dfdx/c + ln|x|*dfdx - a*c*d*x^(c-1)*(d-1)*(1.0 - x^c)^(d-2)*-1*x^c*ln|x|
-                = dfdx/c + ln|x|*dfdx - dfdx*(d-1)*x^c*ln|x|*(1.0 - x^c)^-1
-                = dfdx*(1.0/c + ln|x| - (d-1)*x^c*ln|x|*_twopower(x, [1.0, c, -1.0]))
-        d2fdxdd = dfdx/d + dfdx*ln|(1.0 - x^c)^(d-1)|
+        d2fdxdc = a*d*x^(c-1)*(1-x^c)^(d-2)*(c*ln|x|*(d*x^c-1)+x^c-1)
+                = d*x^(c-1)*_twopower(x, [a, c, d-2.0])*(c*ln|x|*(d*x^c-1)+x^c-1)
+        d2fdxdc = -a*c*x^(c-1)*(1-x^c)^(d-1)*( -d*ln|1-x^c| - 1)
+                = -1*c*x^(c-1)*_twopower(x, [a, c, d-1.0])*( d*ln1p(-x^c) + 1)
+
+        d3fdx2da = c*d*x^(c-2)*(1-x^c)^(d-2)*( c*(d*x^c-1)-x^c+1 )
+        d3fdx2dc = -a*d*x^(c-2)*(1-x^c)^(d-3)*( c*ln|x|*(
+                c*( d^2*x^(2c) +(1-3*d)*x^c+1)-d*x^(2c)+(d+1)*x^c-1 )
+              + c*( 2*d*x^(2*c)+(-2*d-2)*x^c +2 ) - (1-x^c)^2 )
+        d3fdx2dc = a*c*x^(c-2)*(1-x^c)^(d-2)*(
+            c*(2*d*x^c-1) + d*(c*(d*x^c-1)-x^c+1)*ln|1-x^c|-x^c+1)
+                 = c*x^(c-2)*_ModelTwoPower._model(XX, [a, c, d-2.0])*(
+            c*(2*d*x^c-1) + d*(c*(d*x^c-1)-x^c+1)*ln1p|-x^c|-x^c+1)
+
+
        """
         XX = _np.copy(XX)
         a, c, d = tuple(aa)
 
-        dfdx = _ModelTwoPower._deriv(XX, aa)
-        d2fdx2 = _ModelTwoPower._deriv2(XX, aa)
+#        dfdx = _ModelTwoPower._deriv(XX, aa)
+#        d2fdx2 = _ModelTwoPower._deriv2(XX, aa)
 
         d2gdx2 = _np.zeros((3,_np.size(XX)), dtype=_np.float64)
-        d2gdx2[0,:] = d2fdx2/a
-        d2gdx2[1,:] = d2fdx2*(_np.power(c, -1.0) + _np.log(_np.abs(XX))
-            - (d-1.0)*_np.power(XX, c)*_np.log(_np.abs(XX))*_ModelTwoPower._model(XX, [1.0, c, -1.0]))
-        d2gdx2[1,:] += dfdx*(1.0/XX
-            - (d-1.0)*c*_np.power(XX, c-1.0)*_np.log(_np.abs(XX))*_ModelTwoPower._model(XX, [1.0, c, -1.0])
-            - (d-1.0)*_np.power(XX, c)*1.0/XX*_ModelTwoPower._model(XX, [1.0, c, -1.0])
-            - (d-1.0)*_np.power(XX, c)*_np.log(_np.abs(XX))*_ModelTwoPower._deriv(XX, [1.0, c, -1.0]))
+        d2gdx2[0, :] = c*d*_np.power(XX, c-2.0)*_ModelTwoPower._model_base(XX, [c, d-2.0])*(
+                c*(d*_np.power(XX, c)-1.0)-_np.power(XX, c)+1.0 )
+        d2gdx2[1, :] = -d*_np.power(XX, c-2.0)*_ModelTwoPower._model(XX, [a, c, d-3.0])*(
+                c*_np.log(_np.abs(XX))*(
+                c*( _np.power(d,2.0)*_np.power(XX,2.0*c) + (1.0-3.0*d)*_np.power(XX, c)+1.0)
+              - d*_np.power(XX,2.0*c)+(d+1.0)*_np.power(XX,c)-1.0)
+              + c*( 2.0*d*_np.power(XX,2.0*c)+(-2.0*d-2.0)*_np.power(XX, c) + 2.0 )
+              - _ModelTwoPower._model(XX, [1.0, c, 2.0]) )
+        d2gdx2[2, :] = c*_np.power(XX, c-2.0)*_ModelTwoPower._model(XX, [a, c, d-2.0])*(
+            c*(2.0*d*_np.power(XX, c)-1.0)
+          + d*(c*(d*_np.power(XX, c)-1.0)-_np.power(XX, c)+1.0)*_np.log1p(-1*_np.power(XX, c))
+          - _np.power(XX, c)+1.0)
 
-        d2gdx2[2,:] = d2fdx2*(_np.power(d, -1.0) + _np.log(_np.abs(_ModelTwoPower._model_base(XX, [c, d-1.0]))))
-        d2gdx2[2,:] += dfdx*(_ModelTwoPower._deriv(XX, [a, c, d-1.0])/(a*_ModelTwoPower._model_base(XX, [c, d-1.0])))
+#        d2gdx2[0,:] = d2fdx2/a
+#        d2gdx2[1,:] = d2fdx2*(_np.power(c, -1.0) + _np.log(_np.abs(XX))
+#            - (d-1.0)*_np.power(XX, c)*_np.log(_np.abs(XX))*_ModelTwoPower._model(XX, [1.0, c, -1.0]))
+#        d2gdx2[1,:] += dfdx*(1.0/XX
+#            - (d-1.0)*c*_np.power(XX, c-1.0)*_np.log(_np.abs(XX))*_ModelTwoPower._model(XX, [1.0, c, -1.0])
+#            - (d-1.0)*_np.power(XX, c)*1.0/XX*_ModelTwoPower._model(XX, [1.0, c, -1.0])
+#            - (d-1.0)*_np.power(XX, c)*_np.log(_np.abs(XX))*_ModelTwoPower._deriv(XX, [1.0, c, -1.0]))
+
+#        d2gdx2[2,:] = d2fdx2*(_np.power(d, -1.0) + _np.log(_np.abs(_ModelTwoPower._model_base(XX, [c, d-1.0]))))
+#        d2gdx2[2,:] += dfdx*(_ModelTwoPower._deriv(XX, [a, c, d-1.0])/(a*_ModelTwoPower._model_base(XX, [c, d-1.0])))
         return d2gdx2
 
 #    @staticmethod
@@ -5403,7 +5108,8 @@ class ModelTwoPower(ModelClass):
 
        non-trival domain:  c>0 and 0<=x<1  or   c<0 and x>1
     """
-    _af = _np.asarray([1.0, 0.0, 12.0, 3.0], dtype=_np.float64)
+#    _af = _np.asarray([1.0, 0.0, 12.0, 3.0], dtype=_np.float64)
+    _af = _np.asarray([1.0, 0.10, 12.0, 3.0], dtype=_np.float64)
     _LB = _np.asarray([1e-18, 0.0, 1e-18, -20.0], dtype=_np.float64)
     _UB = _np.asarray([   20, 1.0,  20.0,  20.0], dtype=_np.float64)
     _fixed = _np.zeros( (4,), dtype=int)
@@ -5440,7 +5146,6 @@ class ModelTwoPower(ModelClass):
         f/a = (1-b)*(1-x^c)^d + b
         dfdx = a*(1-b)*c*d*x^(c-1)*(1-x^c)^(d-1)
              = (1-b)*_deriv_twopower
-
         """
         a, b, c, d = tuple(aa)
         return (1.0-b)*_ModelTwoPower._deriv2(XX, [a, c, d])
@@ -5454,7 +5159,7 @@ class ModelTwoPower(ModelClass):
          dfda = b+(1-b)*(1-x^c)^d
          dfdb = a-a*(1-x^c)^d = a-_twopower(XX, [a, c, d])
          dfdc = -a*(1-b)*d*x^c*ln|x|*(1-x^c)^(d-1)
-              = -d*ln|x|*x^c*twopower(x, [a,b,c,d-1])
+              = -d*(1-b)*ln|x|*x^c*_twopower(x, [a,c,d-1])
          dfdd = a*(1.0-b)(1.0 - x^c)^d * ln|1.0 - x^c|
               = (1.0-b)*_twopower() * ln|_twopower(x, [1.0, c, 1.0])|
         """
@@ -5465,7 +5170,7 @@ class ModelTwoPower(ModelClass):
         gvec = _np.zeros((4, nx), dtype=_np.float64)
         gvec[0, :] = ModelTwoPower._model(XX, [1.0, b, c, d])
         gvec[1, :] = a-_ModelTwoPower._model(XX, [a, c, d])
-        gvec[2, :] = -d*_np.log(_np.abs(XX))*_np.power(_np.abs(XX), c)*ModelTwoPower._model(XX, [a, b, c, d-1.0])
+        gvec[2, :] = -d*(1.0-b)*_np.log(_np.abs(XX))*_np.power(_np.abs(XX), c)*_ModelTwoPower._model(XX, [a, c, d-1.0])
         gvec[3, :] = (1.0-b)*_ModelTwoPower._model(XX, [a, c, d])*_np.log(_np.abs(_ModelTwoPower._model(XX, [1.0, c, 1.0])))
 #        if (_np.isnan(gvec)).any():
 #            print('debugging')
@@ -5612,7 +5317,7 @@ class ModelExpEdge(ModelClass):
         h = hole depth
 
     """
-    _af = _np.asarray([2.0, 1.0], dtype=_np.float64)
+    _af = _np.asarray([    2.0,    1.0], dtype=_np.float64)
     _LB = _np.asarray([   1e-18, 1e-18], dtype=_np.float64)
     _UB = _np.asarray([ _np.inf, _np.inf], dtype=_np.float64)
     _fixed = _np.zeros( (2,), dtype=int)
@@ -5912,28 +5617,33 @@ class ModelQuasiParabolic(ModelClass):
     Y/Y0 = aa[1]-aa[4]+(1-aa[1]+aa[4])*(1-XX^aa[2])^aa[3]+aa[4]*(1-exp(-XX^2/aa[5]^2))
         XX - r/a
 
-    aa[0] - Y0 - function value on-axis
-    aa[1] - gg - Y1/Y0 - function value at edge over core
-    aa[2],aa[3]-  pp, qq - power scaling parameters
-    aa[4],aa[5]-  hh, ww - hole depth and width
+    a - aa[0] - Y0 - function value on-axis
+    e - aa[1] - gg - Y1/Y0 - function value at edge over core
+    c, d - aa[2],aa[3]-  pp, qq - power scaling parameters
+    h, w - aa[4],aa[5]-  hh, ww - hole depth and width
 
-    f/a = prof1/a + prof2/a
+    f/a = prof1/a + prof2
 
-        prof1 = a*( b+(1-b)*(1-XX^c)^d )    # ModelTwoPower
+        prof1 = a*( e+(1-e)*(1-XX^c)^d )    # ModelTwoPower
     {x element R: (d>0 and c=0 and x>0) or (d>0 and x=1)
             or (c>0 and 0<=x<1) or (c<0 and x>1) }
 
-        prof2 = e*(1-exp(-XX^2/h^2))        # EdgePower
+        prof2 = h*(1-exp(-XX^2/w^2))        # EdgePower
    {x element R}
+
+
+    NOTE:
+    The formulation with definition
+        prof1 = a*( b+(1-b)*(1-XX^c)^d )   where b = e-h
+            doesn't work for the jacobians, where we need the term separated.
 
         nohollow = True
         af = _np.hstack((af,0.0))
         af = _np.hstack((af,1.0))
 
-        Y0 = core
-        YO*aa[1] = edge
     """
     _af = _np.asarray([1.0, 0.002, 2.0, 0.7, -0.24, 0.30], dtype=_np.float64)
+#    _af = _np.asarray([1.0, 0.52, 2.0, 0.7, -0.24, 0.30], dtype=_np.float64)
     _LB = _np.asarray([1e-18, 0.0,  1e-18,-10,-1, 0], dtype=_np.float64)
     _UB = _np.asarray([ 20.0, 1.0, 10, 10, 1, 1], dtype=_np.float64)
     _fixed = _np.zeros( (6,), dtype=int)
@@ -5948,48 +5658,214 @@ class ModelQuasiParabolic(ModelClass):
 
     @staticmethod
     def _model(XX, aa, **kwargs):
-        a, b, c, d, e, f = tuple(aa)
-        prof = ( ModelTwoPower._model(XX, [a, b-e, c, d])
-                 + a*ModelExpEdge._model(XX, [e, f]) )
+        """
+        f/a = prof1/a + prof2
+
+            prof1 = a*( b+(1-b)*(1-XX^c)^d )    # ModelTwoPower
+        {x element R: (d>0 and c=0 and x>0) or (d>0 and x=1)
+                or (c>0 and 0<=x<1) or (c<0 and x>1) }
+                where b = e-h (edge-hole)
+
+            prof2 = h*(1-exp(-XX^2/w^2))        # EdgePower
+       {x element R}
+
+
+        NOTE:
+        The formulation with definition
+            prof1 = a*( b+(1-b)*(1-XX^c)^d )   where b = e-h (edge-hole)
+                doesn't work for the jacobians, where we need the term separated.
+        """
+        a, e, c, d, h, w = tuple(aa)
+        prof = ( ModelTwoPower._model(XX, [a, e-h, c, d])
+                 + a*ModelExpEdge._model(XX, [h, w]) )
         return prof
 
     @staticmethod
     def _deriv(XX, aa, **kwargs):
-        a, b, c, d, e, f = tuple(aa)
-        return ( ModelTwoPower._deriv(XX, [a, b-e, c, d])
-                 + a*ModelExpEdge._deriv(XX, [e, f]) )
+        """
+        f/a = prof1/a + prof2
+
+            prof1 = a*( b+(1-b)*(1-XX^c)^d )    # ModelTwoPower
+        {x element R: (d>0 and c=0 and x>0) or (d>0 and x=1)
+                or (c>0 and 0<=x<1) or (c<0 and x>1) }
+                where b = e-h (edge-hole)
+
+            prof2 = e*(1-exp(-XX^2/h^2))        # EdgePower
+       {x element R}
+
+        dfdx = dprof1dx + a*dprof2dx
+        """
+        a, e, c, d, h, w = tuple(aa)
+        return ( ModelTwoPower._deriv(XX, [a, e-h, c, d])
+                 + a*ModelExpEdge._deriv(XX, [h, w]) )
 
     @staticmethod
     def _deriv2(XX, aa, **kwargs):
-        a, b, c, d, e, f = tuple(aa)
-        return ( ModelTwoPower._deriv2(XX, [a, b-e, c, d])
-                 + a*ModelExpEdge._deriv2(XX, [e, f]) )
+        """
+        f/a = prof1/a + prof2
+
+            prof1 = a*( b+(1-b)*(1-XX^c)^d )    # ModelTwoPower
+        {x element R: (d>0 and c=0 and x>0) or (d>0 and x=1)
+                or (c>0 and 0<=x<1) or (c<0 and x>1) }
+                where b = e-h (edge-hole)
+
+            prof2 = e*(1-exp(-XX^2/h^2))        # EdgePower
+       {x element R}
+
+        dfdx = dprof1dx + a*dprof2dx
+        d2fdx2 = d2prof1dx2 + a*d2prof2dx2
+        """
+        a, e, c, d, h, w = tuple(aa)
+        return ( ModelTwoPower._deriv2(XX, [a, e-h, c, d])
+                 + a*ModelExpEdge._deriv2(XX, [h, w]) )
 
     @staticmethod
     def _partial(XX, aa, **kwargs):
-        a, b, c, d, e, f = tuple(aa)
+        """
+        f/a = prof1/a + prof2
+
+            prof1 = a*( b+(1-b)*(1-XX^c)^d )    # ModelTwoPower
+        {x element R: (d>0 and c=0 and x>0) or (d>0 and x=1)
+                or (c>0 and 0<=x<1) or (c<0 and x>1) }
+                where b = e-h (edge-hole)
+
+            prof2 = e*(1-exp(-XX^2/h^2))        # EdgePower
+       {x element R}
+
+        dfdx = dprof1dx + a*dprof2dx
+        d2fdx2 = d2prof1dx2 + a*d2prof2dx2
+
+        NOTE:
+        The formulation with definition
+            f1 = a*( b+(1-b)*(1-XX^c)^d )   where b = e-h (edge-hole)
+            df1de = df1db * dbde = +1*df1db
+            df1dh = df1db * dbdh = -1*df1db
+
+        dfda = df1da + f2
+        dfde = df1db        where b = e-h
+             = a -a*(1-x^^c)^d
+        dfdc = df1dc
+        dfdd = df1dd
+        dfdh = df1dh + a*df2dh = -df1db + a*df2dh where b = e-h
+        dfdw = a*df2dw
+        """
+        a, e, c, d, h, w = tuple(aa)
+
+        # Note: b = e-h
+        g1 = ModelTwoPower._partial(XX, [a, e-h, c, d])
+#        df1de = ModelTwoPower._partial(XX, [a, e, c, d])[1,:]
+#        df1dh = -1.0*ModelTwoPower._partial(XX, [a, h, c, d])[1,:]
+
+        g2 = a*ModelExpEdge._partial(XX, [h, w])
+#        dfda = ModelQuasiParabolic._model(XX, aa)/a
+#        dfde = a-_ModelTwoPower._model(XX, [a, c, d])
+        dfda = g1[0,:] + ModelExpEdge._model(XX, [h, w])
+        dfde = +1.0*g1[1,:]#
+        dfdc = g1[2,:]
+        dfdd = g1[3,:]
+#        dfdh = -1.0*a+_ModelTwoPower._model(XX, [a, c, d])+ g2[0,:]
+        dfdh = -1.0*_np.copy(g1[1,:]) + g2[0,:]
+        dfdw = g2[1,:]
+
         gvec = _np.zeros((6,_np.size(XX)), dtype=_np.float64)
-        gvec[0, :] = ModelQuasiParabolic._model(XX, aa)/a
-        gvec[1:4,:] = ModelTwoPower._partial(XX, [a, b-e, c, d])[1:,:]
-        gvec[4:, :] = a*ModelExpEdge._partial(XX, [e, f])
+        gvec[0, :] = _np.copy(dfda)
+        gvec[1, :] = _np.copy(dfde)
+        gvec[2, :] = _np.copy(dfdc)
+        gvec[3, :] = _np.copy(dfdd)
+        gvec[4, :] = _np.copy(dfdh)
+        gvec[5, :] = _np.copy(dfdw)
+#        gvec[0, :] = ModelQuasiParabolic._model(XX, aa)/a
+#        gvec[1:4,:] = ModelTwoPower._partial(XX, [a, e-h, c, d])[1:,:]
+#        gvec[4:, :] = a*ModelExpEdge._partial(XX, [h, w])
         return gvec
 
     @staticmethod
     def _partial_deriv(XX, aa, **kwargs):
-        a, b, c, d, e, f = tuple(aa)
+        """
+        f/a = prof1/a + prof2
+
+            prof1 = a*( b+(1-b)*(1-XX^c)^d )    # ModelTwoPower
+        {x element R: (d>0 and c=0 and x>0) or (d>0 and x=1)
+                or (c>0 and 0<=x<1) or (c<0 and x>1) }
+                where b = e-h (edge-hole)
+
+            prof2 = e*(1-exp(-XX^2/h^2))        # EdgePower
+       {x element R}
+
+        dfdx = dprof1dx + a*dprof2dx
+        d2fdx2 = d2prof1dx2 + a*d2prof2dx2
+
+        NOTE:
+        The formulation with definition
+            f1 = a*( b+(1-b)*(1-XX^c)^d )   where b = e-h (edge-hole)
+            df1de = df1db * dbde = +1*df1db
+            df1dh = df1db * dbdh = -1*df1db
+
+        dfda = df1da + f2
+        dfde = df1db        where b = e-h
+        dfdc = df1dc
+        dfdd = df1dd
+        dfdh = df1dh + a*df2dh = -df1db + a*df2dh where b = e-h
+        dfdw = a*df2dw
+
+        d2fdadx = df1dadx + df2dx
+        d2fdedx = df1dbdx   where b = e-h
+        d2fdcdx = df1dcdx
+        d2fdddx = df1dddx
+        d2fdhdx = -1.0*df1dbdx + df2dhdx   where b = e-h
+        d2fdwdx = df2dwdx
+        """
+        a, e, c, d, h, w = tuple(aa)
+
+        # Note: b = e-h
+        dg1dx = ModelTwoPower._partial_deriv(XX, [a, e-h, c, d])
+        dg2dx = a*ModelExpEdge._partial_deriv(XX, [h, w])
+#        d2fdxda = ModelQuasiParabolic._deriv(XX, aa)/a
+#        d2fdxde = a-_ModelTwoPower._model(XX, [a, c, d])
+        d2fdxda = dg1dx[0,:] + ModelExpEdge._deriv(XX, [h, w])
+        d2fdxde = +1.0*dg1dx[1,:]
+        d2fdxdc = dg1dx[2,:]
+        d2fdxdd = dg1dx[3,:]
+        d2fdxdh = -1.0*dg1dx[1,:] + dg2dx[0,:]
+        d2fdxdw = dg2dx[1,:]
+
         dgdx = _np.zeros((6,_np.size(XX)), dtype=_np.float64)
-        dgdx[0, :] = ModelQuasiParabolic._deriv(XX, aa)/a
-        dgdx[1:4,:] = ModelTwoPower._partial_deriv(XX, [a, b-e, c, d])[1:,:]
-        dgdx[4:,:] = a*ModelExpEdge._partial_deriv(XX, [e, f])
+        dgdx[0, :] = _np.copy(d2fdxda)
+        dgdx[1, :] = _np.copy(d2fdxde)
+        dgdx[2, :] = _np.copy(d2fdxdc)
+        dgdx[3, :] = _np.copy(d2fdxdd)
+        dgdx[4, :] = _np.copy(d2fdxdh)
+        dgdx[5, :] = _np.copy(d2fdxdw)
+#        dgdx[1:4,:] = ModelTwoPower._partial_deriv(XX, [a, e-h, c, d])[1:,:]
+#        dgdx[4:,:] = a*ModelExpEdge._partial_deriv(XX, [h, w])
         return dgdx
 
     @staticmethod
     def _partial_deriv2(XX, aa, **kwargs):
-        a, b, c, d, e, f = tuple(aa)
+        a, e, c, d, h, w = tuple(aa)
+
+        # Note: b = e-h
+        d2g1dx2 = ModelTwoPower._partial_deriv2(XX, [a, e-h, c, d])
+        d2g2dx2 = a*ModelExpEdge._partial_deriv2(XX, [h, w])
+        d3fdx2da = d2g1dx2[0,:] + ModelExpEdge._deriv2(XX, [h, w])
+        d3fdx2de = +1.0*d2g1dx2[1,:]
+        d3fdx2dc = d2g1dx2[2,:]
+        d3fdx2dd = d2g1dx2[3,:]
+        d3fdx2dh = -1.0*d2g1dx2[1,:] + d2g2dx2[0,:]
+        d3fdx2dw = d2g2dx2[1,:]
+
         d2gdx2 = _np.zeros((6,_np.size(XX)), dtype=_np.float64)
-        d2gdx2[0, :] = ModelQuasiParabolic._deriv2(XX, aa)/a
-        d2gdx2[1:4,:] = ModelTwoPower._partial_deriv2(XX, [a, b-e, c, d])[1:,:]
-        d2gdx2[4:,:] = a*ModelExpEdge._partial_deriv2(XX, [e, f])
+        d2gdx2[0, :] = _np.copy(d3fdx2da)
+        d2gdx2[1, :] = _np.copy(d3fdx2de)
+        d2gdx2[2, :] = _np.copy(d3fdx2dc)
+        d2gdx2[3, :] = _np.copy(d3fdx2dd)
+        d2gdx2[4, :] = _np.copy(d3fdx2dh)
+        d2gdx2[5, :] = _np.copy(d3fdx2dw)
+
+#        d2gdx2 = _np.zeros((6,_np.size(XX)), dtype=_np.float64)
+#        d2gdx2[0, :] = ModelQuasiParabolic._deriv2(XX, aa)/a
+#        d2gdx2[1:4,:] = ModelTwoPower._partial_deriv2(XX, [a, e-h, c, d])[1:,:]
+#        d2gdx2[4:,:] = a*ModelExpEdge._partial_deriv2(XX, [h, w])
         return d2gdx2
 
 #    @staticmethod
@@ -6105,9 +5981,11 @@ class ModelFlattop(ModelClass):
         af[2] - c - the gradient steepness
     The profile is constant near the plasma center, smoothly descends into a
     gradient near (x/b)=1 and tends to zero for (x/b)>>1
+
+    domain: (b<0 and x<0) or (b>0 and x>0)
     """
     _af = _np.asarray([1.0, 0.4, 5.0], dtype=_np.float64)
-    _LB = _np.asarray([1e-18, 0.0, 1.0], dtype=_np.float64)
+    _LB = _np.asarray([1e-18, 1e-18, 1.0], dtype=_np.float64)
     _UB = _np.asarray([_np.inf, 1.0, _np.inf], dtype=_np.float64)
     _fixed = _np.zeros( (3,), dtype=int)
     def __init__(self, XX, af=None, **kwargs):
@@ -6138,21 +6016,6 @@ class ModelFlattop(ModelClass):
         return -1.0*a*c*temp/(XX*_np.power(1.0+temp,2.0))
 
     @staticmethod
-    def _deriv2(XX, aa, **kwargs):
-        """
-        prof ~ f(x) = a / (1 + (x/b)^c)
-        dfdx = -1*c*x^(c-1)*b^-c* a/(1+(x/b)^c)^2
-             = -a*c*(x/b)^c/(x*(1+(x/b)^c)^2)
-             = -a*c*(x/b)^c/(x/b^(2c)*(b^c+x^c)^2)
-             = -a*c*(x*b)^c/(x*(b^c+x^c)^2)
-        d2fdx2 = -a*c^2*(x/b)^(c-1)/(x^2*(1+(x/b)^c)^2)
-                + a*c*(x/b)^c/(x*(1+(x/b)^c)^2)
-        """
-        a, b, c = tuple(aa)
-        temp = _np.power(XX/b, c)
-        return -1.0*a*c*temp/(XX*_np.power(1.0+temp,2.0))
-
-    @staticmethod
     def _partial(XX, aa, **kwargs):
         """
         prof ~ f(x) = a / (1 + (x/b)^c)
@@ -6161,7 +6024,9 @@ class ModelFlattop(ModelClass):
 
         dfda = 1.0/(1+_np.power(x/b, c))
         dfdb = a*c*(x/b)^c/(b*(1+(x/b)^c)^2)
-        dfdc = a*_np.log(x/b)*(x/b)^c / (1+(x/b)^c)^2
+             = prof^2*(c/ab)*(x/b)^c
+        dfdc = -1.0*a*(x/b)^c*ln|x/b|/ (1+(x/b)^c)^2
+             = -1*(prof^2/a)*(x/b)^c*ln|x/b|
         """
         nx = _np.size(XX)
         a, b, c = tuple(aa)
@@ -6170,20 +6035,45 @@ class ModelFlattop(ModelClass):
 
         gvec = _np.zeros((3, nx), dtype=_np.float64)
         gvec[0, :] = prof / a
-        gvec[1, :] = a*c*temp / (b*_np.power(1.0+temp,2.0) )
-        gvec[2, :] = a*temp*_np.log(_np.abs(XX/b)) / _np.power(1.0+temp, 2.0)
+        gvec[1, :] = _np.power(prof, 2.0)*temp*c/(a*b)
+        gvec[2, :] = -1.0*_np.power(prof, 2.0)*(temp/a)*_np.log(_np.abs(XX/b))
         return gvec
 
     @staticmethod
-    def _partial_deriv(XX, aa, **kwargs):
+    def _deriv2(XX, aa, **kwargs):
         """
         prof ~ f(x) = a / (1 + (x/b)^c)
+
         dfdx = -1*c*x^(c-1)*b^-c* a/(1+(x/b)^c)^2
              = -a*c*(x/b)^c/(x*(1+(x/b)^c)^2)
 
         dfda = 1.0/(1+_np.power(x/b, c))
         dfdb = a*c*(x/b)^c/(b*(1+(x/b)^c)^2)
-        dfdc = a*_np.log(x/b)*(x/b)^c / (1+(x/b)^c)^2
+             = prof^2*(c/ab)*(x/b)^c
+        dfdc = -1.0*a*(x/b)^c*ln|x/b|/ (1+(x/b)^c)^2
+             = -1*(prof^2/a)*(x/b)^c*ln|x/b|
+
+        d2fdx2 = a*c*(x/b)^c*(c*(x/b)^c+(x/b)^c-c+1.0)/(x^2*(1+(x/b)^c)^3)
+        """
+        a, b, c = tuple(aa)
+        temp = _np.power(XX/b, c)
+        return a*c*temp*(c*temp+temp-c+1.0)/(_np.power(XX,2.0)*_np.power(1.0+temp,3.0))
+
+    @staticmethod
+    def _partial_deriv(XX, aa, **kwargs):
+        """
+        prof ~ f(x) = a / (1 + (x/b)^c)
+
+        dfdx = -1*c*x^(c-1)*b^-c* a/(1+(x/b)^c)^2
+             = -a*c*(x/b)^c/(x*(1+(x/b)^c)^2)
+
+        d2fdx2 = a*c*(x/b)^c*(c*(x/b)^c+(x/b)^c-c+1.0)/(x^2*(1+(x/b)^c)^3)
+
+        dfda = 1.0/(1+_np.power(x/b, c))
+        dfdb = a*c*(x/b)^c/(b*(1+(x/b)^c)^2)
+             = prof^2*(c/ab)*(x/b)^c
+        dfdc = -1.0*a*(x/b)^c*ln|x/b|/ (1+(x/b)^c)^2
+             = -1*(prof^2/a)*(x/b)^c*ln|x/b|
 
         d2fdxda = -1 * c*(x/b)^c / ( x* ( 1+(x/b)^c )^2 )
                 = dfdx / a
@@ -6192,9 +6082,8 @@ class ModelFlattop(ModelClass):
                 = prof * x*dprofdx * c/a * (x/b)^(-1) * ((x/b)^c-1.0) / (b^2)
                 = prof * dprofdx * c/a * ((x/b)^c-1.0) / b
         d2fdxdc = a * (x/b)^c * ( -(x/b)^c + c*(x/b)^c*ln|x/b| - c*ln|x/b| - 1.0  )
-                 / ( x*( (x/b)^c + 1 )^3  )
-                = prof*dfdx/(a*c) * ( -(x/b)^c + c*(x/b)^c*ln|x/b| - c*ln|x/b| - 1.0  )
-
+                 / ( x*( (x/b)^c + 1 )^3 )
+                = -1.0*prof*dfdx/(a*c)*( -(x/b)^c + c*(x/b)^c*ln|x/b| - c*ln|x/b| - 1.0  )
         """
         nx = _np.size(XX)
         a, b, c = tuple(aa)
@@ -6205,23 +6094,25 @@ class ModelFlattop(ModelClass):
         dgdx = _np.zeros((3, nx), dtype=_np.float64)
         dgdx[0, :] = dprofdx / a
         dgdx[1, :] = prof * dprofdx * (c/a)*(temp-1.0)/b
-        dgdx[2, :] = prof*dprofdx/(a*c) *(
+        dgdx[2, :] = -1.0*prof*dprofdx/(a*c) *(
             -1.0*temp + c*temp*_np.log(_np.abs(XX/b)) - c*_np.log(_np.abs(XX/b)) - 1.0 )
-#        dgdx[2, :] = dprofdx/c
-#        dgdx[2, :] += dprofdx*_np.log(_np.abs(XX/b))
-#        dgdx[2, :] -= 2.0*(dprofdx**2.0)*(_np.log(_np.abs(XX/b))/prof)
         return dgdx
 
     @staticmethod
     def _partial_deriv2(XX, aa, **kwargs):
         """
         prof ~ f(x) = a / (1 + (x/b)^c)
+
         dfdx = -1*c*x^(c-1)*b^-c* a/(1+(x/b)^c)^2
              = -a*c*(x/b)^c/(x*(1+(x/b)^c)^2)
 
+        d2fdx2 = a*c*(x/b)^c*(c*(x/b)^c+(x/b)^c-c+1.0)/(x^2*(1+(x/b)^c)^3)
+
         dfda = 1.0/(1+_np.power(x/b, c))
         dfdb = a*c*(x/b)^c/(b*(1+(x/b)^c)^2)
-        dfdc = a*_np.log(x/b)*(x/b)^c / (1+(x/b)^c)^2
+             = prof^2*(c/ab)*(x/b)^c
+        dfdc = -1.0*a*(x/b)^c*ln|x/b|/ (1+(x/b)^c)^2
+             = -1*(prof^2/a)*(x/b)^c*ln|x/b|
 
         d2fdxda = -1 * c*(x/b)^c / ( x* ( 1+(x/b)^c )^2 )
                 = dfdx / a
@@ -6230,14 +6121,25 @@ class ModelFlattop(ModelClass):
                 = prof * x*dprofdx * c/a * (x/b)^(-1) * ((x/b)^c-1.0) / (b^2)
                 = prof * dprofdx * c/a * ((x/b)^c-1.0) / b
         d2fdxdc = a * (x/b)^c * ( -(x/b)^c + c*(x/b)^c*ln|x/b| - c*ln|x/b| - 1.0  )
-                 / ( x*( (x/b)^c + 1 )^3  )
-                = prof*dfdx/(a*c) * ( -(x/b)^c + c*(x/b)^c*ln|x/b| - c*ln|x/b| - 1.0  )
+                 / ( x*( (x/b)^c + 1 )^3 )
+                = -1.0*prof*dfdx/(a*c)*( -(x/b)^c + c*(x/b)^c*ln|x/b| - c*ln|x/b| - 1.0  )
+
+        d3fdx2da = d2fdx2/a
+        d3fdx2db = dprofdx^2*(c/a * ((x/b)^c-1.0) / b)
+                + prof * d2profdx2 * c/a * ((x/b)^c-1.0) / b
+                + prof * dprofdx * c/a * c*(x/b)^(c-1)
+        d3fdx2dc = -1.0*dfdx^2/(a*c)*( -(x/b)^c + c*(x/b)^c*ln|x/b| - c*ln|x/b| - 1.0  )
+               -1.0*prof*d2fdx2/(a*c)*( -(x/b)^c + c*(x/b)^c*ln|x/b| - c*ln|x/b| - 1.0  )
+               -1.0*prof*dfdx/(a*c)*( -b*c*(x/b)^(c-1) + c*c*b*(x/b)^(c-1)*ln|x/b| + c*(x/b)^c*(1/x) - c*(1/x)  )
+
+              = -1.0*(dfdx^2+prof*d2fdx2)/(a*c)*( (x/b)^c*(c*ln|x/b|-1) - c*ln|x/b| - 1.0  )
+               -1.0*prof*dfdx/(a*c)*( b*c*(x/b)^(c-1)*(c*ln|x/b|-1.0) + (c/x)*((x/b)^c - 1.0) )
 
         """
         nx = _np.size(XX)
         a, b, c = tuple(aa)
         temp = _np.power(XX/b, c)
-        dtdx = c*_np.power(b, -1.0*c)*_np.power(XX, c-1.0)
+        dtdx = c*_np.power(b, -1.0*c)*_np.power(XX, c-1.0)  # c*x^(c-1)/b^c = c*tmp/x
 
         prof = ModelFlattop._model(XX, aa, **kwargs)
         dprofdx = ModelFlattop._deriv(XX, aa, **kwargs)
@@ -6249,16 +6151,18 @@ class ModelFlattop(ModelClass):
                        + prof * d2profdx2 * (c/a)*(temp-1.0)/b
                        + prof * dprofdx * (c/a)*(dtdx)/b )
 
-        d2gdx2[2, :] = dprofdx*dprofdx/(a*c) *(
+        d2gdx2[2, :] = -1.0*(dprofdx*dprofdx+prof*d2profdx2)/(a*c) *(
             -1.0*temp + c*temp*_np.log(_np.abs(XX/b)) - c*_np.log(_np.abs(XX/b)) - 1.0 )
-        d2gdx2[2, :] += prof*d2profdx2/(a*c) *(
-            -1.0*temp + c*temp*_np.log(_np.abs(XX/b)) - c*_np.log(_np.abs(XX/b)) - 1.0 )
-        d2gdx2[2, :] += prof*dprofdx/(a*c) *(
-            -1.0*dtdx + c*dtdx*_np.log(_np.abs(XX/b))+c*temp*b/XX - c*b/XX)
+        d2gdx2[2, :] -= prof*dprofdx/(a*c) *(
+            -1.0*dtdx + c*dtdx*_np.log(_np.abs(XX/b))+c*temp/XX - c/XX)
 
-#        d2gdx2[2, :] = dprofdx/c
-#        d2gdx2[2, :] += dprofdx*_np.log(_np.abs(XX/b))
-#        d2gdx2[2, :] -= 2.0*(dprofdx**2.0)*(_np.log(_np.abs(XX/b))/prof)
+#        d2gdx2[2, :] = -1.0*_np.power(dprofdx, 2.0)/(a*c) *(
+#            -1.0*temp + c*temp*_np.log(_np.abs(XX/b)) - c*_np.log(_np.abs(XX/b)) - 1.0 )
+#        d2gdx2[2, :] += -1.0*prof*d2profdx2/(a*c) *(
+#            -1.0*temp + c*temp*_np.log(_np.abs(XX/b)) - c*_np.log(_np.abs(XX/b)) - 1.0 )
+#        d2gdx2[2, :] += -1.0*prof*dprofdx/(a*c) *(
+#            -1.0*dtdx + c*dtdx*_np.log(_np.abs(XX/b)) + c*temp/XX - c/XX )
+
         return d2gdx2
 
 #    @staticmethod
@@ -7476,28 +7380,53 @@ if __name__ == '__main__':
 #    mod = ModelEvenPoly.test_numerics(npoly=3) # checked
 #    mod = ModelEvenPoly.test_numerics(npoly=4) # checked
 #    mod = ModelEvenPoly.test_numerics(npoly=8) # checked
-    mod = ModelPowerLaw.test_numerics(npoly=2)
-    mod = ModelPowerLaw.test_numerics(npoly=3)
-    mod = ModelPowerLaw.test_numerics(npoly=4)
-    mod = ModelPowerLaw.test_numerics(npoly=8)
-#    mod = ModelParabolic.test_numerics()
-#    mod = ModelExponential.test_numerics()
-#    mod = ModelGaussian.test_numerics()
-#    mod = ModelOffsetGaussian.test_numerics()
-#    mod = ModelOffsetNormal.test_numerics()
-#    mod = ModelNormal.test_numerics()
+#    mod = ModelParabolic.test_numerics() # checked
+#    mod = ModelExpEdge.test_numerics()  # checked
+#    mod = ModelTwoPower.test_numerics() # checked
+#    mod = ModelTwoPower.test_numerics(num=100) # checked
+#    mod = ModelGaussian.test_numerics() # checked
+#    mod = ModelOffsetGaussian.test_numerics()  # checked
+#    mod = ModelNormal.test_numerics()  # checked
+#    mod = ModelOffsetNormal.test_numerics() # checked
 #    mod = ModelLogGaussian.test_numerics()
-#    mod = ModelLorentzian.test_numerics()
-#    mod = ModelPseudoVoigt.test_numerics()
-#    mod = ModelLogLorentzian.test_numerics()
-#    mod = ModelDoppler.test_numerics()
-#    mod = ModelLogDoppler.test_numerics()
-#    mod = _ModelTwoPower.test_numerics()
-#    mod = ModelTwoPower.test_numerics()
-#    mod = ModelExpEdge.test_numerics()
-#    mod = ModelQuasiParabolic.test_numerics()
-#    mod = ModelFlattop.test_numerics()
+#    mod = ModelLorentzian.test_numerics(num=301)  # checked
+#    mod = ModelPseudoVoigt.test_numerics(num=301)  # checked
+#    mod = ModelLogLorentzian.test_numerics(num=301)  # checked
+#    mod = ModelDoppler.test_numerics(num=301)      # checked
+#    mod = ModelLogGaussian.test_numerics(num=301)  # checked
+#    mod = ModelLogDoppler.test_numerics(num=301)
+#
+#    # ----- Checked within bounds:
+#    mod = _ModelTwoPower.test_numerics(start=0.1, stop=0.9)   # checked
+#    mod = ModelQuasiParabolic.test_numerics(start=0.1, stop=0.9)  # checked
+#    mod = ModelPowerLaw.test_numerics(npoly=2, start=0.1, stop=0.9, num=100)
+#    mod = ModelPowerLaw.test_numerics(npoly=3, start=0.1, stop=0.9, num=100)
+#    mod = ModelPowerLaw.test_numerics(npoly=4, start=0.1, stop=0.9) # checked
+#    mod = ModelPowerLaw.test_numerics(npoly=8, start=0.1, stop=0.9) # checked
+#    mod = ModelExponential.test_numerics(start=0.1, stop=0.9) # checked
+#    mod = ModelExponential.test_numerics(start=0.1, stop=1.0) # checked
+#    mod = ModelFlattop.test_numerics(start=0.1, stop=1.0) # checked
+#    mod = ModelMassberg.test_numerics(start=0.1, stop=1.0) # checked
+
+    # numerical issues in test near boundaries: unsolved yet
+#    mod = _ModelTwoPower.test_numerics()   # left boundary
+    mod = ModelQuasiParabolic.test_numerics()  #
+#    mod = ModelFlattop.test_numerics()   #
 #    mod = ModelMassberg.test_numerics()
+#    mod = ModelPowerLaw.test_numerics(npoly=2, num=100)
+#    mod = ModelPowerLaw.test_numerics(npoly=3, num=100)
+#    mod = ModelPowerLaw.test_numerics(npoly=4)
+#    mod = ModelPowerLaw.test_numerics(npoly=8)
+#    mod = ModelExponential.test_numerics()
+#    mod = ModelQuasiParabolic.test_numerics(start=0.1, stop=1.0)  #
+
+#    # right boundary is okay
+#    mod = ModelPowerLaw.test_numerics(npoly=2, start=0.1, stop=1.0, num=100)
+#    mod = ModelPowerLaw.test_numerics(npoly=3, start=0.1, stop=1.0, num=100)
+#    mod = ModelPowerLaw.test_numerics(npoly=4, start=0.1, stop=1.0)
+#    mod = ModelPowerLaw.test_numerics(npoly=8, start=0.1, stop=1.0)
+#    mod = ModelExponential.test_numerics(start=0.1, stop=1.0)
+
 
 #    Fs = 1.0
 #    XX = _np.linspace(-0.5, 0.5, num=int(1.5*10e-3*10.0e6/8))
@@ -7558,5 +7487,4 @@ if __name__ == '__main__':
 
 # ========================================================================== #
 # ========================================================================== #
-
 

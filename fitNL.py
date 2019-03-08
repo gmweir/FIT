@@ -278,6 +278,9 @@ def _clean_mpfit_kwargs(kwargs):
 
 def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
 
+    if (ey == 0).any():
+        print('Input error meant for weights includes zeros! this is not allowed')
+        return None
     # subfunction kwargs
     scale_by_data = kwargs.setdefault('scale_problem',False)
     use_perpendicular_distance = kwargs.setdefault('perpchi2', False)
@@ -461,8 +464,8 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
 
     # unscale the problem if it has previously been scaled for domain reasons
     if scale_by_data:
-        # note: the error propagation was automatically completed after unscaling
-        # and updating the model
+        # note: the error propagation is automatically completed after unscaling
+        # by an auto-update of the model
         x, y, vy = info.unscaledat(af=m.params)
         XX = info.XX
         ey = _np.sqrt(vy)
@@ -1289,6 +1292,7 @@ def test_fit(func=_ms.model_qparab, **fkwargs):
     yerr = 0.1*_np.mean(ydat)
     yerr = yerr*_np.ones_like(ydat)
 
+    kwargs.setdefault('plotit', False)
     info1 = modelfit(xdat, ydat, yerr, XX, func, fkwargs, **kwargs)
 #    assert _np.allclose(info1.params, aa)
 #    assert info.dof==len(xdat)-len(aa)
@@ -1408,10 +1412,11 @@ def qparabfit(x, y, ey, XX, **kwargs):
     yin = y.copy()
     eyin = ey.copy()
 
-#    isort = _np.argsort(_np.abs(xin))
-#    xin = xin[isort]
-#    yin = yin[isort]
-#    eyin = eyin[isort]
+    xin = _np.abs(xin)
+    isort = _np.argsort(_np.abs(xin))
+    xin = xin[isort]
+    yin = yin[isort]
+    eyin = eyin[isort]
 #    if _np.min(xin) != 0:
 #        xin = _np.insert(xin,0,0.0)
 #        yin = _np.insert(yin,0,yin[0])
@@ -2055,10 +2060,10 @@ if __name__=="__main__":
 #    test_qparab_fit(nohollow=True)
 #    ft = test_fitNL(False)
 #    ft = test_fitNL(True)  # issue with interpolation when x>1 and x<0?
-#
-#    test_fit(_ms.model_line)
-#    test_fit(_ms.model_gaussian, Fs=10e3, numpts=int(10e3*6*1.2/33.0))    # check initial conditions
-#    test_fit(_ms.model_normal, Fs=10e3, numpts=int(10e3*6*1.2/33.0))    # check initial conditions
+
+    test_fit(_ms.model_line)
+#    test_fit(_ms.model_gaussian, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
+#    test_fit(_ms.model_normal, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
 #    test_fit(_ms.model_lorentzian, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
 ##    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=0, tbnds=[-0.5,0.5], num=18750)
 ##    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=1, tbnds=[-0.5,0.5], num=18750)
@@ -2079,11 +2084,11 @@ if __name__=="__main__":
 #    test_fit(_ms.model_evenpoly, npoly=3)
 #    test_fit(_ms.model_evenpoly, npoly=6)
 #    test_fit(_ms.model_evenpoly, npoly=10)
-    test_fit(_ms.model_PowerLaw, npoly=4)   # check derivatives, uncertainty wrong
-    test_fit(_ms.model_PowerLaw, npoly=5)   # check derivatives, uncertainty wrong
-    test_fit(_ms.model_PowerLaw, npoly=6)   # check derivatives, uncertainty wrong
-    test_fit(_ms.model_Exponential)
-    test_fit(_ms.model_parabolic)
+#    test_fit(_ms.model_PowerLaw, npoly=4)   # Nan's generated in model parameters
+#    test_fit(_ms.model_PowerLaw, npoly=5)   #
+#    test_fit(_ms.model_PowerLaw, npoly=6)   #
+#    test_fit(_ms.model_Exponential)
+#    test_fit(_ms.model_parabolic)
 
 #    # double check math! --- put in abs(XX) where necessary,
 #    # use subfunctions/ chain rule for derivatives
