@@ -449,6 +449,7 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
         # end if
     # end if
     info.errmsg = m.errmsg
+    info.last_call = mymodel(m.params, x=x, y=y, err=ey)
 
     # ====== Post-processing ====== #
 
@@ -456,7 +457,9 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     info.dof = len(x) - numfit # deg of freedom
 
     # scaled uncertainties in fitting parameters
-    info.chi2_reduced = _np.sqrt(m.fnorm / info.dof)
+    info.chi2 = _np.sum(_np.power(info.last_call['residual'], 2.0))
+    info.chi2_reduced = info.chi2/info.dof
+#    info.chi2_reduced = _np.sqrt(m.fnorm / info.dof)
     info.perror = m.perror * info.chi2_reduced
 
     # Scaled covariance matrix
@@ -728,7 +731,7 @@ class fitNL_base(Struct):
     """
 
     def __init__(self, xdat, ydat, vary, af0, func, fjac=None, **kwargs):
-        if vary is None or (vary == 0).all():  vary = 1e-3*_np.nanmean(ydat)  # endif
+        if vary is None or (vary == 0).all():  vary = 1e-1*_np.nanmean(ydat)  # endif
 
         self.xdat = xdat
         self.ydat = ydat
@@ -772,7 +775,7 @@ class fitNL_base(Struct):
         self.LB = kwargs.pop("LB", -_np.Inf*_np.ones_like(self.af0))
         self.UB = kwargs.pop("UB",  _np.Inf*_np.ones_like(self.af0))
         self.fixed = kwargs.pop("fixed", _np.zeros(_np.shape(self.af0), dtype=int))
-        self.use_perpendicular_distance = kwargs.pop('perpchi2', True)
+        self.use_perpendicular_distance = kwargs.pop('perpchi2', False)
 
         # ========================== #
 
@@ -1143,13 +1146,26 @@ class fitNL(fitNL_base):
         # Actual fitting parameters
         self.af = m.params
 
+        # ====== Error Propagation ====== #
+        # Make a final call to the fitting function to update object values
+        self.calc_chi2(self.af)
+
         # degrees of freedom in fit
         # self.dof = len(self.xdat) - numfit # deg of freedom
         self.dof = m.dof
-        self.chi2 = m.fnorm
+
+        # scaled uncertainties in fitting parameters
+#        self.chi2 = m.fnorm
+#        self.chi2_reduced = _np.sqrt(m.fnorm/m.dof)
+        self.chi2 = _np.sum(_np.power(self.chi2, 2.0))
+        self.chi2_reduced = self.chi2/self.dof
+        self.perror = m.perror * self.chi2_reduced
 
         # calculate correlation matrix
         self.covmat = m.covar       # Covariance matrix
+
+        # Scaled covariance matrix
+        self.covmat = self.chi2_reduced * self.covmat
         try:
             self.cormat = self.covmat * 0.0
         except:
@@ -1160,17 +1176,6 @@ class fitNL(fitNL_base):
                 self.cormat[ii,jj] = self.covmat[ii,jj]/_np.sqrt(self.covmat[ii,ii]*self.covmat[jj,jj])
             # end for
         # end for
-
-        # ====== Error Propagation ====== #
-        # scaled uncertainties in fitting parameters
-        self.chi2_reduced = _np.sqrt(m.fnorm/m.dof)
-        self.perror = m.perror * self.chi2_reduced
-
-        # Scaled covariance matrix
-        self.covmat = self.chi2_reduced * self.covmat
-
-        # Make a final call to the fitting function to update object values
-        self.calc_chi2(self.af)
 
         return self.af, self.covmat
     # end def __use_mpfit
@@ -1289,8 +1294,9 @@ def test_fit(func=_ms.model_qparab, **fkwargs):
 
     # ====================== #
 
-    yerr = 0.1*_np.mean(ydat)
-    yerr = yerr*_np.ones_like(ydat)
+#    yerr = 0.1*_np.mean(ydat)
+#    yerr = yerr*_np.ones_like(ydat)
+    yerr = 0.1*ydat
 
     kwargs.setdefault('plotit', False)
     info1 = modelfit(xdat, ydat, yerr, XX, func, fkwargs, **kwargs)
@@ -1299,7 +1305,7 @@ def test_fit(func=_ms.model_qparab, **fkwargs):
 
     # ====================== #
 
-    ydat = ydat + 0.01*_np.mean(ydat)*_np.random.normal(0.0, 1.0, len(ydat))
+    ydat = ydat + 0.1*_np.mean(ydat)*_np.random.normal(0.0, 1.0, len(ydat))
     info2 = modelfit(xdat, ydat, yerr, XX, func, fkwargs, **kwargs)
 
     _plt.figure()
@@ -1525,7 +1531,7 @@ def test_qparab_fit(nohollow=False):
 #    xdat = _np.linspace(0.01, 1.05, 60)
 #    xdat += 0.04*_np.random.normal(0.0, 1.0, len(xdat))
     ydat, _, temp = _ms.model_qparab(xdat, aa, nohollow=nohollow)
-    yerr = 0.05*ydat
+    yerr = 0.20*ydat
 
     # ============================================== #
 
@@ -1561,8 +1567,8 @@ def test_qparab_fit(nohollow=False):
 #    assert _np.allclose(info.params, aa)
 #    assert info.dof==len(xdat)-len(aa)
 
-    ydat += yerr*_np.random.normal(0.0, 1.0, len(xdat))
-    ydat += 0.2*ydat*_np.random.normal(0.0, 1.0, len(xdat))
+#    ydat += yerr*_np.random.normal(0.0, 1.0, len(xdat))
+    ydat += 0.1*ydat*_np.random.normal(0.0, 1.0, len(xdat))
     info = qparabfit(xdat, ydat, yerr, XX, nohollow=nohollow, **solver_options)
 
     _plt.figure()
@@ -1776,7 +1782,7 @@ def test_fitNL(test_qparab=True, scale_by_data=False):
     y += 0.1*_np.mean(y)*_np.random.normal(0.0, 1.0, len(y))
 #    vary = None
 #    vary = _np.zeros_like(y)
-    vary = 0.05*_np.mean(y)
+    vary = _np.power(0.2*_np.mean(y), 2.0)
     vary += ( 0.05*_np.mean(y)*_np.random.normal(0.0, 1.0, len(y)) )**2.0
 
     if test_qparab:
@@ -2048,20 +2054,20 @@ if __name__=="__main__":
 #    print(out)
 
 #    test_fit(_ms.model_sines, nfreqs=1,  Fs=10e3, numpts=int(6.0*1e3/33.0), fmod=33.0)
-#    test_fit(_ms.model_sines, nfreqs=3, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0)
-#    test_fit(_ms.model_sines, nfreqs=7, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
-#    test_fit(_ms.model_fourier, nfreqs=3, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0)
-#    test_fit(_ms.model_fourier, nfreqs=14, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square')
-##    test_fit(_ms.model_fourier, nfreqs=6, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
-##    test_fit(_ms.model_fourier, nfreqs=10, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
-##    test_fit(_ms.model_fourier, nfreqs=14, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
+    test_fit(_ms.model_sines, nfreqs=3, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0)
+    test_fit(_ms.model_sines, nfreqs=7, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
+    test_fit(_ms.model_fourier, nfreqs=3, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0)
+    test_fit(_ms.model_fourier, nfreqs=14, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square')
+#    test_fit(_ms.model_fourier, nfreqs=6, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
+#    test_fit(_ms.model_fourier, nfreqs=10, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
+#    test_fit(_ms.model_fourier, nfreqs=14, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
 ###
 #    test_qparab_fit(nohollow=False)
 #    test_qparab_fit(nohollow=True)
-#    ft = test_fitNL(False)
-#    ft = test_fitNL(True)  # issue with interpolation when x>1 and x<0?
-
-    test_fit(_ms.model_line)
+##    ft = test_fitNL(False)
+##    ft = test_fitNL(True)  # issue with interpolation when x>1 and x<0?
+#
+#    test_fit(_ms.model_line)
 #    test_fit(_ms.model_gaussian, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
 #    test_fit(_ms.model_normal, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
 #    test_fit(_ms.model_lorentzian, Fs=10e3, numpts=int(10e3*6*1.2/33.0))

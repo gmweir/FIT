@@ -348,7 +348,7 @@ class ModelSines(ModelClass):
             for ii in range(self.nfreqs):
                 self._af[3*ii + 1] = self._af[1]/(ii+1)  # amplitudes
                 self._af[3*ii + 2] = self._af[2]*(ii+1)  # i'th harm. of default
-                self._af[3*ii + 3] = _np.random.uniform(0.0, _np.pi, size=1)  # phase of i'th harm. of default
+                self._af[3*ii + 3] = _np.random.uniform(-_np.pi, _np.pi, size=1)  # phase of i'th harm. of default
             # end for
         # end if
 
@@ -915,7 +915,7 @@ class ModelFourier(ModelClass):
         else:
             for ii in range(self.nfreqs):
                 self._af[2*ii + 2 + 0 ] = 0.5*self._af[1]/(ii+1)  # amplitudes
-                self._af[2*ii + 2 + 1 ] = 0.0  # i'th harm. of default
+                self._af[2*ii + 2 + 1 ] = 0.5*self._af[1]/(ii+1)  # i'th harm. of default
 #                self._af[2*ii + 2 + 1 ] = 0.5*self._af[1]/(ii+1)  # i'th harm. of default
             # end for
         # end if
