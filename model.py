@@ -1311,19 +1311,19 @@ class ModelClass(FD):
         self.gvec = self.jacobian(XX, aa=af, **kwargs)
         self.dprofdx = self.derivative(XX, aa=af, **kwargs)
         self.dgdx = self.derivative_jacobian(XX, aa=af, **kwargs)
-        self.updatevar(**kwargs)
+#        self.updatevar(**kwargs)
 
         return self.prof, self.gvec, self.dprofdx, self.dgdx
     # end def
 
-    def updatevar(self, **kwargs):
-        if 'covmat' in kwargs:
-            self.covmat = kwargs['covmat']
-        if hasattr(self, 'covmat'):
-            self.varprof = self.properror(self.XX, self.covmat, self.gvec)
-            self.vardprofdx = self.properror(self.XX, self.covmat, self.dgdx)
-        # end if
-    # end def
+#    def updatevar(self, **kwargs):
+#        if 'covmat' in kwargs:
+#            self.covmat = kwargs['covmat']
+#        if hasattr(self, 'covmat'):
+#            self.varprof = self.properror(self.XX, self.covmat, self.gvec)
+#            self.vardprofdx = self.properror(self.XX, self.covmat, self.dgdx)
+#        # end if
+#    # end def
 
     @staticmethod
     def properror(XX, covmat, gvec):
@@ -1361,6 +1361,11 @@ class ModelClass(FD):
             self.offset = _np.nanmin(ydat)
         if not hasattr(self, 'slope'):
             self.slope = _np.nanmax(ydat)-_np.nanmin(ydat)
+
+        tt, itt = _ut.translation_matrix([self.xoffset, self.yoffset])
+        ss, iss = _ut.scale_matrix([self.xoffset, self.yoffset])
+        self._transform = _np.dot(ss, tt)
+        self._invtransform = _np.dot(itt, iss)
     # end def
 
     def scaledat(self, xdat, ydat, vdat, vxdat=None, **kwargs):
@@ -1409,11 +1414,6 @@ class ModelClass(FD):
         Return scalings on all data by default, but overwrite in each model with NL
         (x-xmin)/(xmax-xmin) = (x-xoffset)/xslope
         """
-#        if not hasattr(self, 'xslope'):  self.xslope = 1.0   # end if
-#        if not hasattr(self, 'xoffset'): self.xoffset = 0.0  # end if
-#        if not hasattr(self, 'slope'):   self.slope = 1.0    # end if
-#        if not hasattr(self, 'offset'):  self.offset = 0.0   # end if
-        self.update(**kwargs)
         if self.scaled:
             # Fitted data
             self.xdat = self.xdat*self.xslope+self.xoffset
@@ -1428,16 +1428,17 @@ class ModelClass(FD):
             self.af = self.unscaleaf(self.af)
 
             # unscale the input covariance if there is one from a fitter
-            if hasattr(self, 'covmat'):
-                self.covmat = self.unscalecov(self.covmat)
-            # end if
+#            if hasattr(self, 'covmat'):
+#                self.covmat = self.unscalecov(self.covmat)
+#            # end if
 
             # Update with the unscaled parameters
             self.update()
 
             # Calculated quantities  (if covmat already exists, this was done
             # in update through propper error propagation)
-            if not hasattr(self, 'covmat'):
+            if 1:
+#            if not hasattr(self, 'covmat'):
                 self.varprof *= self.slope*self.slope
                 self.vardprofdx *= (self.slope*self.slope)/(self.xslope*self.xslope)
             # end if

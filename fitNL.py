@@ -235,11 +235,11 @@ def gen_random_init_conds(func, **fkwargs):
 
 # Fitting using the Levenberg-Marquardt algorithm.    #
 def modelfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
-#    kwargs.setdefault('xtol', 1e-16)  # 1e-16
-#    kwargs.setdefault('ftol', 1e-16)
-#    kwargs.setdefault('gtol', 1e-16)
+    kwargs.setdefault('xtol', 1e-16)  # 1e-16
+    kwargs.setdefault('ftol', 1e-16)
+    kwargs.setdefault('gtol', 1e-16)
 #    kwargs.setdefault('damp', 10)
-    kwargs.setdefault('maxiter', 1200)
+#    kwargs.setdefault('maxiter', 1200)
 #    kwargs.setdefault('factor', 100)  # 100
     kwargs.setdefault('nprint', 10) # 100
 #    kwargs.setdefault('iterfunct', 'default')
@@ -306,7 +306,6 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     if LB is None:        LB = info.Lbounds     # end if
     if UB is None:        UB = info.Ubounds     # end if
     if fixed is None:     fixed = info.fixed    # end if
-#    kwargs['af0'] = p0
     numfit = len(p0)
 
     if numfit != LB.shape[0]:
@@ -314,10 +313,14 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     # end if
 
     if scale_by_data:
+#        xo = _np.nanmin(x)
+#        xs = _np.nanmax(x)-_np.nanmin(x)
+#        yo = _np.nanmin(y)
+#        ys = _np.nanmax(y)-_np.nanmin(y)
+#        info.scalings(_np.copy(x), _np.copy(y))
         x, y, vy = info.scaledat(_np.copy(x), _np.copy(y), _np.power(_np.copy(ey), 2.0))
         ey = _np.sqrt(vy)
-#        p0 = info.scaleaf()
-    # end if
+#    # end if
     autoderivative = kwargs.setdefault('autoderivative', 1)
 
     # ============================================= #
@@ -449,7 +452,8 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
         # end if
     # end if
     info.errmsg = m.errmsg
-    info.last_call = mymodel(m.params, x=x, y=y, err=ey)
+    info.af = _np.copy(m.params)
+    out = mymodel(info.af, x=x, y=y, err=ey)
 
     # ====== Post-processing ====== #
 
@@ -457,7 +461,7 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     info.dof = len(x) - numfit # deg of freedom
 
     # scaled uncertainties in fitting parameters
-    info.chi2 = _np.sum(_np.power(info.last_call['residual'], 2.0))
+    info.chi2 = _np.sum(_np.power(out['residual'], 2.0))
     info.chi2_reduced = info.chi2/info.dof
 #    info.chi2_reduced = _np.sqrt(m.fnorm / info.dof)
     info.perror = m.perror * info.chi2_reduced
@@ -469,22 +473,23 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     if scale_by_data:
         # note: the error propagation is automatically completed after unscaling
         # by an auto-update of the model
-        x, y, vy = info.unscaledat(af=m.params)
+        x, y, vy = info.unscaledat(af=info.af)
         XX = info.XX
         ey = _np.sqrt(vy)
     else:
         # Final function evaluation
-        info.update(af=m.params)
-
-        # ====== Error Propagation ====== #
-        # Propagate uncertainties in fitting parameters (scaled covariance) into
-        # the profile and it's derivative
-        info.varprof = _ut.properror(info.XX, info.covmat, info.gvec)
-
-        if hasattr(info, 'dgdx'):
-            info.vardprofdx = _ut.properror(info.XX, info.covmat, info.dgdx)
-        # endif
+        info.update(af=info.af)
     # end if
+
+    # ====== Error Propagation ====== #
+    # Propagate uncertainties in fitting parameters (scaled covariance) into
+    # the profile and it's derivative
+    info.varprof = _ut.properror(info.XX, info.covmat, info.gvec)
+
+    if hasattr(info, 'dgdx'):
+        info.vardprofdx = _ut.properror(info.XX, info.covmat, info.dgdx)
+    # endif
+
     # reclaculate parameter errors based on scaled covariance
     info.perror = _np.diagonal(info.covmat)
 
@@ -743,30 +748,6 @@ class fitNL_base(Struct):
         # ========================== #
 
         solver_options = {}
-#        solver_options['xtol'] = kwargs.pop('xtol', 1e-14) # 1e-10
-#        solver_options['ftol'] = kwargs.pop('ftol', 1e-14) # 1e-10
-#        solver_options['gtol'] = kwargs.pop('gtol', 1e-14) # 1e-10
-#        solver_options['maxiter'] = kwargs.pop('maxiter', 1200) # 200
-#        solver_options['factor'] = kwargs.pop('factor', 100) # 100 without rescale, scales the chi2? or the parameters?
-#        solver_options['nprint'] = kwargs.pop('nprint', 10)    # debug info
-#        solver_options['iterfunct'] = kwargs.pop('iterfunct', 'default')
-#        solver_options['iterkw'] = kwargs.pop('iterkw', {})
-#        solver_options['nocovar'] = kwargs.pop('nocovar', 0)
-#        solver_options['rescale'] = kwargs.pop('rescale', 0)
-#        solver_options['quiet'] = kwargs.pop('quiet', 0)
-#        solver_options['diag'] = kwargs.pop('diag', None) # with rescale: positive scale factor for variables
-#        solver_options['epsfcn'] = kwargs.pop('epsfcn', max((_np.nanmean(_np.diff(xdat.copy())),1e-2))) # 0.001
-#        solver_options['debug'] = kwargs.pop('debug', 0)
-#        if fjac is None:
-#        if 1:  # the other way doesn't work yet
-#            # default to finite differencing in mpfit for jacobian
-#            solver_options['autoderivative'] = kwargs.pop('autoderivative', 1)
-#            solver_options['damp'] = kwargs.pop('damp', 0)
-#        else:
-#            # use the user-defined function to calculate analytic partial derivatives
-#            solver_options['autoderivative'] = kwargs.pop('autoderivative', 0)
-#            solver_options['damp'] = kwargs.pop('damp', 0) # damp doesn't work with autoderivative = 0
-#        # end if
 
         # ========================== #
 
@@ -1260,8 +1241,6 @@ def gaussian_peak_width(tt,sig_in,param):
     return results.reshape(-1,3)
 
 
-
-
 # ========================================================================== #
 
 
@@ -1272,24 +1251,22 @@ def test_fit(func=_ms.model_qparab, **fkwargs):
         numpts = fkwargs.pop('num', int((tend-tstart)*Fs))
         xdat = _np.linspace(tstart, tend, num=numpts)
         XX = _np.linspace(tstart, tend, num=numpts)
-#        xdat = _np.linspace(-0.5*Fs, 0.5*Fs, num=int(1.5*10e-3*10e6/8))
-#        XX = _np.linspace(-0.5*Fs, 0.5*Fs, 18750)
     else:
         numpts = 21
         xdat = _np.linspace(-0.05, 1.25, numpts)
         XX = _np.linspace( 1e-6, 1.0, 99)
     # end if
 
-    temp = func(**fkwargs)
+    # Model to fit
+    yxx, _, temp = func(XX=XX, **fkwargs)
     aa =temp.af
-#    temp._default_plot()
-#    yxx, _, _, _ = temp.update(XX, af=aa)
-    yxx, _, temp = func(XX, af=aa, **fkwargs)
     ydat, _, _, _ = temp.update(xdat)
     kwargs = temp.dict_from_class()
     kwargs.pop('XX')
     kwargs.pop('af')
 
+    # Initial conditions for model
+    if 'shape' in fkwargs: fkwargs.pop('shape')
     kwargs['af0'] = gen_random_init_conds(func, af0=aa, **fkwargs)
 
     # ====================== #
@@ -1314,7 +1291,7 @@ def test_fit(func=_ms.model_qparab, **fkwargs):
         ax1.errorbar(xdat, ydat, yerr=yerr, fmt='kx')
     else:
         ax1.plot(xdat, ydat, 'k-')
-    ax1.plot(XX, yxx, 'b-')
+    ax1.plot(XX, yxx, 'k-', linewidth=1.0)
     ax1.plot(XX, info1.prof, 'b-')
     ax1.plot(XX, info1.prof-_np.sqrt(info1.varprof), 'b--')
     ax1.plot(XX, info1.prof+_np.sqrt(info1.varprof), 'b--')
@@ -1363,6 +1340,115 @@ def test_fit(func=_ms.model_qparab, **fkwargs):
 # end
 
 
+def test_fourier_fit(func=_ms.model_sines, **fkwargs):
+    plotit = fkwargs.pop('plotit', True)
+
+    Fs = fkwargs.pop('Fs', 10.0e3)
+    tstart, tend = tuple(fkwargs.pop('tbnds', [0.0, 6.0/33.0]))
+    numpts = fkwargs.pop('num', int((tend-tstart)*Fs))
+    xdat = _np.linspace(tstart, tend, num=numpts)
+    XX = _np.linspace(tstart, tend, num=numpts)
+
+    # Model to fit
+    yxx, _, temp = func(XX=XX, **fkwargs)
+    aa =temp.af
+    ydat, _, _, _ = temp.update(xdat)
+    kwargs = temp.dict_from_class()
+    kwargs.pop('XX')
+    kwargs.pop('af')
+
+    # ====================== #
+
+    yerr = 0.2*0.5*_np.abs(_np.nanmax(ydat)-_np.nanmin(ydat))
+    ytmp = ydat + 0.1*_np.max(_np.abs(ydat))*_np.random.normal(0.0, 1.0, len(ydat))
+
+    # Loop through frequencies and build the results 1 frequency at a time
+    nfreqs = fkwargs.pop('nfreqs', 1)
+    for ii in range(nfreqs):
+        fkwargs['nfreqs'] = ii+1
+        # Initial conditions for model
+        af0 = gen_random_init_conds(func, **fkwargs)
+
+#        kwargs['maxiter'] = 200 if ii<(nfreqs-1) else 1200
+        if ii>0:
+            af0 = _np.asarray( info1.af.tolist() + af0[-info1._params_per_freq:].tolist() )
+#            kwargs['fixed'] = _np.hstack(( _np.ones_like(info1.fixed),
+#                                _np.zeros((info1._params_per_freq,), dtype=int)))
+#            kwargs['Lbounds'] = _np.asarray(
+#                (info1.af-0.5*_np.abs(info1.af)).tolist()+info1.Lbounds[-info1._params_per_freq:].tolist())
+#            kwargs['Ubounds'] = _np.asarray(
+#                (info1.af+0.5*_np.abs(info1.af)).tolist()+info1.Ubounds[-info1._params_per_freq:].tolist())
+        # end if
+        kwargs['af0'] = _np.copy(af0)
+
+        kwargs.setdefault('plotit', False)
+        info1 = modelfit(xdat, ydat, yerr, XX, func, fkwargs, **kwargs)
+#       assert _np.allclose(info1.params, aa)
+#       assert info.dof==len(xdat)-len(aa)
+
+        # ====================== #
+
+        info2 = modelfit(xdat, ytmp, yerr, XX, func, fkwargs, **kwargs)
+    # end if
+
+    kwargs['af0'] = info1.af
+    info1 = modelfit(xdat, ydat, yerr, XX, func, fkwargs, **kwargs)
+    kwargs['af0'] = info2.af
+    info2 = modelfit(xdat, ytmp, yerr, XX, func, fkwargs, **kwargs)
+
+    _plt.figure()
+    ax1 = _plt.subplot(3, 1, 1)
+    if numpts<50:
+        ax1.errorbar(xdat, ydat, yerr=yerr, fmt='kx')
+    else:
+        ax1.plot(xdat, ydat, 'k-')
+    ax1.plot(XX, yxx, 'k-', linewidth=1.0)
+    ax1.plot(XX, info1.prof, 'b-')
+    ax1.plot(XX, info1.prof-_np.sqrt(info1.varprof), 'b--')
+    ax1.plot(XX, info1.prof+_np.sqrt(info1.varprof), 'b--')
+    ax1.plot(XX, info2.prof, 'r-')
+    ax1.plot(XX, info2.prof-_np.sqrt(info2.varprof), 'r--')
+    ax1.plot(XX, info2.prof+_np.sqrt(info2.varprof), 'r--')
+
+    # ax1.fill_between(XX, info.prof-_np.sqrt(info.varprof))
+#    isolid = _np.where(yerr/ydat<0.3)[0]
+#    if len(isolid)>0:
+#        ax1.set_ylim((_np.nanmin(_np.append(0.0, _np.asarray([0.8,1.2])*_np.nanmin(ydat[isolid]-yerr[isolid]))),
+#                      _np.nanmax(_np.append(0.0, _np.asarray([0.8,1.2])*_np.nanmax(ydat[isolid]+yerr[isolid]))) ))
+    ax1.set_title(type(info1).__name__)
+    xlims = ax1.get_xlim()
+    ylims = ax1.get_ylim()
+    ax1.text(x=0.6*(xlims[1]-xlims[0])+xlims[0], y=0.6*(ylims[1]-ylims[0])+ylims[0],
+             s=r'\chi_\nu^2=%4.1f'%(info2.chi2_reduced,), fontsize=16)
+#    ylims = ax1.get_ylim()
+#    xlims = ax1.get_xlim()
+#    print(ylims)
+
+    ax2 = _plt.subplot(3, 1, 2, sharex=ax1)
+    if numpts<50:
+        ax2.plot(xdat, temp.dprofdx, 'kx')
+    else:
+        ax2.plot(xdat, temp.dprofdx, 'k-')
+    ax2.plot(XX, info1.dprofdx, 'b-')
+    ax2.plot(XX, info1.dprofdx-_np.sqrt(info1.vardprofdx), 'b--')
+    ax2.plot(XX, info1.dprofdx+_np.sqrt(info1.vardprofdx), 'b--')
+    ax2.plot(XX, info2.dprofdx, 'r-')
+    ax2.plot(XX, info2.dprofdx-_np.sqrt(info2.vardprofdx), 'r--')
+    ax2.plot(XX, info2.dprofdx+_np.sqrt(info2.vardprofdx), 'r--')
+#    ax2.set_ylim((_np.min((0,1.2*_np.min(info.dprofdx))), 1.2*_np.max(info.dprofdx)))
+#    isolid = _np.where(_np.sqrt(info.vardprofdx)/info.dprofdx<0.3)[0]
+#    if len(isolid)>0:
+#        ax2.set_ylim((_np.nanmin(_np.append( 0.0, _np.asarray([0.8, 1.2])*_np.nanmin(info.dprofdx[isolid]-_np.sqrt(info.vardprofdx[isolid])) )),
+#                      _np.nanmax(_np.append( 0.0, _np.asarray([0.8, 1.2])*_np.nanmax(info.dprofdx[isolid]+_np.sqrt(info.vardprofdx[isolid])) )) ))
+#                  #, (_np.nanmax(ydat)-_np.nanmin(ydat))/(0.1*_np.diff(xlims))))))
+##    print(ax2.get_ylim())
+
+    ax3 = _plt.subplot(3, 1, 3)
+    ax3.bar(left=_np.asarray(range(len(aa))), height=100.0*(1.0-info2.params/aa), width=1.0)
+    ax3.set_title('perc. diff.')
+    _plt.show()
+#    print(ydat)
+# end
 
 # ========================================================================== #
 
@@ -2053,14 +2139,14 @@ if __name__=="__main__":
 #        out, ft = doppler_test(scale_by_data=False, logdata=False, Fs=1.0, fmax=None)
 #    print(out)
 
-#    test_fit(_ms.model_sines, nfreqs=1,  Fs=10e3, numpts=int(6.0*1e3/33.0), fmod=33.0)
-    test_fit(_ms.model_sines, nfreqs=3, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0)
-    test_fit(_ms.model_sines, nfreqs=7, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
-    test_fit(_ms.model_fourier, nfreqs=3, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0)
-    test_fit(_ms.model_fourier, nfreqs=14, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square')
-#    test_fit(_ms.model_fourier, nfreqs=6, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
-#    test_fit(_ms.model_fourier, nfreqs=10, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
-#    test_fit(_ms.model_fourier, nfreqs=14, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
+    test_fourier_fit(_ms.model_sines, nfreqs=1,  Fs=10e3, numpts=int(6.0*1e3/33.0), fmod=33.0)
+    test_fourier_fit(_ms.model_sines, nfreqs=3, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0)
+    test_fourier_fit(_ms.model_sines, nfreqs=7, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
+#    test_fourier_fit(_ms.model_fourier, nfreqs=3, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0)
+#    test_fourier_fit(_ms.model_fourier, nfreqs=14, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square')
+#    test_fourier_fit(_ms.model_fourier, nfreqs=6, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
+#    test_fourier_fit(_ms.model_fourier, nfreqs=10, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
+#    test_fourier_fit(_ms.model_fourier, nfreqs=14, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
 ###
 #    test_qparab_fit(nohollow=False)
 #    test_qparab_fit(nohollow=True)

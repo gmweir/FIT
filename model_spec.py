@@ -202,7 +202,7 @@ class ModelLine(ModelClass):
     # ====================================== #
 
 
-    def unscaleaf(self, ain):
+    def unscaleaf(self, ain, **kwargs):
         """
         if the model data is scaled, then unscaling the model goes like this:
              (y-miny)/(maxy-miny) = (y-offset)/slope
@@ -224,15 +224,34 @@ class ModelLine(ModelClass):
         """
         ain = _np.copy(ain)
         aout = _np.copy(ain)
-        xs = self.xslope
-        xo = self.xoffset
-        ys = self.slope
-        yo = self.offset
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset)
+
         aout[0] = ys*ain[0] / xs
         aout[1] = ys*(ain[1]-xo*ain[0]/xs) + yo
         return aout
 
-    def unscalecov(self, covin):
+    def scaleaf(self, ain, **kwargs):
+        """
+        Inverse function of unscaleaf
+            a' = xs*a/ys
+            b' = (b-yo)/ys + xo*a'/xs
+               = (b-yo)/ys + xo*xs*a/ys/xs
+               = b/ys + xo*a/ys - yo/ys
+        """
+        ain = _np.copy(ain)
+        aout = _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset)
+        aout[0] = xs*ain[0]/ys
+        aout[1] = (ain[1] + xo*ain[0] - yo)/ys
+        return aout
+
+    def unscalecov(self, covin, **kwargs):
         """
         to scale the covariances, simplify the unscaleaf function to ignore offsets
         Use identitites:
@@ -263,11 +282,11 @@ class ModelLine(ModelClass):
         """
         covin = _np.copy(covin)
         covout = _np.copy(covin)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset) # analysis:ignore unnec. for cov
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset)
 
-        xo = self.xoffset
-        xs = self.xslope
-#        yo = self.offset
-        ys = self.slope
         covout[0,0] = _np.power(ys/xs, 2.0)*covin[0,0]
         covout[0,1] = _np.power(ys, 2.0)*( covin[0,1]/xs - xo*covin[0,0]/_np.power(xs, 2.0) )
         covout[1,0] = _np.copy(covout[0,1])
@@ -301,10 +320,11 @@ class ModelSines(ModelClass):
     Fourier series in the sine-phase form:
         f = 0.5*ao + sum_ii a_ii *sin((2pi*f_ii)*XX+p_ii) ii>=1
     """
-    _af = _np.asarray([0.0]+[1.0, 5.0, _np.pi/3], dtype=_np.float64)
-    _LB = _np.asarray([-_np.inf]+[-_np.inf,     0.0, -2*_np.pi], dtype=_np.float64)
+    _af = _np.asarray([0.0]+[1.0, 100.0, _np.pi/3], dtype=_np.float64)
+    _LB = _np.asarray([-_np.inf]+[-_np.inf,   1e-18, -2*_np.pi], dtype=_np.float64)
     _UB = _np.asarray([ _np.inf]+[ _np.inf, _np.inf,  2*_np.pi], dtype=_np.float64)
     _fixed = _np.zeros( (4,), dtype=int)
+    _params_per_freq = 3
     def __init__(self, XX=None, af=None, **kwargs):
         # Tile defaults to the number of frequencies requested
         if af is not None:
@@ -344,20 +364,30 @@ class ModelSines(ModelClass):
                 self._af[3*ii + 2] = nn*self._af[2]  # i'th odd harm. of default
                 self._af[3*ii + 3] = -0.5*_np.pi  # phase of i'th harm. of default
             # end for
-        else:
+        elif sq.lower().find('random')>-1:
+            self._af[0] = 0.0
+#            self._af[1::3] = _np.random.normal(0.0, 1.0, _np.size(self.af[1::3]))
+            for ii in range(self.nfreqs):
+                self._af[3*ii + 1] = self._af[1]*_np.random.normal(0.0, 1.0, 1)  # amplitudes
+                self._af[3*ii + 2] = self._af[2]*(ii+1)  # i'th harm. of default
+                self._af[3*ii + 3] = _np.random.choice([-0.5*_np.pi, 0.0])  # phase of i'th harm. of default
+            # end for
+        else:  # sq.lower().find('uniform')>-1:
+            self._af[0] = 0.0
             for ii in range(self.nfreqs):
                 self._af[3*ii + 1] = self._af[1]/(ii+1)  # amplitudes
                 self._af[3*ii + 2] = self._af[2]*(ii+1)  # i'th harm. of default
-                self._af[3*ii + 3] = _np.random.uniform(-_np.pi, _np.pi, size=1)  # phase of i'th harm. of default
+                self._af[3*ii + 3] = _np.random.uniform(-_np.pi, 0.0, size=1)  # phase of i'th harm. of default
+#                self._af[3*ii + 3] = 0.0
             # end for
         # end if
 
-    def _default_plot(self, XX=None):
+    def _default_plot(self, XX=None, **kwargs):
 #        if XX is None:  XX = _np.copy(self.XX) # end if
         if XX is None:
             XX = _np.linspace(-2.0/self.fmod, 2.0/self.fmod, num=500)
         _plt.figure()
-        _plt.plot(XX, self.model(XX, self._af))
+        _plt.plot(XX, self.model(XX, self._af, **kwargs))
 
     @staticmethod
     def sine(XX, a, f, p):
@@ -427,9 +457,11 @@ class ModelSines(ModelClass):
         XX = _np.copy(XX)
         XX = _np.atleast_2d(XX)                  # (1,len(XX))
         a = _np.atleast_2d(aa[1::3]).T*_np.ones_like(XX) # amp (nfreq, nx)
-        w = _np.atleast_2d(2*_np.pi*aa[2::3]).T  # cyclic freq. (nfreq,1)
+        f = _np.atleast_2d(aa[2::3]).T  # freq. (nfreq,1)
         p = _np.atleast_2d(aa[3::3]).T*_np.ones_like(XX) # phase (nfreq, nx)
-        return 0.5*aa[0] + _np.sum( a*_np.sin(w*XX+p), axis=0)
+        return 0.5*aa[0] + _np.sum( ModelSines.sine(XX, a, f, p), axis=0)
+#        w = 2.0*_np.pi*f # cyclic freq. (nfreq,1)
+#        return 0.5*aa[0] + _np.sum( a*_np.sin(w*XX+p), axis=0)
 
     @staticmethod
     def _deriv(XX, aa, **kwargs):
@@ -441,18 +473,11 @@ class ModelSines(ModelClass):
         XX = _np.atleast_2d(XX)                  # (1,len(XX))
         tmp = _np.ones_like(XX)  # (1,nx)
         a = _np.atleast_2d(aa[1::3]).T   # amp (nfreq, nx)
-        w = _np.atleast_2d(2*_np.pi*aa[2::3]).T  # cyclic freq. (nfreq,1)
+        f = _np.atleast_2d(aa[2::3]).T  # freq. (nfreq,1)
+        w = 2.0*_np.pi*f # cyclic freq. (nfreq,1)
         p = _np.atleast_2d(aa[3::3]).T # phase (nfreq, nx)
-        return _np.sum( (w*_np.ones_like(XX))*(a*tmp)*_np.cos(w*XX+p*tmp), axis=0)
-#        nfreqs = ModelSines.getnfreqs(aa)
-#        ysum = 0.0 #_np.zeros_like(XX)
-#        for ii in range(nfreqs):
-#            a = aa[1+3*ii]
-#            f = aa[2+3*ii]
-#            p = aa[3+3*ii]
-#            ysum += 2.0*_np.pi*f*a*_np.cos(2.0*_np.pi*f*XX+p)
-#        # end for
-#        return ysum
+        return _np.sum( ModelSines.cosine(XX, (w*_np.ones_like(XX))*(a*tmp), f, p*tmp), axis=0)
+#        return _np.sum( (w*_np.ones_like(XX))*(a*tmp)*_np.cos(w*XX+p*tmp), axis=0)
 
     @staticmethod
     def _partial(XX, aa, **kwargs):
@@ -469,15 +494,18 @@ class ModelSines(ModelClass):
         XX = _np.atleast_2d(XX)                  # (1,len(XX))
         tmp = _np.ones_like(XX)  # (1,nx)
         a = _np.atleast_2d(aa[1::3]).T # amp (nfreq, nx)
-        w = _np.atleast_2d(2*_np.pi*aa[2::3]).T  # cyclic freq. (nfreq,1)
+        f = _np.atleast_2d(aa[2::3]).T  # freq. (nfreq,1)
+        w = 2.0*_np.pi*f # cyclic freq. (nfreq,1)
         p = _np.atleast_2d(aa[3::3]).T # phase (nfreq, nx)
 
         gvec = _np.zeros( (len(aa), _np.size(XX)), dtype=_np.float64)
         gvec[0, :] = 0.5
-        gvec[1::3, :] = _np.sin(w*XX+p*tmp)
-        gvec[2::3, :] = (2.0*_np.pi*_np.ones_like(w)*XX)*(a*tmp)*_np.cos(w*XX+p*tmp)
-        gvec[3::3, :] = (a*tmp)*_np.cos(w*XX+p*tmp)
-
+        gvec[1::3, :] = ModelSines.sine(XX, 1.0, f, p*tmp)
+        gvec[2::3, :] = ModelSines.cosine(XX, (2.0*_np.pi*_np.ones_like(w)*XX)*(a*tmp), f, p*tmp)
+        gvec[3::3, :] = ModelSines.cosine(XX, a*tmp, f, p*tmp)
+#        gvec[1::3, :] = _np.sin(w*XX+p*tmp)
+#        gvec[2::3, :] = (2.0*_np.pi*_np.ones_like(w)*XX)*(a*tmp)*_np.cos(w*XX+p*tmp)
+#        gvec[3::3, :] = (a*tmp)*_np.cos(w*XX+p*tmp)
         return gvec
 
     @staticmethod
@@ -498,26 +526,17 @@ class ModelSines(ModelClass):
         """
         XX = _np.copy(XX)
         a = _np.copy(aa[1::3])
-        w = 2.0*_np.pi*_np.copy(aa[2::3])
+        f = _np.copy(aa[2::3])
         p = _np.copy(aa[3::3])
 
         XX = _np.atleast_2d(XX)  # (1,nx)
         tmp = _np.ones_like(XX)  # (1,nx)
         a = _np.atleast_2d(a).T  # (nfreq,1)
-        w = _np.atleast_2d(w).T  # (nfreq,1)
+        f = _np.atleast_2d(f).T  # (nfreq,1)
         p = _np.atleast_2d(p).T  # (nfreq,1)
-
-        return -1*_np.sum( (_np.power(w, 2.0)*tmp)* (a*tmp) * _np.sin(w*XX + p*tmp)  , axis=0)
-
-#        nfreqs = ModelSines.getnfreqs(aa)
-#        ysum = 0.0 #_np.zeros_like(XX)
-#        for ii in range(nfreqs):
-#            a = aa[1+3*ii]
-#            w = 2.0*_np.pi*aa[2+3*ii]
-#            p = aa[3+3*ii]
-#            ysum += -1.0*_np.power(w,2.0)*a*_np.sin(w*XX+p)
-#        # end for
-#        return ysum
+        w = 2.0*_np.pi*f
+        return _np.sum( ModelSines.sine(XX, -1*(_np.power(w, 2.0)*tmp)* (a*tmp), f, p*tmp)  , axis=0)
+#        return -1*_np.sum( (_np.power(w, 2.0)*tmp)* (a*tmp) * _np.sin(w*XX + p*tmp)  , axis=0)
 
     @staticmethod
     def _partial_deriv(XX, aa, **kwargs):
@@ -541,15 +560,20 @@ class ModelSines(ModelClass):
         nx = len(XX)
         XX = _np.atleast_2d(XX)                  # (1,len(XX))
         a = _np.atleast_2d(aa[1::3]).T # amp (nfreq, nx)
-        w = _np.atleast_2d(2*_np.pi*aa[2::3]).T  # cyclic freq. (nfreq,1)
+        f = _np.atleast_2d(aa[2::3]).T # freq. (nfreq,1)
         p = _np.atleast_2d(aa[3::3]).T # phase (nfreq, nx)
         tmp = _np.ones_like(XX)  # (1,nx)
+        w = 2.0*_np.pi*f  # cyclic freq. (nfreq,1)
 
         dgdx = _np.zeros( (len(aa), nx), dtype=_np.float64)
         dgdx[0, :] = 0.0
-        dgdx[1::3, :] = (w*_np.ones_like(XX))*_np.cos(w*XX+p*tmp)
-        dgdx[2::3, :] = (2.0*_np.pi)*(a*tmp)*(_np.cos(w*XX+p*tmp) - (w*XX)*_np.sin(w*XX+p*tmp))
-        dgdx[3::3, :] = (-1*w*_np.ones_like(XX))*(a*tmp)*_np.sin(w*XX+p*tmp)
+        dgdx[1::3, :] = ModelSines.cosine(XX, w*_np.ones_like(XX), f, p*tmp)
+        dgdx[2::3, :] = (ModelSines.cosine(XX, 2.0*_np.pi*(a*tmp), f, p*tmp)
+                       - ModelSines.sine(XX, 2.0*_np.pi*(a*tmp)*(w*XX), f, p*tmp))
+        dgdx[3::3, :] = ModelSines.sine(XX, (-1*w*_np.ones_like(XX))*(a*tmp), f, p*tmp)
+#        dgdx[1::3, :] = (w*_np.ones_like(XX))*_np.cos(w*XX+p*tmp)
+#        dgdx[2::3, :] = (2.0*_np.pi)*(a*tmp)*(_np.cos(w*XX+p*tmp) - (w*XX)*_np.sin(w*XX+p*tmp))
+#        dgdx[3::3, :] = (-1*w*_np.ones_like(XX))*(a*tmp)*_np.sin(w*XX+p*tmp)
         return dgdx
 
     @staticmethod
@@ -590,10 +614,10 @@ class ModelSines(ModelClass):
 
         d2gdx2 = _np.zeros( (len(aa), _np.size(XX)), dtype=_np.float64)
         d2gdx2[0, :] = 0.0
-        d2gdx2[1::3, :] = -1*(_np.power(w, 2.0)*tmp)*_np.sin(w*XX+p*tmp)
-        d2gdx2[2::3, :] = ( -2.0*_np.power(2.0*_np.pi, 2.0)*((f*a)*tmp)*_np.sin(w*XX+p*tmp)
-                            - ((_np.power(w, 2.0)*a)*(2.0*_np.pi*XX))*_np.cos(w*XX+p*tmp))
-        d2gdx2[3::3, :] = -1*((_np.power(w, 2.0)*a)*tmp)*_np.cos(w*XX+p*tmp)
+        d2gdx2[1::3, :] = ModelSines.sine(XX, -1*(_np.power(w, 2.0)*tmp), f, p*tmp)
+        d2gdx2[2::3, :] = ( ModelSines.sine(XX, -2.0*_np.power(2.0*_np.pi, 2.0)*((f*a)*tmp), f, p*tmp)
+                          - ModelSines.cosine(XX, (_np.power(w, 2.0)*a)*(2.0*_np.pi*XX), f, p*tmp))
+        d2gdx2[3::3, :] = ModelSines.cosine(XX, -1*(_np.power(w, 2.0)*a)*tmp, f, p*tmp)
         return d2gdx2
 
     # ====================================== #
@@ -641,14 +665,14 @@ class ModelSines(ModelClass):
         # diagonal:
         # hess[0::3, 0::3, :] = 0.0                                                    # d2fao2
         # hess[1::3, 1::3, :] = 0.0                                                    # d2fdai2
-        hess[2::3, 2::3, :] = -1.0*(f*_np.power(2.0*_np.pi*XX, 2.0))*(a*tmp)*_np.sin(w*XX+p*tmp) # d2fdfi2
-        hess[3::3, 3::3, :] = -1.0*(a*tmp)*_np.sin(w*XX+p*tmp)                                   # d2fdpi2
+        hess[2::3, 2::3, :] = ModelSines.sine(XX, -1.0*(f*_np.power(2.0*_np.pi*XX, 2.0))*(a*tmp), f, p*tmp) # d2fdfi2
+        hess[3::3, 3::3, :] = ModelSines.sine(XX, -1.0*a*tmp, f, p*tmp)                                   # d2fdpi2
 
         # Upper triangle
         # hess[0, :, :] = 0.0                                                                   #d2fdaod_
-        hess[1::3, 2::3, :] = 2.0*_np.pi*(_np.ones_like(w)*XX)*_np.cos(w*XX+p*tmp)    # d2fdaidfi
-        hess[1::3, 3::3, :] =_np.cos(w*XX+p*tmp)                                      # d2fdaidpi
-        hess[2::3, 3::3, :] = -2.0*_np.pi*(_np.ones_like(w)*XX)*(a*tmp)*_np.sin(w*XX+p*tmp) # d2fdfidpi
+        hess[1::3, 2::3, :] = ModelSines.cosine(XX, 2.0*_np.pi*(_np.ones_like(w)*XX), f, p*tmp)    # d2fdaidfi
+        hess[1::3, 3::3, :] = ModelSines.cosine(XX, 1.0, f, p*tmp)                                      # d2fdaidpi
+        hess[2::3, 3::3, :] = ModelSines.sine(XX, -2.0*_np.pi*(_np.ones_like(w)*XX)*(a*tmp), f, p*tmp) # d2fdfidpi
 
         # Lower triangle by symmetry
         # hess[:, 0::3, :] =
@@ -667,7 +691,7 @@ class ModelSines(ModelClass):
 #    def scaledat(self, xdat, ydat, vdat, vxdat=None, **kwargs):
 #        super(ModelSines, self).scaledat(xdat, ydat, vdat, vxdat=vxdat, **kwargs)
 
-    def unscaleaf(self, ain):
+    def unscaleaf(self, ain, **kwargs):
         """
         f = 0.5*ao + sum_ii a_ii *sin((2pi*f_ii)*XX+p_ii)
 
@@ -682,29 +706,37 @@ class ModelSines(ModelClass):
                 ao = 2*yo + ys*ao'
                 a_i = ys*a_i'
                 f_i = f_i'/xs
-                p_i = p_i'-2pif_i'xo/xs
+                p_i = p_i'- 2pif_i'xo/xs
             [a_i, f_i, p_i] = [ys*a_i', f_i'/xs, p_i' - 2pif_i'*xo/xs]
         """
         ain = _np.copy(ain)
-        aout = _np.zeros_like(ain)
-        ys = self.slope
-        yo = self.offset
-        xs = self.xslope
-        xo = self.xoffset
+        aout = _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset)
 
         aout[0] = 2*yo + ys*ain[0]
         aout[1::3] = ys*ain[1::3]
         aout[2::3] = ain[2::3]/xs
         aout[3::3] = ain[3::3] - 2.0*_np.pi*ain[2::3]*xo/xs
         return aout
-#        for ii in range(nfreq):
-#            aout[3*ii+1] = ain[3*ii+1]*ys
-#            aout[3*ii+2] = ain[3*ii+2]/xs
-#            aout[3*ii+3] = ain[3*ii+3] - 2*_np.pi*ain[3*ii+2]*xo/xs
-#        # end for
-#        return aout
 
-    def unscalecov(self, covin):
+    def scaleaf(self, ain, **kwargs):
+        ain = _np.copy(ain)
+        aout = _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset)
+
+        aout[0] = (ain[0] - 2.0*yo)/ys
+        aout[1::3] = ain[1::3]/ys
+        aout[2::3] = xs*ain[2::3]
+        aout[3::3] = ain[3::3] + 2.0*_np.pi*ain[2::3]*xo/xs
+        return aout
+
+    def unscalecov(self, covin, **kwargs):
         """
         to scale the covariances, simplify the unscaleaf function to ignore offsets
         Use identitites:
@@ -745,92 +777,47 @@ class ModelSines(ModelClass):
         cov(fi,pi) = cov(f'/xs, p'-2pixo/xs*f')
                    = 1/xs*( cov(f',p')-2pixo/xs*cov(f',f') )
         """
-        covin = _np.copy(covin)
-        covout = _np.zeros_like(covin)
+        covin, covout = _np.copy(covin), _np.copy(covin)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset) # analysis:ignore   this is not necessary in the covariance
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset)
 
-        nfreq = self.getnfreqs(self.af)
-#        numfit = _np.shape(covout)[0]
-        xo = self.xoffset
-        xs = self.xslope
-#        yo = self.offset
-        ys = self.slope
-
-        # loop over covariance entries
+        # diagonal terms
         covout[0,0] = _np.power(ys, 2.0)*covin[0,0]
-        for ii in range(nfreq):
-            # diagonal terms (block-tridiagonal matrix)
-            covout[1+3*ii, 1+3*ii] = _np.power(ys, 2.0)*covin[1+3*ii, 1+3*ii]
-            covout[2+3*ii, 2+3*ii] = _np.power(1.0/xs, 2.0)*covin[2+3*ii, 2+3*ii]
-            covout[3+3*ii, 3+3*ii] = (covin[3+3*ii, 3+3*ii]
-                   + _np.power(2.0*_np.pi*xo/xs, 2.0)*covin[2+3*ii,2+3*ii]
-                   - 2.0*_np.pi*xo/xs*covin[3+3*ii, 2+3*ii])
+        covout[1::3, 1::3] = _np.power(ys, 2.0)*covin[1::3, 1::3]
+        covout[2::3, 2::3] = _np.power(1.0/xs, 2.0)*covin[2::3, 2::3]
+        covout[3::3, 3::3] = (covin[3::3, 3::3]
+                        + _np.power(2.0*_np.pi*xo/xs, 2.0)*covin[2::3,2::3]
+                        - 2.0*_np.pi*xo/xs*covin[3::3, 2::3])
 
-            # top row
-            covout[0,(1+3*ii)::3] = _np.power(ys, 2.0)*covin[0,(1+3*ii)::3]  # ao-a_i
-            covout[0,(2+3*ii)::3] = (ys/xs)*covin[0,(2+3*ii)::3]             # ao-f_i
-            covout[0,(3+3*ii)::3] = ys*(covin[0,(3+3*ii)::3] - 2.0*_np.pi*xo/xs*covin[0,(2+3*ii)::3]) # ao-p_i
+        # first row
+        covout[0,1::3] = _np.power(ys, 2.0)*covin[0,1::3]  # ao-a_i
+        covout[0,2::3] = (ys/xs)*covin[0,2::3]             # ao-f_i
+        covout[0,3::3] = ys*(covin[0,3::3] - 2.0*_np.pi*xo/xs*covin[0,2::3]) # ao-p_i
 
-            # first column
-            covout[(1+3*ii)::3,0] = _np.copy(covout[0,(1+3*ii)::3])  # a_i-ao
-            covout[(2+3*ii)::3,0] = _np.copy(covout[0,(2+3*ii)::3])  # f_i-ao
-            covout[(3+3*ii)::3,0] = _np.copy(covout[0,(3+3*ii)::3])  # p_i-ao
+        # first column
+        covout[1::3,0] = _np.copy(covout[0,1::3])  # a_i-ao
+        covout[2::3,0] = _np.copy(covout[0,2::3])  # f_i-ao
+        covout[3::3,0] = _np.copy(covout[0,3::3])  # p_i-ao
 
-            for jj in range(ii+1):
-                # mixed terms from sines in upper triangle:
-                covout[1+3*ii,2+3*jj] = (ys/xs)*covin[1+3*ii,2+3*jj] # a_i-f_i
-                covout[1+3*ii,3+3*jj] = ys*(covin[1+3*ii,3+3*jj]
-                               - 2.0*_np.pi*xo/xs*covin[1+3*ii,2+3*jj])    # a_i-p_i
-                covout[2+3*ii,3+3*jj] = (1.0/xs)*( covin[2+3*ii, 3+3*jj]
-                               - 2.0*_np.pi*xo/xs*covin[2+3*ii,2+3*jj] )   # f_i-p_i
+        # mixed terms from sines:
+        covout[1::3,2::3] = (ys/xs)*covin[1::3,2::3] # a_i-f_i
+        covout[1::3,3::3] = ys*(covin[1::3,3::3] - 2.0*_np.pi*xo/xs*covin[1::3,2::3])    # a_i-p_i
+        covout[2::3,3::3] = (1.0/xs)*( covin[2::3, 3::3] - 2.0*_np.pi*xo/xs*covin[2::3,2::3] )   # f_i-p_i
 
-                # lower triangle is hermitian symmetric to upper triangle
-                covout[2+3*ii,1+3*jj] = _np.copy(covout[1+3*ii,2+3*jj])  # f_i-a_i
-                covout[3+3*ii,1+3*jj] = _np.copy(covout[1+3*ii,3+3*jj])  # p_i-a_i
-                covout[3+3*ii,2+3*jj] = _np.copy(covout[2+3*ii,3+3*jj])  # p_i-f_i
-
-#        aout[0] = 2*yo + ys*ain[0]
-#        aout[1::3] = ys*aout[1::3]
-#        aout[2::3] = aout[2::3]/xs
-#        aout[3::3] = aout[3::3] - 2*_np.pi*aout[3::3]*xo
-
-#        # diagonal terms
-#        covout[0,0] = _np.power(ys, 2.0)*covin[0,0]
-#        covout[1::3, 1::3] = _np.power(ys, 2.0)*covin[1::3, 1::3]
-#        covout[2::3, 2::3] = _np.power(1.0/xs, 2.0)*covin[2::3, 2::3]
-#        covout[3::3, 3::3] = (covin[3::3, 3::3] + _np.power(2.0*_np.pi*xo/xs, 2.0)*covin[2::3,2::3]
-#               - 2.0*_np.pi*xo/xs*covin[3::3, 2::3])
-#
-#        for ii in range(numfit-3):
-#            # first row
-#            covout[0,(1+3*ii)::3] = _np.power(ys, 2.0)*covin[0,(1+3*ii)::3]  # ao-a_i
-#            covout[0,(2+3*ii)::3] = (ys/xs)*covin[0,(2+3*ii)::3]             # ao-f_i
-#            covout[0,(3+3*ii)::3] = ys*(covin[0,(3+3*ii)::3] - 2.0*_np.pi*xo/xs*covin[0,(2+3*ii)::3]) # ao-p_i
-#
-#            # first column
-#            covout[(1+3*ii)::3,0] = _np.copy(covout[0,(1+3*ii)::3])  # a_i-ao
-#            covout[(2+3*ii)::3,0] = _np.copy(covout[0,(2+3*ii)::3])  # f_i-ao
-#            covout[(3+3*ii)::3,0] = _np.copy(covout[0,(3+3*ii)::3])  # p_i-ao
-#
-#            # mixed terms from sines:
-#            covout[(1+3*ii)::3,(2+3*ii)::3] = (ys/xs)*covin[(1+3*ii)::3,(2+3*ii)::3] # a_i-f_i
-#            covout[(1+3*ii)::3,(3+3*ii)::3] = ys*(covin[(1+3*ii)::3,(3+3*ii)::3]
-#                           - 2.0*_np.pi*xo/xs*covin[(1+3*ii)::3,(2+3*ii)::3])    # a_i-p_i
-#            covout[(2+3*ii)::3,(3+3*ii)::3] = (1.0/xs)*( covin[(2+3*ii)::3, (3+3*ii)::3]
-#                           - 2.0*_np.pi*xo/xs*covin[(2+3*ii)::3,(2+3*ii)::3] )   # f_i-p_i
-#
-#            covout[(2+3*ii)::3,(1+3*ii)::3] = _np.copy(covout[(1+3*ii)::3,(2+3*ii)::3])  # f_i-a_i
-#            covout[(3+3*ii)::3,(1+3*ii)::3] = _np.copy(covout[(1+3*ii)::3,(3+3*ii)::3])  # p_i-a_i
-#            covout[(3+3*ii)::3,(2+3*ii)::3] = _np.copy(covout[(2+3*ii)::3,(3+3*ii)::3])  # p_i-f_i
-#        # end for
+        covout[2::3,1::3] = _np.copy(covout[1::3,2::3])  # f_i-a_i
+        covout[3::3,1::3] = _np.copy(covout[1::3,3::3])  # p_i-a_i
+        covout[3::3,2::3] = _np.copy(covout[2::3,3::3])  # p_i-f_i
         return covout
 
-    def scalings(self, xdat, ydat, **kwargs):
-        """
-        Although we can scale the input fitting data. The frequency scaling isn't working yet
-        """
-        self.xslope = 1.0
-        self.xoffset = 0.0
-        return super(ModelSines, self).scalings(xdat, ydat, **kwargs)
+#    def scalings(self, xdat, ydat, **kwargs):
+#        """
+#        Although we can scale the input fitting data. The frequency scaling isn't working yet
+#        """
+#        self.xslope = 1.0
+#        self.xoffset = 0.0
+#        return super(ModelSines, self).scalings(xdat, ydat, **kwargs)
 
 # end def ModelSines
 
@@ -867,26 +854,27 @@ class ModelFourier(ModelClass):
         af - [fundamental frequency, offset,
               a_ii, b_ii, a_ii+1, b_ii+1, ...]
     """
-    _af = _np.asarray([   5.0,     1.0,     0.5,     0.5,    0.25,    0.25], dtype=_np.float64)
-    _LB = _np.asarray([  1e-18,-_np.inf,-_np.inf,-_np.inf,-_np.inf,-_np.inf], dtype=_np.float64)
-    _UB = _np.asarray([_np.inf, _np.inf, _np.inf, _np.inf, _np.inf, _np.inf], dtype=_np.float64)
-    _fixed = _np.zeros( (6,), dtype=int)
+    _af = _np.asarray([  100.0,     0.0,     0.5,     0.5], dtype=_np.float64)
+    _LB = _np.asarray([  1e-18,-_np.inf,-_np.inf,-_np.inf], dtype=_np.float64)
+    _UB = _np.asarray([_np.inf, _np.inf, _np.inf, _np.inf], dtype=_np.float64)
+    _fixed = _np.zeros( (4,), dtype=int)
+    _params_per_freq = 2
     def __init__(self, XX=None, af=None, **kwargs):
         # Tile defaults to the number of frequencies requested
         if af is not None:
             self.nfreqs = self.getnfreqs(af)
+#            self.fmod = af[0]
         else:
-            self.nfreqs = kwargs.setdefault('nfreqs', 2)
+            self.nfreqs = kwargs.setdefault('nfreqs', 1)
             self.fmod = kwargs.setdefault('fmod', self._af[0])
             self._af[0] = _np.copy(self.fmod)
         # end if
 
-        for ii in range(self.nfreqs):
-            self._af = _np.asarray(self._af.tolist()+[     0.0,     0.0], dtype=_np.float64)
-            self._LB = _np.asarray(self._LB.tolist()+[-_np.inf,-_np.inf], dtype=_np.float64)
-            self._UB = _np.asarray(self._UB.tolist()+[ _np.inf, _np.inf], dtype=_np.float64)
-            self._fixed = _np.asarray(self._fixed.tolist()+[ 0, 0], dtype=_np.float64)
-        # end for
+        if self.nfreqs>1:
+            self._af = _np.asarray(self._af.tolist()+self.nfreqs*[0.0, 0.0], dtype=_np.float64)
+            self._LB = _np.asarray(self._LB.tolist()+self.nfreqs*[-_np.inf,-_np.inf], dtype=_np.float64)
+            self._UB = _np.asarray(self._UB.tolist()+self.nfreqs*[ _np.inf, _np.inf], dtype=_np.float64)
+            self._fixed = _np.asarray(self._fixed.tolist()+self.nfreqs*[ 0, 0], dtype=_np.float64)
 
         self._shape(**kwargs)
         super(ModelFourier, self).__init__(XX, af, **kwargs)
@@ -1030,12 +1018,16 @@ class ModelFourier(ModelClass):
          d3fdx3 = (2*pi*f)^3*sum_ii( ii^3*a_ii*sin((2*pi*f*ii)*x) - ii^3*b_ii*cos((2*pi*f*ii)*x))
         """
         nfreqs = ModelFourier.getnfreqs(aa)
-        w = 2.0*_np.pi*_np.copy(aa[0])
+        f = _np.copy(aa[0])
+        w = 2.0*_np.pi*f
         ai = _np.atleast_2d(_np.copy(aa[2::2])).T
         bi = _np.atleast_2d(_np.copy(aa[3::2])).T
 
         tmp = _np.ones_like(_np.atleast_2d(XX))
         ii = _np.atleast_2d(_np.asarray(range(nfreqs), dtype=_np.float64) + 1.0).T
+#        return _np.sum(
+#          ModelFourier.sine(_np.atleast_2d(XX), _np.power(w, 3.0)*(_np.power(ii, 3.0)*tmp)*(ai*tmp), f)
+#                        , axis=0)
         return _np.power(w, 3.0)*_np.sum( (_np.power(ii, 3.0)*tmp)*(
                 (ai*tmp)*_np.sin(w*(ii*_np.atleast_2d(XX)))
               - (bi*tmp)*_np.cos(w*(ii*_np.atleast_2d(XX)))
@@ -1157,7 +1149,7 @@ class ModelFourier(ModelClass):
 
     # ====================================== #
 
-    def unscaleaf(self, ain):
+    def unscaleaf(self, ain, **kwargs):
         """
         y-shifting and scaling is easy:        y' = (y-yo)/ys
 
@@ -1195,21 +1187,157 @@ class ModelFourier(ModelClass):
             ai = ys*ai'*cos(2pif'ii/xs*xo) + ys*bi'*sin(2pif'ii/xs*xo)
             bi = ys*bi'*sin(2pif'ii/xs*xo) - ys*ai'*sin(2pif'ii/xs*xo)
         """
-        ain = _np.copy(ain)
-        aout = _np.copy(ain)
-        nfreqs = ModelFourier.getnfreqs(ain)
-        ys = self.slope
-        yo = self.offset
-        xs = self.xslope
-        xo = self.xoffset
-        tmp = _np.asarray(range(nfreqs))+1
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset)
 
-        aout[0] = ain[0]/xs
-        aout[1] = yo + ys*ain[1]
-        w  = 2*_np.pi*ain[0]/xs
-        aout[2::2] = ys*(ain[2::2]*_np.cos(tmp*w*xo) + ain[3::2]*_np.sin(w*tmp*xo))
-        aout[3::2] = ys*(ain[3::2]*_np.sin(tmp*w*xo) - ain[2::2]*_np.sin(w*tmp*xo))
+        aout = ModelFourier._convert2sines(aout)
+        aout = ModelSines.unscaleaf(self, aout, xo=xo, xs=xs, yo=yo, ys=ys)
+        aout = ModelSines._convert2fourier(aout)
+
+#        nfreqs = ModelFourier.getnfreqs(ain)
+#        tmp = _np.asarray(range(nfreqs))+1
+#
+#        w  = 2*_np.pi*ain[0]/xs
+#        aout[0] = ain[0]/xs
+#        aout[1] = yo + ys*ain[1]
+#        aout[2::2] = ys*(ain[2::2]*_np.cos(tmp*w*xo) + ain[3::2]*_np.sin(w*tmp*xo))
+#        aout[3::2] = ys*(ain[3::2]*_np.sin(tmp*w*xo) - ain[2::2]*_np.sin(w*tmp*xo))
         return aout
+
+    def scaleaf(self, ain, **kwargs):
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset)
+
+        aout = ModelFourier._convert2sines(aout)
+        aout = ModelSines.scaleaf(self, aout, xo=xo, xs=xs, yo=yo, ys=ys)
+        aout = ModelSines._convert2fourier(aout)
+        return aout
+
+    def unscalecov(self, covin, **kwargs):
+        """
+        to scale the covariances, simplify the unscaleaf function to ignore offsets
+        Use identitites:
+         (1)   cov(X, Y) = cov(Y, X)
+         (2)   cov(a+X, b+Y) = cov(X,Y)
+         (3)   cov(aX, bY) = ab*cov(X,Y)
+         (4)   cov(aX+bY, cW+dV) = ac*cov(X,W) + ad*cov(X,V) + bc*cov(Y,W) + bd*cov(Y,V)
+         (5)   cov(aX+bY, aX+bY) = a^2*cov(X,X) + b^2*cov(Y,Y) + 2*ab*cov(X,Y)
+         (6)   cov(aX, cW+d) = ac*cov(X,W)
+
+        Model:
+         y = (yo + ys*ao') + sum_ii(
+            (ys*ai'*cos(w'ii*xo) + ys*bi'*sin(w'ii*xo) )* cos(w'ii*x)
+          + (ys*bi'*sin(w'ii*xo) - ys*ai'*sin(w'ii*xo) )* sin(w'ii*x) )
+                f = f'/xs
+                ao = yo + ys*ao'
+                ai = ys*ai'*cos(2pif'ii/xs*xo) + ys*bi'*sin(2pif'ii/xs*xo)
+                bi = ys*bi'*sin(2pif'ii/xs*xo) - ys*ai'*sin(2pif'ii/xs*xo)
+
+        varfi = varfi'/xs^2
+        varao = ys^2*varao'              by (2+3)
+        varai = ys^2*cov(ai', ai') + (xo/xs)^2*cov(f',f') + 2ys*xo/xs*cov(ai',f')
+              + ys^2*cov(bi', bi') + (xo/xs)^2*cov(f',f') + 2ys*xo/xs*cov(bi',f')
+              + ys^2*cov(ai', bi') + ys*xo/xs*cov(ai',f')+ ys*xo/xs*cov(fi',bi') + ys^2*cov(fi',fi')
+              = ys^2*varai' + (2(xo/xs)^2+ys^2)*varf' + ys^2*varbi'
+               + 3ys*xo/xs*cov(ai',f') +  3ys*xo/xs*cov(bi',f') + ys^2*cov(ai', bi')
+        varbi = ys^2*cov(bi', bi') + (xo/xs)^2*cov(f',f') + 2ys*xo/xs*cov(bi',f')
+              + ys^2*cov(-ai', -ai') + (xo/xs)^2*cov(f',f') + 2ys*xo/xs*cov(-ai',f')
+              + ys^2*cov(bi', -ai') + ys*xo/xs*cov(bi',f')+ ys*xo/xs*cov(fi',-ai') + ys^2*cov(fi',fi')
+              = ys^2*varbi' + (2(xo/xs)^2+ys^2)*varf' + ys^2*varai'
+              + 3ys*xo/xs*cov(bi',f') - 3ys*xo/xs*cov(ai',f') - ys^2*cov(bi', ai')
+
+        cov(ao, fi) = cov(yo+ys*ao', f'/xs)
+                    = ys/xs*cov(ao', f')
+
+        cov(ao,ai) = cov(yo+ys*ao', ys*ai'*cos(2pif'ii/xs*xo) + ys*bi'*sin(2pif'ii/xs*xo))
+                = ys^2*cov(ao', ai'*cos(2pif'ii/xs*xo) + bi'*sin(2pif'ii/xs*xo))
+                = ys^2*cov(ao', ai'*cos(2pif'ii/xs*xo) )+ ys^2*cov(ao', bi'*sin(2pif'ii/xs*xo) )
+                = ys^2*( cov(ao', ai') + 2*xo/xs*cov(ao', f') + cov(ao', bi') )
+
+        cov(ao,bi) = cov(yo+ys*ao', ys*bi'*sin(2pif'ii/xs*xo) - ys*ai'*sin(2pif'ii/xs*xo))
+                 = ys^2*cov(ao', bi'*sin(2pif'ii/xs*xo) - ai'*sin(2pif'ii/xs*xo))
+                 = ys^2*cov(ao', bi'*sin(2pif'ii/xs*xo)) + ys^2*cov(ao', -ai'*sin(2pif'ii/xs*xo))
+                 = ys^2*( cov(ao', bi') + 2*xo/xs*cov(ao', f') - cov(ao', ai') )
+
+        cov(ai,fi) = cov(ys*ai'*cos(2pif'ii/xs*xo) + ys*bi'*sin(2pif'ii/xs*xo), f'/xs)
+            = ys/xs*( cov(ai'*cos(2pif'ii/xs*xo), f') + cov(bi'*sin(2pif'ii/xs*xo), f') )
+            = ys/xs*( cov(ai', f') + cov(bi', f') + 2*xo/xs*varf' )
+
+        cov(bi,fi) = cov(ys*bi'*sin(2pif'ii/xs*xo) - ys*ai'*sin(2pif'ii/xs*xo), f'/xs)
+            = ys/xs*( cov(bi'*sin(2pif'ii/xs*xo) - ai'*sin(2pif'ii/xs*xo), f')
+            = ys/xs*( cov(bi', f') - cov(ai', f') + 2*xo/xs*varf' )
+
+        cov(ai, bi) = cov( ys*ai'*cos(2pif'ii/xs*xo) + ys*bi'*sin(2pif'ii/xs*xo),
+                           ys*bi'*sin(2pif'ii/xs*xo) - ys*ai'*sin(2pif'ii/xs*xo) )
+             = ys^2*cov( ai'*cos(2pif'ii/xs*xo) + bi'*sin(2pif'ii/xs*xo),
+                         bi'*sin(2pif'ii/xs*xo) - ai'*sin(2pif'ii/xs*xo) )
+             = ys^2*( cov( ai'*f'*xo/xs + bi'*f'*xo/xs,  bi'*f'*xo/xs )
+                      cov( ai'*f'*xo/xs + bi'*f'*xo/xs, -ai'*f'*xo/xs ) )
+             = (ys*xo/xs)^2*( cov( ai'*f', bi'*f' ) + cov( bi'*f', bi'*f' )
+                            - cov( ai'*f', ai'*f' ) - cov( bi'*f', ai'*f' ))
+             = (ys*xo/xs)^2*( cov( ai', bi' ) + cov( ai', f' )
+                            + cov( f', bi' )+ cov( f', f' )
+                            + cov( bi', bi' ) + cov( bi', f' )
+                            + cov( f', bi' ) + cov( f', f' )
+                            - cov( ai', ai' ) - cov( ai', f' )
+                            - cov( f', ai' ) - cov( f', f' )
+                            - cov( bi', ai' ) - cov( bi', f' )
+                            - cov( f', ai' ) - cov( f', f' ))
+             = (ys*xo/xs)^2*( varbi' + 2*cov(bi', f') -2*cov(ai', f') - varai')
+        """
+        covin, covout = _np.copy(covin), _np.copy(covin)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset) # analysis:ignore   this is not necessary in the covariance
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset)
+
+        # diagonal first
+        covout[0, 0] = covin[0, 0]/_np.power(xs, 2.0)  # varf
+        covout[1, 1] = covin[1, 1]*_np.power(ys, 2.0)  # varao
+        covout[2::2, 2::2] = (_np.power(ys, 2.0)*covin[2::2, 2::2]
+               + (_np.power(ys, 2.0)+2.0*_np.power(xo/xs, 2.0))*covin[0, 0]
+               + _np.power(ys, 2.0)*covin[3::2, 3::2]
+               + 3.0*ys*xo/xs*(_np.atleast_2d(covin[2::2,0]).T*_np.ones(1,len(covout[0,2::2])))
+               + 3.0*ys*xo/xs*(_np.atleast_2d(covin[3::2,0]).T*_np.ones(1,len(covout[0,2::2])))
+               + _np.power(ys, 2.0)*covin[2::2,3::2])  # varai
+        covout[3::2, 3::2] = (_np.power(ys, 2.0)*covin[3::2, 3::2]
+               + (_np.power(ys, 2.0) + 2.0*_np.power(xo/xs, 2.0))*covin[0, 0]
+               + _np.power(ys, 2.0)*covin[2::2, 2::2]
+               + 3.0*ys*xo/xs*(_np.atleast_2d(covin[3::2,0]).T*_np.ones(1,len(covout[0,2::2])))
+               - 3.0*ys*xo/xs*(_np.atleast_2d(covin[2::2,0]).T*_np.ones(1,len(covout[0,2::2])))
+               - _np.power(ys, 2.0)*covin[3::2, 2::2])
+
+        # Constant offset / frequency covariance
+        covout[1,0] = ys/xs*covin[1,0]   # cov ao-fi
+        covout[0,1] = covout[1,0]        # cov fi-ao
+
+        # ai-fi
+        covout[2::2,0] = (ys/xs)*( covin[2::2,0] + covin[3::2,0] + 2.0*xo/xs*covin[0,0] )
+        covout[0,2::2] = covout[2::2,0]
+
+        # bi-fi
+        covout[3::2,0] = (ys/xs)*( covin[3::2,0] - covin[2::2,0] + 2.0*xo/xs*covin[0,0] )
+        covout[0,3::2] = covout[3::2,0]
+
+        # 2nd row - cov ao-ai
+        covout[1,2::2] = _np.power(ys, 2.0)*( covin[1,2::2] + 2.0*xo/xs*covin[1,0] + covin[1,3::2] )
+        covout[2::2, 1] = covout[1,2::2]
+
+        # 2nd row - cov ao-bi
+        covout[1,3::2] = _np.power(ys, 2.0)*( covin[1,3::2] + 2.0*xo/xs*covin[1,0] - covin[1,2::2] )
+        covout[3::2, 1] = covout[1,3::2]
+
+        # mixed coefficient covariance
+        covout[2::2,3::2] = _np.power(ys*xo/xs, 2.0)*( covin[3::2,3::2] - covin[2::2,2::2]
+            + 2.0*(_np.atleast_2d(covin[3::2,0]).T*_np.ones(1,len(covout[0,2::2])))
+            - 2.0*(_np.atleast_2d(covin[2::2,0]).T*_np.ones(1,len(covout[0,2::2]))) )
+        return covout
 
     # ====================================== #
 # end def ModelFourier
@@ -1358,7 +1486,7 @@ class ModelPoly(ModelClass):
 
     # ====================================== #
 
-    def unscaleaf(self, ain):
+    def unscaleaf(self, ain, **kwargs):
         """
         if the data is scaled, then unscaling it goes like this:
         y-scaling: y' = y/ys
@@ -1376,17 +1504,15 @@ class ModelPoly(ModelClass):
             y'= (y-yo)/ys = sum( a_i'*((x-xo)/xs)^i )
               = sum( a_i'/xs^i*(x-xo)^i )
              possible but complicated ... requires binomial / multinomial theorem
-             = sum( a_i'/xs^i*sum( (i,k)*x^k*xo^(i-k)) )
+            y = yo ys*sum( a_i'/xs^i*sum( (i,k)*x^k*xo^(i-k)) )
         """
-        ain = _np.copy(ain)
-        aout = _np.copy(ain)
-        nn = _np.size(aout)
-        # First the y-scaling:
-        yo = self.offset
-        ys = self.slope
-        xo = self.xoffset
-        xs = self.xslope
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset)
 
+        nn = _np.size(aout)
         coeffs = _np.zeros_like(aout)
         for ii in range(nn):
             coeffs[:ii] += _ut.binomial_expansion(-xo, ii)
@@ -1396,6 +1522,30 @@ class ModelPoly(ModelClass):
 
         aout = ys*coeffs*aout
         aout[-1] += yo
+        return aout
+
+    def scaleaf(self, ain, **kwargs):
+        """
+         undoing the above
+            y = yo ys*sum( a_i'/xs^i*sum( (i,k)*x^k*xo^(i-k)) )
+
+        """
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset)
+
+        nn = _np.size(aout)
+        coeffs = _np.zeros_like(aout)
+        for ii in range(nn):
+            coeffs[:ii] += _ut.binomial_expansion(xo, ii)
+        # end for
+        coeffs = coeffs * _np.power(xs, _np.asarray(range(nn))+1)
+        coeffs = coeffs[::-1]
+
+        aout = coeffs*aout/ys
+        aout[-1] -= yo
         return aout
 
     # ====================================== #
@@ -1585,7 +1735,7 @@ class ModelProdExp(ModelClass):
 
     # ====================================== #
 
-    def unscaleaf(self, ain):
+    def unscaleaf(self, ain, **kwargs):
         """
         y-scaling: y' = y/ys
             y'= y/ys = exp( sum( a_i'*x^i ) ) = prod( exp( a_i'*x^i ) )
@@ -1597,20 +1747,41 @@ class ModelProdExp(ModelClass):
             y'= (y-yo)/ys = exp( sum( a_i'*x^i ) ) = prod( exp( a_i'*x^i ) )
                 ln(y-yo) = ln(ys) + sum(a_i'*x^i)
                and ln(y) = sum(a_i * x^i)
-                    may not be possible with constant coefficients
+                    not be possible with constant coefficients
 
             translate the coefficients into a polynomial model, then unshift there
 
         """
-        ain = _np.copy(ain)
-        aout = _np.copy(ain)
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)   # analysis:ignore
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset)
 
         PM = ModelPoly(None)
-        PM.offset = _np.log(_np.abs(self.slope))
+        PM.offset = _np.log(_np.abs(ys))
         PM.slope = 1.0
-        PM.xoffset = self.xoffset
-        PM.xslope = self.xslope
+        PM.xoffset = xo
+        PM.xslope = xs
         aout = PM.unscaleaf(aout)
+        return aout
+
+    def scaleaf(self, ain, **kwargs):
+        """
+            translate the coefficients into a polynomial model, then unshift there
+        """
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)   # analysis:ignore
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset)
+
+        PM = ModelPoly(None)
+        PM.offset = _np.log(_np.abs(ys))
+        PM.slope = 1.0
+        PM.xoffset = xo
+        PM.xslope = xs
+        aout = PM.scaleaf(aout)
         return aout
 
     def scalings(self, xdat, ydat, **kwargs):
@@ -1817,7 +1988,7 @@ class ModelEvenPoly(ModelClass):
 
     # ====================================== #
 
-    def unscaleaf(self, ain):
+    def unscaleaf(self, ain, **kwargs):
         """
         if the data is scaled, then unscaling it goes like this:
         y-scaling: y' = y/ys
@@ -1840,24 +2011,34 @@ class ModelEvenPoly(ModelClass):
             ( fitting x^2 instead of x to generate an even polynomial in x)
             ( because (x-xo)^2 has an odd term as well:  -2x*xo)
         """
-        ain = _np.copy(ain)
-        aout = _np.copy(ain)
-
-#        # Note that this might not work, because in the binomial expansion there will be odd terms
-#        atmp = _np.zeros( (2*_np.size(aout),), dtype=_np.float64)
-#        atmp[::2] = _np.copy(aout)
-#        PM = ModelPoly(None)
-#        PM.offset = self.offset
-#        PM.slope = self.slope
-#        PM.xoffset = self.xoffset
-#        PM.xslope = self.xslope
-#        atmp = PM.unscaleaf(atmp)
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset)  # analysis:ignore
 
         # x-scaling:
-        aout = aout/_np.power(self.xslope, _np.asarray(range(_np.size(aout))))
+        aout = aout/_np.power(xs, _np.asarray(range(_np.size(aout))))
         # y-scaling and shifting:
-        aout = self.slope*aout
-        aout[-1] += self.offset
+        aout = ys*aout
+        aout[-1] += yo
+        return aout
+
+    def scaleaf(self, ain, **kwargs):
+        """
+        unshift and scale as above
+        """
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset)  # analysis:ignore
+
+        # x-scaling:
+        aout = aout*_np.power(xs, _np.asarray(range(_np.size(aout))))
+        # y-scaling and shifting:
+        aout = aout/ys
+        aout[-1] -= yo
         return aout
 
     def scalings(self, xdat, ydat, **kwargs):
@@ -2212,7 +2393,6 @@ class ModelPowerLaw(ModelClass):
          y = yo + ys*an2 * exp(an1*x) * x^( a1*x^(n)+a2*x^(n-1)+...a(n) )
         ========>  Not possible with non-linearity
 
-
         x-scaling:   x' = x/ys
          y = ys*an2 * exp(an1*x/xs) * (x/xs)^( a1*(x/xs)^(n)+a2*(x/xs)^(n-1)+...a(n) )
          ln|y|  = an1*x/xs + ln|ys*an2|
@@ -2312,7 +2492,7 @@ class ModelParabolic(ModelClass):
 
     # ====================================== #
 
-    def unscaleaf(self, ain):
+    def unscaleaf(self, ain, **kwargs):
         """
         y = a*(1.0-x^2)
 
@@ -2332,9 +2512,23 @@ class ModelParabolic(ModelClass):
               = ys*a'*(1.0-x^2)-ys*a'*xo*(2*x+xo)
                 Not possible with constant coefficients
         """
-        ain = _np.copy(ain)
-        aout = _np.copy(ain)
-        return aout*self.slope
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)  # analysis:ignore
+        xs = kwargs.setdefault('xs', self.xslope)  # analysis:ignore
+        xo = kwargs.setdefault('xo', self.xoffset)  # analysis:ignore
+        return aout*ys
+
+    def scaleaf(self, ain, **kwargs):
+        """
+        y = a*(1.0-x^2)
+        """
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)  # analysis:ignore
+        xs = kwargs.setdefault('xs', self.xslope)  # analysis:ignore
+        xo = kwargs.setdefault('xo', self.xoffset)  # analysis:ignore
+        return aout/ys
 
     def scalings(self, xdat, ydat, **kwargs):
         self.offset = 0.0
@@ -7361,7 +7555,7 @@ if __name__ == '__main__':
 #    XX = _np.linspace(1e-3, 0.99, num=100)
 
 #    mod = ModelLine().test_numerics(num=10)   # checked
-#    mod = ModelSines().test_numerics(num=1e2)   # checked
+    mod = ModelSines().test_numerics(num=1e2)   # checked
 #    mod = ModelSines().test_numerics(nfreqs=2)   # checked
 #    mod = ModelSines().test_numerics(nfreqs=5, num=1e3) # checked
 #    mod = ModelSines().test_numerics(nfreqs=5, num=1e3, fmod=5.0, shape='square', duty=0.40) # checked
@@ -7410,7 +7604,7 @@ if __name__ == '__main__':
 
     # numerical issues in test near boundaries: unsolved yet
 #    mod = _ModelTwoPower.test_numerics()   # left boundary
-    mod = ModelQuasiParabolic.test_numerics()  #
+#    mod = ModelQuasiParabolic.test_numerics()  #
 #    mod = ModelFlattop.test_numerics()   #
 #    mod = ModelMassberg.test_numerics()
 #    mod = ModelPowerLaw.test_numerics(npoly=2, num=100)
