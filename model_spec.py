@@ -2046,7 +2046,9 @@ class ModelEvenPoly(ModelClass):
 
 
         In the unscaling, we could reset the model that is used internally to
-        be that of the polynomial model until unscaled
+        be that of the polynomial model until unscaled.  Really, this is an
+        unnecessary step because the only reason I can think of to use an even
+        polynomial is to maintain 'evenness' across the origin
         """
         ain, aout = _np.copy(ain), _np.copy(ain)
         ys = kwargs.setdefault('ys', self.slope)
@@ -2055,7 +2057,7 @@ class ModelEvenPoly(ModelClass):
         xo = kwargs.setdefault('xo', self.xoffset)  # analysis:ignore
 
         # x-scaling:
-        aout = aout/_np.power(xs, _np.asarray(range(_np.size(aout))))
+        aout = aout/_np.power(xs, 2.0*_np.asarray(range(_np.size(aout)))[::-1])
         # y-scaling and shifting:
         aout = ys*aout
         aout[-1] += yo
@@ -2071,15 +2073,14 @@ class ModelEvenPoly(ModelClass):
         xs = kwargs.setdefault('xs', self.xslope)
         xo = kwargs.setdefault('xo', self.xoffset)  # analysis:ignore
 
-        # x-scaling:
-        aout = aout*_np.power(xs, _np.asarray(range(_np.size(aout))))
-        # y-scaling and shifting:
-        aout = aout/ys
         aout[-1] -= yo
+        aout = aout/ys
+        aout = aout*_np.power(xs, 2.0*_np.asarray(range(_np.size(aout)))[::-1])
         return aout
 
     def scalings(self, xdat, ydat, **kwargs):
         self.xoffset = 0.0
+#        self.xslope = 1.0
         return super(ModelEvenPoly, self).scalings(xdat, ydat, **kwargs)
 
     # ====================================== #
@@ -2540,14 +2541,20 @@ class ModelParabolic(ModelClass):
                 Not possible with constant coefficients
         x-scaling: x'=x/xs
             y = ys*a'*(1.0-(x/xs)^2)
+              = ys*a'/xs^2 * (xs^2 - x^2)
               = ys*a'/xs^2 * (xs^2 - x^2) + ys*a'/xs^2 - ys*a'/xs^2
-              = ys*a'/xs^2 * (1.0 - x^2) + ys*a'*(1.0 - 1.0/xs^2)
-                Not possible with constant coefficients
+              = ys*a'/xs^2 * (1.0 - x^2) + ys*a'*(1.0-xs^-2)
 
+                Not possible with constant coefficients unless
+                we fix yo = -ys*a'*(1.0-xs^-2)
+
+            Then we cannot use the original model for anything
         x-shifting: x'=(x-xo)/xs
-            y = ys*a'*(1.0-(x-xo)^2) = ys*a'*(1.0-x^2-2xo*x+xo^2)
-              = ys*a'*(1.0-x^2)-ys*a'*xo*(2*x+xo)
-                Not possible with constant coefficients
+            y = ys*a'*(1.0-(x-xo)^2/xs^2)
+              = ys*a'/xs^2*(xs^2-x^2-2xo*x+xo^2)
+              = ys*a'/xs^2*(xs^2-x^2-2xo*x+xo^2) + ys*a'/xs^2 - ys*a'/xs^2
+              = ys*a'/xs^2*(1.0-x^2) - ys*a'*(1.0-(x-xo)^2 - xs^-2)
+              Not possible with constant coefficients
         """
         ain, aout = _np.copy(ain), _np.copy(ain)
         ys = kwargs.setdefault('ys', self.slope)
@@ -4823,7 +4830,7 @@ class ModelLogDoppler(ModelDoppler):
     def __init__(self, XX, af=None, **kwargs):
         model_order = kwargs.setdefault('model_order', 2)
         noshift = kwargs.setdefault('noshift', True)
-        Fs = kwargs.setdefault('Fs', 1.0)
+#        Fs = kwargs.setdefault('Fs', 1.0)
         self._af = ModelNormal._af
         self._LB = ModelNormal._LB
         self._UB = ModelNormal._UB
@@ -5101,10 +5108,15 @@ class _ModelTwoPower(ModelClass):
         """
         XX = _np.copy(XX)
         c, d = tuple(aa)
-        prof = _np.zeros_like(XX)
-#        prof = _np.power(1.0-_np.power(_np.abs(XX), c), d)
-        prof[XX<1] = _np.power(1.0-_np.power(_np.abs(XX[XX<1]), c), d)
-        prof[XX>=1] = -1.0*_np.power(1.0-_np.power(_np.abs(XX[XX>=1]), -c), d)
+
+        cs = c
+#        cs = c*_np.ones_like(XX)
+#        cs[XX>=1.0] *= -1.0
+
+        prof = _np.sign(cs)*_np.power(1.0-_np.power(_np.abs(XX), cs), d)
+#        prof = _np.zeros_like(XX)
+#        prof[XX<1] = _np.power(1.0-_np.power(_np.abs(XX[XX<1]), c), d)
+#        prof[XX>=1] = -1.0*_np.power(1.0-_np.power(_np.abs(XX[XX>=1]), -c), d)
         return prof
 
     @staticmethod
@@ -5134,11 +5146,22 @@ class _ModelTwoPower(ModelClass):
         XX = _np.copy(XX)
         a, c, d = tuple(aa)
 
+        cs = c
+#        cs = c*_np.ones_like(XX)
+#        cs[XX>=1.0] *= -1.0
+
         gvec = _np.zeros((3,_np.size(XX)), dtype=_np.float64)
         gvec[0,:] = _ModelTwoPower._model_base(XX, [c, d])
-        gvec[1,:] = -1.0*d*_np.power(XX, c)*_np.log(_np.abs(XX))*_ModelTwoPower._model(XX, [a, c, d-1.0])
-#        gvec[2,:] = _ModelTwoPower._model(XX, aa)*_np.log(_np.abs(_ModelTwoPower._model(XX, [1.0, c, 1.0])))
-        gvec[2,:] = _ModelTwoPower._model(XX, aa)*_np.log1p(-_np.abs(_np.power(XX, c)))
+        gvec[1,:] = -1.0*d*_np.power(XX, cs)*_np.log(_np.abs(XX))*_ModelTwoPower._model(XX, [a, c, d-1.0])
+        gvec[2,:] = _ModelTwoPower._model(XX, aa)*_np.log1p(-_np.abs(_np.power(XX, cs)))
+
+#        gvec[0,:] = _ModelTwoPower._model_base(XX, [c, d])
+#        gvec[1,XX<1] = -1.0*d*_np.power(XX[XX<1], c)*_np.log(_np.abs(XX[XX<1]))
+#        gvec[1,XX>=1] = -1.0*d*_np.power(XX[XX>=1], -c)*_np.log(_np.abs(XX[XX>=1]))
+#        gvec[2,XX<1] = _np.log1p(-_np.abs(_np.power(XX[XX<1], c)))
+#        gvec[2,XX>=1] = _np.log1p(-_np.abs(_np.power(XX[XX>=1], -c)))
+#        gvec[1,:] *= _ModelTwoPower._model(XX, [a, c, d-1.0])
+#        gvec[2,:] *= _ModelTwoPower._model(XX, aa)
         return gvec
 
     @staticmethod
@@ -5156,7 +5179,16 @@ class _ModelTwoPower(ModelClass):
        """
         XX = _np.copy(_np.abs(XX))
         a, c, d = tuple(aa)
-        dfdx = -1.0*c*d*_np.power(XX, c-1.0)*_ModelTwoPower._model(XX, [a, c, d-1.0])
+
+        cs = c
+#        cs = c*_np.ones_like(XX)
+#        cs[XX>=1.0] *= -1.0
+        dfdx = -1.0*cs*d*_np.power(XX, cs-1.0)*_ModelTwoPower._model(XX, [a, c, d-1.0])
+
+#        dfdx = _np.zeros_like(XX)
+#        dfdx[XX<1] = -1.0*c*d*_np.power(XX[XX<1], c-1.0)
+#        dfdx[XX>=1] = 1.0*c*d*_np.power(XX[XX>=1], -c-1.0)
+#        dfdx *= _ModelTwoPower._model(XX, [a, c, d-1.0])
     #    return -1.0*a*c*d*_np.power(XX, c-1.0)*_np.power(1.0-_np.power(XX,c), d-1.0)
         return dfdx
 
@@ -5189,11 +5221,16 @@ class _ModelTwoPower(ModelClass):
         a, c, d = tuple(aa)
         dfdx = _ModelTwoPower._deriv(XX, aa)
 
+        cs = c
+#        cs = c*_np.ones_like(XX)
+#        cs[XX>=1.0] *= -1.0
+
         dgdx = _np.zeros((3,_np.size(XX)), dtype=_np.float64)
         dgdx[0,:] = dfdx/a
-        dgdx[1,:] = d*_np.power(XX,c-1.0)*_ModelTwoPower._model(XX, [a, c, d-2.0])*(
-                c*_np.log(_np.abs(XX))*(d*_np.power(XX,c)-1.0)+_np.power(XX,c)-1.0)
-        dgdx[2,:] = -1.0*c*_np.power(XX,c-1.0)*_ModelTwoPower._model(XX, [a, c, d-1.0])*( d*_np.log1p(-_np.power(XX,c)) + 1.0)
+        dgdx[1,:] = d*_np.power(XX,cs-1.0)*_ModelTwoPower._model(XX, [a, c, d-2.0])*(
+                cs*_np.log(_np.abs(XX))*(d*_np.power(XX,cs)-1.0)+_np.power(XX,cs)-1.0)
+        dgdx[2,:] = -1.0*cs*_np.power(XX,cs-1.0)*_ModelTwoPower._model(XX, [a, c, d-1.0])*( d*_np.log1p(-_np.power(XX,cs)) + 1.0)
+
 #        dgdx[1,:] = dfdx*(_np.power(c, -1.0) + _np.log(_np.abs(XX))
 #            - (d-1.0)*_np.power(XX, c)*_np.log(_np.abs(XX))*_ModelTwoPower._model(XX, [1.0, c, -1.0]))
 #        dgdx[2,:] = dfdx*(_np.power(d, -1.0) + _np.log(_np.abs(_ModelTwoPower._model_base(XX, [c, d-1.0]))))
@@ -5224,8 +5261,13 @@ class _ModelTwoPower(ModelClass):
        """
         XX = _np.copy(_np.abs(XX))
         a, c, d = tuple(aa)
-        d2fdx2 = c*c*d*(d-1.0)*_np.power(XX, 2.0*c-2.0)*_ModelTwoPower._model(XX, [a, c, d-2.0])
-        d2fdx2 -= c*d*(c-1.0)*_np.power(XX, c-2.0)*_ModelTwoPower._model(XX, [a, c, d-1.0])
+
+        cs = c
+#        cs = c*_np.ones_like(XX)
+#        cs[XX>=1.0] *= -1.0
+
+        d2fdx2 = cs*cs*d*(d-1.0)*_np.power(XX, 2.0*cs-2.0)*_ModelTwoPower._model(XX, [a, c, d-2.0])
+        d2fdx2 -= cs*d*(cs-1.0)*_np.power(XX, cs-2.0)*_ModelTwoPower._model(XX, [a, c, d-1.0])
         return d2fdx2
 
     @staticmethod
@@ -5264,22 +5306,26 @@ class _ModelTwoPower(ModelClass):
         XX = _np.copy(XX)
         a, c, d = tuple(aa)
 
+        cs = c
+#        cs = c*_np.ones_like(XX)
+#        cs[XX>=1.0] *= -1.0
+
 #        dfdx = _ModelTwoPower._deriv(XX, aa)
 #        d2fdx2 = _ModelTwoPower._deriv2(XX, aa)
 
         d2gdx2 = _np.zeros((3,_np.size(XX)), dtype=_np.float64)
-        d2gdx2[0, :] = c*d*_np.power(XX, c-2.0)*_ModelTwoPower._model_base(XX, [c, d-2.0])*(
-                c*(d*_np.power(XX, c)-1.0)-_np.power(XX, c)+1.0 )
-        d2gdx2[1, :] = -d*_np.power(XX, c-2.0)*_ModelTwoPower._model(XX, [a, c, d-3.0])*(
-                c*_np.log(_np.abs(XX))*(
-                c*( _np.power(d,2.0)*_np.power(XX,2.0*c) + (1.0-3.0*d)*_np.power(XX, c)+1.0)
-              - d*_np.power(XX,2.0*c)+(d+1.0)*_np.power(XX,c)-1.0)
-              + c*( 2.0*d*_np.power(XX,2.0*c)+(-2.0*d-2.0)*_np.power(XX, c) + 2.0 )
+        d2gdx2[0, :] = cs*d*_np.power(XX, cs-2.0)*_ModelTwoPower._model_base(XX, [c, d-2.0])*(
+                cs*(d*_np.power(XX, cs)-1.0)-_np.power(XX, cs)+1.0 )
+        d2gdx2[1, :] = -d*_np.power(XX, cs-2.0)*_ModelTwoPower._model(XX, [a, c, d-3.0])*(
+                cs*_np.log(_np.abs(XX))*(
+                cs*( _np.power(d,2.0)*_np.power(XX,2.0*cs) + (1.0-3.0*d)*_np.power(XX, cs)+1.0)
+              - d*_np.power(XX,2.0*cs)+(d+1.0)*_np.power(XX,cs)-1.0)
+              + cs*( 2.0*d*_np.power(XX,2.0*cs)+(-2.0*d-2.0)*_np.power(XX, cs) + 2.0 )
               - _ModelTwoPower._model(XX, [1.0, c, 2.0]) )
-        d2gdx2[2, :] = c*_np.power(XX, c-2.0)*_ModelTwoPower._model(XX, [a, c, d-2.0])*(
-            c*(2.0*d*_np.power(XX, c)-1.0)
-          + d*(c*(d*_np.power(XX, c)-1.0)-_np.power(XX, c)+1.0)*_np.log1p(-1*_np.power(XX, c))
-          - _np.power(XX, c)+1.0)
+        d2gdx2[2, :] = cs*_np.power(XX, cs-2.0)*_ModelTwoPower._model(XX, [a, c, d-2.0])*(
+            cs*(2.0*d*_np.power(XX, cs)-1.0)
+          + d*(cs*(d*_np.power(XX, cs)-1.0)-_np.power(XX, cs)+1.0)*_np.log1p(-1*_np.power(XX, cs))
+          - _np.power(XX, cs)+1.0)
 
 #        d2gdx2[0,:] = d2fdx2/a
 #        d2gdx2[1,:] = d2fdx2*(_np.power(c, -1.0) + _np.log(_np.abs(XX))
@@ -5310,6 +5356,15 @@ class _ModelTwoPower(ModelClass):
         ain = _np.copy(ain)
         aout = _np.copy(ain)
         aout[0] = self.slope*ain[0]
+        return aout
+
+    def scaleaf(self, ain):
+        """
+        a = ys*a'   0> a'=a/ys
+        """
+        ain = _np.copy(ain)
+        aout = _np.copy(ain)
+        aout[0] = ain[0]/self.slope
         return aout
 
     def scalings(self, xdat, ydat, **kwargs):
@@ -5517,6 +5572,28 @@ class ModelTwoPower(ModelClass):
         ys = self.slope
         aout[0] = yo + ys*ain[0]
         aout[1] = 1.0 - ys*(1-ain[1])*ain[0]/aout[0]
+        return aout
+
+    def scaleaf(self, ain):
+        """
+        y = a*(1-b)*(1-x^c)^d + a*b
+
+             a = ys*a' + yo
+             b = 1-ys*(1-b')*a'/a
+               = 1-ys*(1-b')*a'/(ys*a' + yo)
+             c= c'
+             d= d'
+
+             a' = (a-yo)/ys
+                 1-b' = -(b-1)*a/(ys*a')
+             b' = 1.0-(1-b)*a/(ys*a')
+        """
+        ain = _np.copy(ain)
+        aout = _np.copy(ain)
+        yo = self.offset
+        ys = self.slope
+        aout[0] = (ain[0] - yo)/ys
+        aout[1] = 1.0 - (1-ain[1])*aout[0]/(ys*ain[0])
         return aout
 
     def scalings(self, xdat, ydat, **kwargs):
@@ -5758,9 +5835,26 @@ class ModelExpEdge(ModelClass):
         aout[1] = self.xslope*aout[1]
         return aout
 
+    def scaleaf(self, ain):
+        """
+        Undo above:
+            y' = y/ys = e'*(1-exp(-x^2/(xs*h')^2))
+                e = e'*ys
+                h = h'*xs
+
+                e' = e / ys
+                h' = h / xs
+                iff xo, yo = 0
+        """
+        ain = _np.copy(ain)
+        aout = _np.copy(ain)
+        aout[0] = aout[0]/self.slope
+        aout[1] = aout[1]/self.xslope
+        return aout
+
     def scalings(self, xdat, ydat, **kwargs):
         self.xoffset = 0.0
-        self.offset = 1.0
+        self.offset = 0.0
         return super(ModelExpEdge, self).scalings(xdat, ydat, **kwargs)
 
     # ====================================== #
@@ -6120,72 +6214,75 @@ class ModelQuasiParabolic(ModelClass):
     # ====================================== #
 
 
-    def unscaleaf(self, ain):
+    def unscaleaf(self, ain, **kwargs):
         """
         rescaling: y'=(y-yo)/ys
-            y' = a0'*( a1'-a4'+(1-a1'+a4')*(1-x^a2')^a3' + a4'*(1-exp(x^2/a5'^2)))
-               = a0'*a1'-a0'*a4' + a0'*(1-a1'+a4')*(...) + a0'*a4'*(...)
-               = -a4' + (1+a4')*(...) + a4'*(...)
+            y' = a'*( b'+(1-b')*(1-x^c')^d' + h'*(1-exp(x^2/w'^2)))
+               = a'*b'+a'*h' + a'*(1-b')*(...) + a'*h'*(...)
 
-            y = yo+a0'*(...)
-                by inspection
+            y = yo+ys*a'*(...)
+                by inspection   ... wrap a' = ys*a'
                 (1)
-            constants :    a0*a1-a0*a4 = yo+a0'*a1'-a0'*a4'
+            constants :   (1)  a*b+a*h = yo+ys*(a'*b'+a'h')
+            twopower :    (2)  a*(1-b) = ys*a'*(1-b')
+            exp term :    (3)   a*h = ys*a'*h'
 
-            and (2)
-            (1-x^a2)^a3 :   a0*(1-a1+a4) = a0'*(1-a1'+a4')
-                     a0-a1*a0+a0*a4 = a0'-a0'*a1'+a0'*a4'
-            and (3)
-            (1-exp(x^2/a5^2)) : a0*a4 = a0'*a4'
-                                    --------
-                    use (3) in (1):  a0*a1 = yo+a0'*a1'
-                        (3) in (2):  a0-a1*a0 = a0'-a0'*a1' ->
-                                    a0*(1-a1) = a0'*(1-a1')
-                                    --------
-                  a0 = a0'*(1-a1)/(1-a1') = (yo+a0'*a1')/a1
-                   a0'*(1-a1)/(1-a1') = (yo+a0'*a1')/a1
-                        a0'*(1-a1)*a1 = (1-a1')*(yo+a0'*a1')
-                        a1-a1^2 = (1-a1')*(yo/a0'+a1')
-                        a1-a1^2 = yo/a0'+a1'-yo*a1'/a0'-a1'^2
+                    a = yo+ys*a'      or            a' = (a-yo)/ys
+                    b = 1-ys*a'/a * (1-b')          b' = 1-a/(ys*a')*(1-b)
+        b = e-h     e = 1+h-ys*a'/a * (1-e'+h')     e' = 1+h'-a/(ys*a')*(1-e+h)
+                    c = c'
+                    d = d'
+                    h = ys*a'*h'/a    or            h'=a*h/(ys*a')
+                    w = w'
+                                iff xs = 1.0, xo = 0.0
 
-                            a1 = yo/a0' + a1' - yo*a1'/a0'
-                            a0 = a0'*(1-a1)/(1-a1')
-                            a4 = a0'*a4'/a0
+          b = e-h   e = 1+h-ys*(a'/a)*(1.0-e'+h') or e' = 1-h' - a/(ys*a')*(1-e+h)
 
         rescaling: x'=(x-xo)/xs
             is not possible because of the non-linearities in the x-functions
                 (1-x^a2)^a3 = (1-(x-xo)^a2'/xs^a2')^a3'
-
           and   exp(x^2/a5^2) = exp((x-xo)^2/(xs*a5')^2)
-                exp(x/a5) = exp((x-xo)/(xs*a5'))
-                    x/a5 = (x-xo)/(xs*a5')
-                    x*xs*a5' = x*a5-xo*a5
-                    independence of x means that x*(xs*a5'-a5) = 0, a5 = xs*a5'
-                    but x*xs*a5' = x*xs*a5'-xo*a5 requires that xo == 0
 
-                (1-x^a2)^a3 = (1-x^a2'/xs^a2')^a3'
-                a3*ln(1-x^a2) = a3'*ln(1-x^a2'/xs^a2')
-                    assume a3 == a3'
-                    x^a2 = x^a2'/xs^a2'
-                    a2*ln(x) = a2'*ln(x)-a2'*ln(xs)
-                        a2 = a2'*(1-ln(xs)/ln(x))  ... only works if xs = 1.0
-
-        a1 = yo/a0' + a1' - yo*a1'/a0'
-        a0 = a0'*(1-a1)/(1-a1')
-        a4 = a0'*a4'/a0
-        iff xs = 1.0, xo = 0.0
         """
-        ain = _np.copy(ain)
-        aout = _np.copy(ain)
-        yo = self.offset
-        aout[1] = yo/ain[0] + ain[1] - yo*ain[1]/ain[0]
-        aout[0] = ain[0]*(1-aout[1])/(1-ain[1])
-        aout[4] = ain[0]*ain[4]/aout[0]
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)
+        xs = kwargs.setdefault('xs', self.xslope)   # analysis:ignore
+        xo = kwargs.setdefault('xo', self.xoffset)  # analysis:ignore
+
+        aout[0] = yo+ys*ain[0]
+        aout[4] = ys*ain[0]*ain[4]/aout[0]
+        aout[1] = 1.0+aout[4]-ys*(ain[0]/aout[0])*(1.0-ain[1]+ain[4])
+        return aout
+
+    def scaleaf(self, ain, **kwargs):
+        """
+                    a = yo+ys*a'      or            a' = (a-yo)/ys
+                    b = 1-ys*a'/a * (1-b')          b' = 1-a/(ys*a')*(1-b)
+        b = e-h     e = 1+h-ys*a'/a * (1-e'+h')     e' = 1+h'-a/(ys*a')*(1-e+h)
+                    c = c'
+                    d = d'
+                    h = ys*a'*h'/a    or            h'=a*h/(ys*a')
+                    w = w'
+                                iff xs = 1.0, xo = 0.0
+        """
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)
+        xs = kwargs.setdefault('xs', self.xslope)   # analysis:ignore
+        xo = kwargs.setdefault('xo', self.xoffset)  # analysis:ignore
+
+        aout[0] = (ain[0]-yo)/ys
+        aout[4] = ain[0]*ain[4]/(ys*aout[0])
+        aout[1] = 1.0+aout[4]-(ain[0]/(ys*aout[0]))*(1.0-ain[1]+ain[4])
         return aout
 
     def scalings(self, xdat, ydat, **kwargs):
+        self.noxscaling = True
         self.xoffset = 0.0
         self.xslope = 1.0
+#        self.slope = 1.0
+#        self.offset = 0.0
         return super(ModelQuasiParabolic, self).scalings(xdat, ydat, **kwargs)
 
     # ====================================== #
@@ -7646,22 +7743,25 @@ if __name__ == '__main__':
 #    mod = ModelProdExp.test_scaling(npoly=5) # checked
 #    mod = ModelProdExp.test_scaling(npoly=12) # checked
 
-    mod = ModelEvenPoly.test_numerics(npoly=1) # checked
-    mod = ModelEvenPoly.test_numerics(npoly=2) # checked
-    mod = ModelEvenPoly.test_numerics(npoly=3) # checked
-    mod = ModelEvenPoly.test_numerics(npoly=4) # checked
-    mod = ModelEvenPoly.test_numerics(npoly=8) # checked
-    mod = ModelEvenPoly.test_scaling(npoly=1) #
-    mod = ModelEvenPoly.test_scaling(npoly=2) #
-    mod = ModelEvenPoly.test_scaling(npoly=3) #
-    mod = ModelEvenPoly.test_scaling(npoly=4) #
-    mod = ModelEvenPoly.test_scaling(npoly=8) #
-
+#    mod = ModelEvenPoly.test_numerics(npoly=1) # checked
+#    mod = ModelEvenPoly.test_numerics(npoly=2) # checked
+#    mod = ModelEvenPoly.test_numerics(npoly=3) # checked
+#    mod = ModelEvenPoly.test_numerics(npoly=4) # checked
+#    mod = ModelEvenPoly.test_numerics(npoly=8) # checked
+#    mod = ModelEvenPoly.test_scaling(npoly=1) # checked
+#    mod = ModelEvenPoly.test_scaling(npoly=2) # checked
+#    mod = ModelEvenPoly.test_scaling(npoly=3) # checked
+#    mod = ModelEvenPoly.test_scaling(npoly=4) # checked
+#    mod = ModelEvenPoly.test_scaling(npoly=8) # checked
 
 #    mod = ModelParabolic.test_numerics() # checked
+#    mod = ModelParabolic.test_scaling() # checked
 #    mod = ModelExpEdge.test_numerics()  # checked
+#    mod = ModelExpEdge.test_scaling()  # checked
 #    mod = ModelTwoPower.test_numerics() # checked
+#    mod = ModelTwoPower.test_scaling() # checked
 #    mod = ModelTwoPower.test_numerics(num=100) # checked
+
 #    mod = ModelGaussian.test_numerics() # checked
 #    mod = ModelOffsetGaussian.test_numerics()  # checked
 #    mod = ModelNormal.test_numerics()  # checked
@@ -7676,7 +7776,9 @@ if __name__ == '__main__':
 #
 #    # ----- Checked within bounds:
 #    mod = _ModelTwoPower.test_numerics(start=0.1, stop=0.9)   # checked
-#    mod = ModelQuasiParabolic.test_numerics(start=0.1, stop=0.9)  # checked
+#    mod = _ModelTwoPower.test_scaling() # checked
+    mod = ModelQuasiParabolic.test_numerics(start=0.1, stop=0.9)  # checked
+    mod = ModelQuasiParabolic.test_scaling()  #
 #    mod = ModelPowerLaw.test_numerics(npoly=2, start=0.1, stop=0.9, num=100)
 #    mod = ModelPowerLaw.test_numerics(npoly=3, start=0.1, stop=0.9, num=100)
 #    mod = ModelPowerLaw.test_numerics(npoly=4, start=0.1, stop=0.9) # checked
