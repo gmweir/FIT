@@ -221,6 +221,7 @@ class ModelLine(ModelClass):
              y = ys*a'*x/xs + ys*b' + yo - ys*a'*xo/xs
                  a = ys*a'/xs
                  b = ys*(b'-xo*a'/xs) + yo
+                   = ys*b' - xo*a + yo
         """
         ain = _np.copy(ain)
         aout = _np.copy(ain)
@@ -320,10 +321,10 @@ class ModelSines(ModelClass):
     Fourier series in the sine-phase form:
         f = 0.5*ao + sum_ii a_ii *sin((2pi*f_ii)*XX+p_ii) ii>=1
     """
-    _af = _np.asarray([0.0]+[1.0, 100.0, _np.pi/3], dtype=_np.float64)
-    _LB = _np.asarray([-_np.inf]+[-_np.inf,   1e-18, -2*_np.pi], dtype=_np.float64)
-    _UB = _np.asarray([ _np.inf]+[ _np.inf, _np.inf,  2*_np.pi], dtype=_np.float64)
-    _fixed = _np.zeros( (4,), dtype=int)
+    _af = _np.asarray([0.0]+[1.0, 33.0, _np.pi/3], dtype=_np.float64)
+    _LB = _np.asarray([-_np.inf]+[-_np.inf,   1e-18, -_np.pi], dtype=_np.float64)
+    _UB = _np.asarray([ _np.inf]+[ _np.inf, _np.inf,  _np.pi], dtype=_np.float64)
+    _fixed = _np.asarray([0]+[0, 0, 0], dtype=int)
     _params_per_freq = 3
     def __init__(self, XX=None, af=None, **kwargs):
         # Tile defaults to the number of frequencies requested
@@ -370,15 +371,18 @@ class ModelSines(ModelClass):
             for ii in range(self.nfreqs):
                 self._af[3*ii + 1] = self._af[1]*_np.random.normal(0.0, 1.0, 1)  # amplitudes
                 self._af[3*ii + 2] = self._af[2]*(ii+1)  # i'th harm. of default
-                self._af[3*ii + 3] = _np.random.choice([-0.5*_np.pi, 0.0])  # phase of i'th harm. of default
+                self._af[3*ii + 3] = _np.random.uniform(-0.5*_np.pi, 0.5*_np.pi, size=1)  # phase of i'th harm. of default
             # end for
         else:  # sq.lower().find('uniform')>-1:
             self._af[0] = 0.0
             for ii in range(self.nfreqs):
                 self._af[3*ii + 1] = self._af[1]/(ii+1)  # amplitudes
                 self._af[3*ii + 2] = self._af[2]*(ii+1)  # i'th harm. of default
-                self._af[3*ii + 3] = _np.random.uniform(-_np.pi, 0.0, size=1)  # phase of i'th harm. of default
-#                self._af[3*ii + 3] = 0.0
+                self._af[3*ii + 3] = 0.5*_np.pi*_np.random.normal(0.0, 0.5, 1)  # phase of i'th harm. of default
+                if self._af[3*ii+3]<self._LB[3*ii+3]: self._af[3*ii+3] = self._LB[3*ii+3]+0.1
+                if self._af[3*ii+3]>self._UB[3*ii+3]: self._af[3*ii+3] = self._UB[3*ii+3]-0.1
+#                self._af[3*ii + 3] = _np.random.choice([-0.5*_np.pi, 0.5*_np.pi])  # phase of i'th harm. of default
+                self._af[3*ii + 3] = 0.0
             # end for
         # end if
 
@@ -814,6 +818,7 @@ class ModelSines(ModelClass):
 #    def scalings(self, xdat, ydat, **kwargs):
 #        """
 #        Although we can scale the input fitting data. The frequency scaling isn't working yet
+#                      ... this is because I was assuming linearity! nonlinear shift is necessary
 #        """
 #        self.xslope = 1.0
 #        self.xoffset = 0.0
@@ -854,7 +859,7 @@ class ModelFourier(ModelClass):
         af - [fundamental frequency, offset,
               a_ii, b_ii, a_ii+1, b_ii+1, ...]
     """
-    _af = _np.asarray([  100.0,     0.0,     0.5,     0.5], dtype=_np.float64)
+    _af = _np.asarray([  33.0,     0.0,     0.5,     0.5], dtype=_np.float64)
     _LB = _np.asarray([  1e-18,-_np.inf,-_np.inf,-_np.inf], dtype=_np.float64)
     _UB = _np.asarray([_np.inf, _np.inf, _np.inf, _np.inf], dtype=_np.float64)
     _fixed = _np.zeros( (4,), dtype=int)
@@ -881,31 +886,33 @@ class ModelFourier(ModelClass):
     # end def __init__
 
     def _shape(self, **kwargs):
-        sq = kwargs.setdefault('shape', 'sine')
-        duty = kwargs.setdefault('duty', 0.5)
-        if sq.lower().find('square')>-1:# and duty!=0.5:
-            # duty cycled square wave
-            # an = 2A/npi * sin(n*pi*tp/T)
-            # an = 2A/npi * sin(n*pi*dutycycle)
-            ff = _np.copy(self._af[0])
-            AA = 1.0
-            self._af = _np.zeros((2+2*self.nfreqs,), dtype=_np.float64)
-            self._af[0] = ff
-            self._af[1] = self._af[1] + AA*duty
-            for ii in range(self.nfreqs):
-                if (ii+1) % 2 == 0:  # if the frequency is even
-                    continue
-#                nn = 2*(ii+1)-1
-                nn = ii+1
-                self._af[2*ii + 2 + 0] = 2.0*AA*_np.sin(nn*_np.pi*duty)/(_np.pi*nn)  # amplitudes
-                self._af[2*ii + 2 + 1] = 0.0  # amplitudes of sine
-            # end for
-        else:
-            for ii in range(self.nfreqs):
-                self._af[2*ii + 2 + 0 ] = 0.5*self._af[1]/(ii+1)  # amplitudes
-                self._af[2*ii + 2 + 1 ] = 0.5*self._af[1]/(ii+1)  # i'th harm. of default
+        MS = ModelSines(**kwargs)
+        self._af = MS._convert2fourier(MS._af)
+#        sq = kwargs.setdefault('shape', 'sine')
+#        duty = kwargs.setdefault('duty', 0.5)
+#        if sq.lower().find('square')>-1:# and duty!=0.5:
+#            # duty cycled square wave
+#            # an = 2A/npi * sin(n*pi*tp/T)
+#            # an = 2A/npi * sin(n*pi*dutycycle)
+#            ff = _np.copy(self._af[0])
+#            AA = 1.0
+#            self._af = _np.zeros((2+2*self.nfreqs,), dtype=_np.float64)
+#            self._af[0] = ff
+#            self._af[1] = self._af[1] + AA*duty
+#            for ii in range(self.nfreqs):
+#                if (ii+1) % 2 == 0:  # if the frequency is even
+##                    continue
+##                nn = 2*(ii+1)-1
+#                nn = ii+1
+#                self._af[2*ii + 2 + 0] = 2.0*AA*_np.sin(nn*_np.pi*duty)/(_np.pi*nn)  # amplitudes
+#                self._af[2*ii + 2 + 1] = 0.0  # amplitudes of sine
+#            # end for
+#        else:
+#            for ii in range(self.nfreqs):
+#                self._af[2*ii + 2 + 0 ] = 0.5*self._af[1]/(ii+1)  # amplitudes
 #                self._af[2*ii + 2 + 1 ] = 0.5*self._af[1]/(ii+1)  # i'th harm. of default
-            # end for
+##                self._af[2*ii + 2 + 1 ] = 0.5*self._af[1]/(ii+1)  # i'th harm. of default
+#            # end for
         # end if
 
     def _default_plot(self, XX=None):
@@ -1486,6 +1493,9 @@ class ModelPoly(ModelClass):
 
     # ====================================== #
 
+    def nCr(self, n, r):
+        return _np.float64(_ut.factorial(n)/(_ut.factorial(r)*_ut.factorial(n-r)))
+
     def unscaleaf(self, ain, **kwargs):
         """
         if the data is scaled, then unscaling it goes like this:
@@ -1504,7 +1514,20 @@ class ModelPoly(ModelClass):
             y'= (y-yo)/ys = sum( a_i'*((x-xo)/xs)^i )
               = sum( a_i'/xs^i*(x-xo)^i )
              possible but complicated ... requires binomial / multinomial theorem
-            y = yo ys*sum( a_i'/xs^i*sum( (i,k)*x^k*xo^(i-k)) )
+            y = yo + ys*sum( a_i'/xs^i*sum( (i,k)*x^k*(-xo)^(i-k)) )
+                     outer summation up to n=order in x
+                    inner summation up to i (current order in x)
+
+                      k=0                   k=1                k=2
+             i=0 | yo+ys*ao
+             i=1 | -ys*a1*xo/xs        ys*a1/xs*x
+                 | ys*a2*xo^2/xs^2  -2*ys*a2*xo*x/xs^2     ys*a2*x^2/xs^2
+                 |              ...
+
+            The matrix is sorted in powers of x in the columns
+                Rewrite the series for the coefficients
+                ai' = ys*sum_k (i,k)*(-xo)^(i-k)*xs^(-i)*ys*ai
+                ao' = ao' + yo
         """
         ain, aout = _np.copy(ain), _np.copy(ain)
         ys = kwargs.setdefault('ys', self.slope)
@@ -1512,23 +1535,26 @@ class ModelPoly(ModelClass):
         xs = kwargs.setdefault('xs', self.xslope)
         xo = kwargs.setdefault('xo', self.xoffset)
 
-        nn = _np.size(aout)
-        coeffs = _np.zeros_like(aout)
-        for ii in range(nn):
-            coeffs[:ii] += _ut.binomial_expansion(-xo, ii)
+        nn = len(aout)    # maximum order of x in the problem#
+        aout = _np.zeros_like(ain)
+        for kk in range(nn):
+            for ii in range(kk, nn):
+                tmp = _np.copy(ain[-(ii+1)])
+                tmp *= _np.power(1.0/xs, kk)
+                tmp *= self.nCr(ii,kk)
+                tmp *= _np.power(-1.0*xo/xs, ii-kk)
+                aout[-(kk+1)] += _np.copy(tmp)
+            # end for
         # end for
-        coeffs = coeffs / _np.power(xs, _np.asarray(range(nn))+1)
-        coeffs = coeffs[::-1]
-
-        aout = ys*coeffs*aout
+        aout *= ys
         aout[-1] += yo
         return aout
 
     def scaleaf(self, ain, **kwargs):
         """
-         undoing the above
-            y = yo ys*sum( a_i'/xs^i*sum( (i,k)*x^k*xo^(i-k)) )
-
+                Rewrite the series for the coefficients
+                ai' = ys*sum_i=[kton](i,k)*(-xo)^(i-k)*xs^(-i)*ys*ai
+                ao' = ao'+yo
         """
         ain, aout = _np.copy(ain), _np.copy(ain)
         ys = kwargs.setdefault('ys', self.slope)
@@ -1536,16 +1562,20 @@ class ModelPoly(ModelClass):
         xs = kwargs.setdefault('xs', self.xslope)
         xo = kwargs.setdefault('xo', self.xoffset)
 
-        nn = _np.size(aout)
-        coeffs = _np.zeros_like(aout)
-        for ii in range(nn):
-            coeffs[:ii] += _ut.binomial_expansion(xo, ii)
-        # end for
-        coeffs = coeffs * _np.power(xs, _np.asarray(range(nn))+1)
-        coeffs = coeffs[::-1]
+        ain[-1] -= yo
+        ain /= ys
 
-        aout = coeffs*aout/ys
-        aout[-1] -= yo
+        nn = len(aout)    # maximum order of x in the problem#
+        aout = _np.zeros_like(ain)
+        for kk in range(nn):
+            for ii in range(kk, nn):
+                tmp = _np.copy(ain[-(ii+1)])
+                tmp *= _np.power(xs, kk)
+                tmp *= self.nCr(ii,kk)
+                tmp *= _np.power(xo, ii-kk)
+                aout[-(kk+1)] += _np.copy(tmp)
+            # end for
+        # end for
         return aout
 
     # ====================================== #
@@ -1786,6 +1816,9 @@ class ModelProdExp(ModelClass):
 
     def scalings(self, xdat, ydat, **kwargs):
         self.offset = 0.0
+#        self.slope = 1.0
+#        self.xoffset = 0.0
+#        self.xslope = 1.0
         return super(ModelProdExp, self).scalings(xdat, ydat, **kwargs)
 
     # ====================================== #
@@ -2010,6 +2043,10 @@ class ModelEvenPoly(ModelClass):
             ... this is reflective of the trick used above
             ( fitting x^2 instead of x to generate an even polynomial in x)
             ( because (x-xo)^2 has an odd term as well:  -2x*xo)
+
+
+        In the unscaling, we could reset the model that is used internally to
+        be that of the polynomial model until unscaled
         """
         ain, aout = _np.copy(ain), _np.copy(ain)
         ys = kwargs.setdefault('ys', self.slope)
@@ -4236,6 +4273,21 @@ class ModelLorentzian(ModelClass):
 # =========================================================================== #
 # =========================================================================== #
 
+
+def pyseudovoigt(XX, aa):
+    return ModelPseudoVoigt._model(XX, aa)
+
+def deriv_pyseudovoigt(XX, aa):
+    return ModelPseudoVoigt._deriv(XX, aa)
+
+def partial_pyseudovoigt(XX, aa):
+    return ModelPseudoVoigt._partial(XX, aa)
+
+def partial_deriv_pyseudovoigt(XX, aa):
+    return ModelPseudoVoigt._partial_deriv(XX, aa)
+
+def model_pyseudovoigt(XX=None, af=None, **kwargs):
+    return _model(ModelPseudoVoigt, XX, af, **kwargs)
 
 class ModelPseudoVoigt(ModelClass):
     """
@@ -7554,26 +7606,58 @@ if __name__ == '__main__':
 #    XX = _np.linspace(1e-3, 0.99, num=61)
 #    XX = _np.linspace(1e-3, 0.99, num=100)
 
+    # Numerical testing for errors in models
+    # Analytic testing for errors in forward/reverse scalings
 #    mod = ModelLine().test_numerics(num=10)   # checked
-    mod = ModelSines().test_numerics(num=1e2)   # checked
-#    mod = ModelSines().test_numerics(nfreqs=2)   # checked
-#    mod = ModelSines().test_numerics(nfreqs=5, num=1e3) # checked
-#    mod = ModelSines().test_numerics(nfreqs=5, num=1e3, fmod=5.0, shape='square', duty=0.40) # checked
-#    mod = ModelFourier().test_numerics() # checked
-#    mod = ModelFourier.test_numerics(nfreqs=5, num=1e3, shape='square', duty=0.40)  # checked
+#    mod = ModelLine().test_scaling(num=10)   #
+#
+#    mod = ModelSines().test_numerics(num=int((6.0/33.0-0.0)*5.0e2), start=0.0, stop=6.0/33.0)   # checked
+#    mod = ModelSines().test_scaling(num=int((6.0/33.0-0.0)*5.0e2), start=0.0, stop=6.0/33.0)   #
+#
+#    mod = ModelSines().test_numerics(nfreqs=2, num=int((6.0/33.0-0.0)*5.0e2), start=0.0, stop=6.0/33.0)   # checked
+#    mod = ModelSines().test_scaling(nfreqs=2, num=int((6.0/33.0-0.0)*5.0e2), start=0.0, stop=6.0/33.0)   # checked
+#
+#    mod = ModelSines().test_numerics(nfreqs=5, num=int((6.0/33.0-0.0)*5.0e2), start=0.0, stop=6.0/33.0) # checked
+#    mod = ModelSines().test_scaling(nfreqs=5, num=int((6.0/33.0-0.0)*5.0e2), start=0.0, stop=6.0/33.0) # checked
+#
+#    mod = ModelSines().test_numerics(nfreqs=5, num=int((6.0/33.0-0.0)*5.0e2), start=0.0, stop=6.0/33.0,
+#                                     fmod=5.0, shape='square', duty=0.40) # checked
+#    mod = ModelSines().test_scaling(nfreqs=5, num=int((6.0/33.0-0.0)*5.0e2), start=0.0, stop=6.0/33.0,
+#                                     fmod=5.0, shape='square', duty=0.40) # checked
+##    mod = ModelFourier().test_numerics(num=int((6.0/33.0-0.0)*5.0e2), start=0.0, stop=6.0/33.0) # checked
+##    mod = ModelFourier.test_numerics(nfreqs=5, num=20*int((6.0/33.0-0.0)*5.0e2), start=0.0, stop=6.0/33.0,
+##                                     shape='square', duty=0.40)  # checked
+#
 #    mod = ModelPoly.test_numerics(npoly=1) # checked
 #    mod = ModelPoly.test_numerics(npoly=2) # checked
 #    mod = ModelPoly.test_numerics(npoly=5)  # checked
 #    mod = ModelPoly.test_numerics(npoly=12)  # checked
+#    mod = ModelPoly.test_scaling(npoly=1)  # checked
+#    mod = ModelPoly.test_scaling(npoly=2)  # checked
+#    mod = ModelPoly.test_scaling(npoly=5)  # checked
+#    mod = ModelPoly.test_scaling(npoly=12)  # checked
+
 #    mod = ModelProdExp.test_numerics(npoly=1) # checked
 #    mod = ModelProdExp.test_numerics(npoly=2) # checked
 #    mod = ModelProdExp.test_numerics(npoly=5) # checked
 #    mod = ModelProdExp.test_numerics(npoly=12) # checked
-#    mod = ModelEvenPoly.test_numerics(npoly=1) # checked
-#    mod = ModelEvenPoly.test_numerics(npoly=2) # checked
-#    mod = ModelEvenPoly.test_numerics(npoly=3) # checked
-#    mod = ModelEvenPoly.test_numerics(npoly=4) # checked
-#    mod = ModelEvenPoly.test_numerics(npoly=8) # checked
+#    mod = ModelProdExp.test_scaling(npoly=1) # checked
+#    mod = ModelProdExp.test_scaling(npoly=2) # checked
+#    mod = ModelProdExp.test_scaling(npoly=5) # checked
+#    mod = ModelProdExp.test_scaling(npoly=12) # checked
+
+    mod = ModelEvenPoly.test_numerics(npoly=1) # checked
+    mod = ModelEvenPoly.test_numerics(npoly=2) # checked
+    mod = ModelEvenPoly.test_numerics(npoly=3) # checked
+    mod = ModelEvenPoly.test_numerics(npoly=4) # checked
+    mod = ModelEvenPoly.test_numerics(npoly=8) # checked
+    mod = ModelEvenPoly.test_scaling(npoly=1) #
+    mod = ModelEvenPoly.test_scaling(npoly=2) #
+    mod = ModelEvenPoly.test_scaling(npoly=3) #
+    mod = ModelEvenPoly.test_scaling(npoly=4) #
+    mod = ModelEvenPoly.test_scaling(npoly=8) #
+
+
 #    mod = ModelParabolic.test_numerics() # checked
 #    mod = ModelExpEdge.test_numerics()  # checked
 #    mod = ModelTwoPower.test_numerics() # checked

@@ -220,6 +220,7 @@ def gen_random_init_conds(func, **fkwargs):
 #    aa += 0.5*aa*_np.random.uniform(0.0, 1.0, len(aa))
     for ii in range(len(aa)):
         if fixed[ii] == 0:
+#            aa[ii] += 0.1*aa[ii]*_np.random.normal(0.0, 1.0, 1)
             aa[ii] += 0.5*aa[ii]*_np.random.uniform(0.0, 1.0, 1)
             if aa[ii]<LB[ii]:                aa[ii] = LB[ii] + 0.5
             if aa[ii]>UB[ii]:                aa[ii] = UB[ii] - 0.5
@@ -235,9 +236,9 @@ def gen_random_init_conds(func, **fkwargs):
 
 # Fitting using the Levenberg-Marquardt algorithm.    #
 def modelfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
-    kwargs.setdefault('xtol', 1e-16)  # 1e-16
-    kwargs.setdefault('ftol', 1e-16)
-    kwargs.setdefault('gtol', 1e-16)
+#    kwargs.setdefault('xtol', 1e-16)  # 1e-16
+#    kwargs.setdefault('ftol', 1e-16)
+#    kwargs.setdefault('gtol', 1e-16)
 #    kwargs.setdefault('damp', 10)
 #    kwargs.setdefault('maxiter', 1200)
 #    kwargs.setdefault('factor', 100)  # 100
@@ -320,6 +321,13 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
 #        info.scalings(_np.copy(x), _np.copy(y))
         x, y, vy = info.scaledat(_np.copy(x), _np.copy(y), _np.power(_np.copy(ey), 2.0))
         ey = _np.sqrt(vy)
+
+        # Scale the initial guess as well
+        p0 = info.scaleaf(p0)
+
+        # Scale the bounds on the problem
+        LB = info.scaleaf(LB)
+        UB = info.scaleaf(UB)
 #    # end if
     autoderivative = kwargs.setdefault('autoderivative', 1)
 
@@ -455,6 +463,9 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     info.af = _np.copy(m.params)
     out = mymodel(info.af, x=x, y=y, err=ey)
 
+    # Final function evaluation
+    info.update(af=info.af)
+
     # ====== Post-processing ====== #
 
     # degrees of freedom in fit
@@ -468,18 +479,6 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
 
     # Scaled covariance matrix
     info.covmat = info.chi2_reduced * _np.copy(m.covar)
-
-    # unscale the problem if it has previously been scaled for domain reasons
-    if scale_by_data:
-        # note: the error propagation is automatically completed after unscaling
-        # by an auto-update of the model
-        x, y, vy = info.unscaledat(af=info.af)
-        XX = info.XX
-        ey = _np.sqrt(vy)
-    else:
-        # Final function evaluation
-        info.update(af=info.af)
-    # end if
 
     # ====== Error Propagation ====== #
     # Propagate uncertainties in fitting parameters (scaled covariance) into
@@ -509,6 +508,15 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
 
     info.varprof = _ut.interp_irregularities(info.varprof, corezero=False)
     info.vardprofdx = _ut.interp_irregularities(info.vardprofdx, corezero=False)
+
+    # unscale the problem if it has previously been scaled for domain reasons
+    if scale_by_data:
+        # note: the error propagation is automatically completed after unscaling
+        # by an auto-update of the model
+        x, y, vy = info.unscaledat(af=info.af)
+        XX = info.XX
+        ey = _np.sqrt(vy)
+    # end if
 
     if plotit:
         _plt.figure()
@@ -1254,7 +1262,8 @@ def test_fit(func=_ms.model_qparab, **fkwargs):
     else:
         numpts = 21
         xdat = _np.linspace(-0.05, 1.25, numpts)
-        XX = _np.linspace( 1e-6, 1.0, 99)
+        XX = _np.linspace( -1.0, 1.3, 99)
+#        XX = _np.linspace( 1e-6, 1.0, 99)
     # end if
 
     # Model to fit
@@ -1356,24 +1365,31 @@ def test_fourier_fit(func=_ms.model_sines, **fkwargs):
     kwargs = temp.dict_from_class()
     kwargs.pop('XX')
     kwargs.pop('af')
-
+    kwargs['scale_problem'] = True
     # ====================== #
 
-    yerr = 0.2*0.5*_np.abs(_np.nanmax(ydat)-_np.nanmin(ydat))
-    ytmp = ydat + 0.1*_np.max(_np.abs(ydat))*_np.random.normal(0.0, 1.0, len(ydat))
+    # Estimate of noise on data
+    yerr = 0.4*_np.ones_like(ydat)
+    yerr = 0.5*_np.abs(_np.nanmax(ydat)-_np.nanmin(ydat))*yerr
+
+    # Noise on data
+    ytmp = ydat + 0.3*_np.abs(_np.nanmax(ydat)-_np.nanmin(ydat))*_np.random.normal(0.0, 1.0, len(ydat))
 
     # Loop through frequencies and build the results 1 frequency at a time
     nfreqs = fkwargs.pop('nfreqs', 1)
+    info1, info2 = None, None
     for ii in range(nfreqs):
         fkwargs['nfreqs'] = ii+1
         # Initial conditions for model
-        af0 = gen_random_init_conds(func, **fkwargs)
+#        af0 = gen_random_init_conds(func, **fkwargs)
+        itmp = func(XX=None, **fkwargs)
+        af0 = _np.copy(itmp._af)
 
 #        kwargs['maxiter'] = 200 if ii<(nfreqs-1) else 1200
         if ii>0:
             af0 = _np.asarray( info1.af.tolist() + af0[-info1._params_per_freq:].tolist() )
-#            kwargs['fixed'] = _np.hstack(( _np.ones_like(info1.fixed),
-#                                _np.zeros((info1._params_per_freq,), dtype=int)))
+            kwargs['fixed'] = _np.hstack(( _np.ones_like(info1.fixed),
+                                _np.zeros((info1._params_per_freq,), dtype=int)))
 #            kwargs['Lbounds'] = _np.asarray(
 #                (info1.af-0.5*_np.abs(info1.af)).tolist()+info1.Lbounds[-info1._params_per_freq:].tolist())
 #            kwargs['Ubounds'] = _np.asarray(
@@ -1383,14 +1399,11 @@ def test_fourier_fit(func=_ms.model_sines, **fkwargs):
 
         kwargs.setdefault('plotit', False)
         info1 = modelfit(xdat, ydat, yerr, XX, func, fkwargs, **kwargs)
-#       assert _np.allclose(info1.params, aa)
-#       assert info.dof==len(xdat)-len(aa)
-
-        # ====================== #
-
         info2 = modelfit(xdat, ytmp, yerr, XX, func, fkwargs, **kwargs)
     # end if
-
+    kwargs['fixed'] = _np.zeros_like(info1.fixed)
+#    kwargs['Lbounds'] = info1.af-0.1*_np.abs(info1.af)
+#    kwargs['Ubounds'] = info1.af+0.1*_np.abs(info1.af)
     kwargs['af0'] = info1.af
     info1 = modelfit(xdat, ydat, yerr, XX, func, fkwargs, **kwargs)
     kwargs['af0'] = info2.af
@@ -2139,34 +2152,26 @@ if __name__=="__main__":
 #        out, ft = doppler_test(scale_by_data=False, logdata=False, Fs=1.0, fmax=None)
 #    print(out)
 
+#    test_qparab_fit(nohollow=False)
+#    test_qparab_fit(nohollow=True)
+#    ft = test_fitNL(False)
+#    ft = test_fitNL(True)  # issue with interpolation when x>1 and x<0?
+
+
+#    test_fit(_ms.model_line, scale_problem=True)  # scaling and shifting works
+#
     test_fourier_fit(_ms.model_sines, nfreqs=1,  Fs=10e3, numpts=int(6.0*1e3/33.0), fmod=33.0)
     test_fourier_fit(_ms.model_sines, nfreqs=3, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0)
     test_fourier_fit(_ms.model_sines, nfreqs=7, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
+    # =====  #
 #    test_fourier_fit(_ms.model_fourier, nfreqs=3, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0)
 #    test_fourier_fit(_ms.model_fourier, nfreqs=14, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square')
 #    test_fourier_fit(_ms.model_fourier, nfreqs=6, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
 #    test_fourier_fit(_ms.model_fourier, nfreqs=10, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
 #    test_fourier_fit(_ms.model_fourier, nfreqs=14, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
-###
-#    test_qparab_fit(nohollow=False)
-#    test_qparab_fit(nohollow=True)
-##    ft = test_fitNL(False)
-##    ft = test_fitNL(True)  # issue with interpolation when x>1 and x<0?
-#
-#    test_fit(_ms.model_line)
-#    test_fit(_ms.model_gaussian, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
-#    test_fit(_ms.model_normal, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
-#    test_fit(_ms.model_lorentzian, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
-##    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=0, tbnds=[-0.5,0.5], num=18750)
-##    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=1, tbnds=[-0.5,0.5], num=18750)
-##    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=2, tbnds=[-0.5,0.5], num=18750)
-##    test_fit(_ms.model_doppler, noshift=0, Fs=1.0, model_order=2, tbnds=[-0.5,0.5], num=18750)
-#    test_fit(_ms._model_twopower)
-#    test_fit(_ms.model_twopower)
-#    test_fit(_ms.model_expedge)
-#    test_fit(_ms.model_qparab, nohollow=False) # broken
-#    test_fit(_ms.model_qparab, nohollow=True)
-#    test_fit(_ms.model_poly, npoly=2)
+    # =====  #
+
+    test_fit(_ms.model_poly, npoly=2)
 #    test_fit(_ms.model_poly, npoly=3)
 #    test_fit(_ms.model_poly, npoly=6)
 #    test_fit(_ms.model_ProdExp, npoly=2)
@@ -2182,10 +2187,30 @@ if __name__=="__main__":
 #    test_fit(_ms.model_Exponential)
 #    test_fit(_ms.model_parabolic)
 
-#    # double check math! --- put in abs(XX) where necessary,
-#    # use subfunctions/ chain rule for derivatives
-#    test_fit(_ms.model_flattop)    # check math, looks good
-#    test_fit(_ms.model_massberg)   # check, looks good
+
+#    test_fit(_ms.model_gaussian, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
+#    test_fit(_ms._model_offsetgaussian, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
+#    test_fit(_ms.model_normal, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
+#    test_fit(_ms._model_offsetnormal, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
+#    test_fit(_ms.model_loggaussian, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
+#    test_fit(_ms.model_lorentzian, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
+#    test_fit(_ms.model_pseudovoigt, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
+#    test_fit(_ms.model_loglorentzian, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
+##    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=0, tbnds=[-0.5,0.5], num=18750)
+##    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=1, tbnds=[-0.5,0.5], num=18750)
+##    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=2, tbnds=[-0.5,0.5], num=18750)
+##    test_fit(_ms.model_doppler, noshift=0, Fs=1.0, model_order=2, tbnds=[-0.5,0.5], num=18750)
+##    test_fit(_ms.model_doppler, logdata=True, noshift=1, Fs=1.0, model_order=0, tbnds=[-0.5,0.5], num=18750)
+##    test_fit(_ms.model_doppler, logdata=True, noshift=1, Fs=1.0, model_order=1, tbnds=[-0.5,0.5], num=18750)
+##    test_fit(_ms.model_doppler, logdata=True, noshift=1, Fs=1.0, model_order=2, tbnds=[-0.5,0.5], num=18750)
+##    test_fit(_ms.model_doppler, logdata=True, noshift=0, Fs=1.0, model_order=2, tbnds=[-0.5,0.5], num=18750)
+#    test_fit(_ms._model_twopower)
+#    test_fit(_ms.model_twopower)
+#    test_fit(_ms.model_expedge)
+#    test_fit(_ms.model_qparab, nohollow=False) # broken
+#    test_fit(_ms.model_qparab, nohollow=True)
+#    test_fit(_ms.model_flattop)
+#    test_fit(_ms.model_massberg)
 #
 #    # need to be reformatted still (2 left!)
 ##    test_fit(_ms.model_Heaviside, npoly=3, rinits=[0.30, 0.35])
