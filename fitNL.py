@@ -283,7 +283,7 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
         print('Input error meant for weights includes zeros! this is not allowed')
         return None
     # subfunction kwargs
-    scale_by_data = kwargs.setdefault('scale_problem',False)
+    scale_by_data = kwargs.setdefault('scale_problem',True)
     use_perpendicular_distance = kwargs.setdefault('perpchi2', False)
 
     # fitter kwargs
@@ -2172,15 +2172,15 @@ if __name__=="__main__":
     # =====  #
 
     test_fit(_ms.model_poly, npoly=2)
-#    test_fit(_ms.model_poly, npoly=3)
-#    test_fit(_ms.model_poly, npoly=6)
-#    test_fit(_ms.model_ProdExp, npoly=2)
-#    test_fit(_ms.model_ProdExp, npoly=3)
-#    test_fit(_ms.model_ProdExp, npoly=4)
-#    test_fit(_ms.model_evenpoly, npoly=2)
-#    test_fit(_ms.model_evenpoly, npoly=3)
-#    test_fit(_ms.model_evenpoly, npoly=6)
-#    test_fit(_ms.model_evenpoly, npoly=10)
+    test_fit(_ms.model_poly, npoly=3)
+    test_fit(_ms.model_poly, npoly=6)
+    test_fit(_ms.model_ProdExp, npoly=2)
+    test_fit(_ms.model_ProdExp, npoly=3)
+    test_fit(_ms.model_ProdExp, npoly=4)
+    test_fit(_ms.model_evenpoly, npoly=2)
+    test_fit(_ms.model_evenpoly, npoly=3)
+    test_fit(_ms.model_evenpoly, npoly=6)
+    test_fit(_ms.model_evenpoly, npoly=10)
 #    test_fit(_ms.model_PowerLaw, npoly=4)   # Nan's generated in model parameters
 #    test_fit(_ms.model_PowerLaw, npoly=5)   #
 #    test_fit(_ms.model_PowerLaw, npoly=6)   #
