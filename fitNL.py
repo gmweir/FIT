@@ -2160,32 +2160,32 @@ if __name__=="__main__":
 
 #    test_fit(_ms.model_line, scale_problem=True)  # scaling and shifting works
 #
-    test_fourier_fit(_ms.model_sines, nfreqs=1,  Fs=10e3, numpts=int(6.0*1e3/33.0), fmod=33.0)
-    test_fourier_fit(_ms.model_sines, nfreqs=3, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0)
-    test_fourier_fit(_ms.model_sines, nfreqs=7, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
-    # =====  #
-#    test_fourier_fit(_ms.model_fourier, nfreqs=3, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0)
-#    test_fourier_fit(_ms.model_fourier, nfreqs=14, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square')
-#    test_fourier_fit(_ms.model_fourier, nfreqs=6, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
-#    test_fourier_fit(_ms.model_fourier, nfreqs=10, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
-#    test_fourier_fit(_ms.model_fourier, nfreqs=14, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
-    # =====  #
-
-    test_fit(_ms.model_poly, npoly=2)
-    test_fit(_ms.model_poly, npoly=3)
-    test_fit(_ms.model_poly, npoly=6)
-    test_fit(_ms.model_ProdExp, npoly=2)
-    test_fit(_ms.model_ProdExp, npoly=3)
-    test_fit(_ms.model_ProdExp, npoly=4)
-    test_fit(_ms.model_evenpoly, npoly=2)
-    test_fit(_ms.model_evenpoly, npoly=3)
-    test_fit(_ms.model_evenpoly, npoly=6)
-    test_fit(_ms.model_evenpoly, npoly=10)
-#    test_fit(_ms.model_PowerLaw, npoly=4)   # Nan's generated in model parameters
-#    test_fit(_ms.model_PowerLaw, npoly=5)   #
-#    test_fit(_ms.model_PowerLaw, npoly=6)   #
-#    test_fit(_ms.model_Exponential)
-#    test_fit(_ms.model_parabolic)
+#    test_fourier_fit(_ms.model_sines, nfreqs=1,  Fs=10e3, numpts=int(6.0*1e3/33.0), fmod=33.0)
+#    test_fourier_fit(_ms.model_sines, nfreqs=3, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0)
+#    test_fourier_fit(_ms.model_sines, nfreqs=7, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
+#    # =====  #
+##    test_fourier_fit(_ms.model_fourier, nfreqs=3, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0)
+##    test_fourier_fit(_ms.model_fourier, nfreqs=14, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square')
+##    test_fourier_fit(_ms.model_fourier, nfreqs=6, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
+##    test_fourier_fit(_ms.model_fourier, nfreqs=10, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
+##    test_fourier_fit(_ms.model_fourier, nfreqs=14, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
+#    # =====  #
+#
+#    test_fit(_ms.model_poly, npoly=2)
+#    test_fit(_ms.model_poly, npoly=3)
+#    test_fit(_ms.model_poly, npoly=6)
+#    test_fit(_ms.model_ProdExp, npoly=2)
+#    test_fit(_ms.model_ProdExp, npoly=3)
+#    test_fit(_ms.model_ProdExp, npoly=4)
+#    test_fit(_ms.model_evenpoly, npoly=2)
+#    test_fit(_ms.model_evenpoly, npoly=3)
+#    test_fit(_ms.model_evenpoly, npoly=6)
+#    test_fit(_ms.model_evenpoly, npoly=10)
+    test_fit(_ms.model_PowerLaw, npoly=4)   # Nan's generated in model parameters
+    test_fit(_ms.model_PowerLaw, npoly=5)   #
+    test_fit(_ms.model_PowerLaw, npoly=6)   #
+    test_fit(_ms.model_Exponential)
+    test_fit(_ms.model_parabolic)
 
 
 #    test_fit(_ms.model_gaussian, Fs=10e3, numpts=int(10e3*6*1.2/33.0))

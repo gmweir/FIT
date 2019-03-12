@@ -2416,7 +2416,7 @@ class ModelPowerLaw(ModelClass):
 
     # ====================================== #
 
-    def unscaleaf(self, ain):
+    def unscaleaf(self, ain, **kwargs):
         """
         f = a(n+2) * exp(a(n+1)*x) * x^( a1*x^(n)+a2*x^(n-1)+...a(n) )
 
@@ -2443,17 +2443,38 @@ class ModelPowerLaw(ModelClass):
             therefore we can shift it in log-space
             ... gathering terms will be a pain ... leave this for later
 
+        ============
+
          a(n+2) = ys* an2'
+         a(n+1) = an1'/xs
+         a(n) = an' - an1'*xo/xs
         """
-        ain = _np.copy(ain)
-        aout = _np.copy(ain)  # TODO!:   Finish scalings
-        aout[-1] *= self.slope
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)   # analysis:ignore
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset)  # analysis:ignore
+
+        aout[-1] *= ys
+        aout[:-2] /= xs
+#        aout[:-3] = ModelPoly.unscaleaf(ain[:-3], xo=xo, xs=xs, ys=ys, yo=yo)
+        return aout
+
+    def scaleaf(self, ain, **kwargs):
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)   # analysis:ignore
+        xs = kwargs.setdefault('xs', self.xslope)   # analysis:ignore
+        xo = kwargs.setdefault('xo', self.xoffset)  # analysis:ignore
+
+        aout[-1] /= ys
+#        aout[:-2] *= xs
         return aout
 
     def scalings(self, xdat, ydat, **kwargs):
-        self.offset = 0.0      # TODO!:   Finish scalings
-        self.xoffset = 0.0     # TODO!:   Finish scalings
-        self.xscaling = 1.0    # TODO!:   Finish scalingss
+        self.offset = 0.0
+        self.xoffset = 0.0
+        self.xslope = 1.0
         return super(ModelPowerLaw, self).scalings(xdat, ydat, **kwargs)
     # ====================================== #
 
@@ -2889,7 +2910,7 @@ class ModelExponential(ModelClass):
     # ====================================== #
 
 
-    def unscaleaf(self, ain):
+    def unscaleaf(self, ain, **kwargs):
         """
         y = a*(exp(b*XX^c) + XX^d) = f1+f2
 
@@ -2916,9 +2937,21 @@ class ModelExponential(ModelClass):
                          the last term will give us -b'/xs^c'*xs^c' = d'ln|xs|
                          or b' = -d'ln|xs|  ... won't work with other terms
         """
-        ain = _np.copy(ain)
-        aout = _np.copy(ain)
-        aout[0] *= self.slope
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)   # analysis:ignore
+        xs = kwargs.setdefault('xs', self.xslope)   # analysis:ignore
+        xo = kwargs.setdefault('xo', self.xoffset)  # analysis:ignore
+        aout[0] *= ys
+        return aout
+
+    def scaleaf(self, ain, **kwargs):
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)   # analysis:ignore
+        xs = kwargs.setdefault('xs', self.xslope)   # analysis:ignore
+        xo = kwargs.setdefault('xo', self.xoffset)  # analysis:ignore
+        aout[0] /= ys
         return aout
 
     def scalings(self, xdat, ydat, **kwargs):
@@ -3147,7 +3180,7 @@ class ModelGaussian(ModelClass):
     # ====================================== #
 
 
-    def unscaleaf(self, ain):
+    def unscaleaf(self, ain, **kwargs):
         """
         If fitting with scaling, then the algebra necessary to unscale the problem
         to original units is:
@@ -3176,11 +3209,27 @@ class ModelGaussian(ModelClass):
                  iff yo=0.0
                  x-shift and xy-scaling works, but yo shifting does not
         """
-        ain = _np.copy(ain)
-        aout = _np.copy(ain)
-        aout[0] = self.slope*aout[0]
-        aout[1] = self.xslope*aout[1]+self.xoffset
-        aout[2] = self.xslope*aout[2]
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)   # analysis:ignore
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset)
+
+        aout[0] = ys*ain[0]
+        aout[1] = xs*ain[1]+xo
+        aout[2] = xs*ain[2]
+        return aout
+
+    def scaleaf(self, ain, **kwargs):
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)   # analysis:ignore
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset)
+
+        aout[0] =  ain[0]/ys
+        aout[1] = (ain[1]-xo)/xs
+        aout[2] = ain[2]/xs
         return aout
 
     def scalings(self, xdat, ydat, **kwargs):
@@ -3284,7 +3333,7 @@ class ModelOffsetGaussian(ModelClass):
     # ====================================== #
 
 
-    def unscaleaf(self, ain):
+    def unscaleaf(self, ain, **kwargs):
         """
         If fitting with scaling, then the algebra necessary to unscale the problem
         to original units is:
@@ -3305,12 +3354,28 @@ class ModelOffsetGaussian(ModelClass):
                  b = b'*xs + xo
                  c = c'*xs
         """
-        ain = _np.copy(ain)
-        aout = _np.copy(ain)
-        aout[0] = self.slope*aout[0] + self.offset
-        aout[1] = self.slope*aout[1]
-        aout[2] = self.xslope*aout[2]+self.xoffset
-        aout[3] = self.xslope*aout[3]
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset)
+        aout[0] = ys*aout[0] + yo
+        aout[1] = ys*aout[1]
+        aout[2] = xs*aout[2]+xo
+        aout[3] = xs*aout[3]
+        return aout
+
+    def scaleaf(self, ain, **kwargs):
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset)
+
+        aout[0] =  (ain[0]-yo)/ys
+        aout[1] = ain[1]/ys
+        aout[2] = (ain[2]-xo)/xs
+        aout[3] = ain[3]/xs
         return aout
 
     # ====================================== #
@@ -3449,7 +3514,7 @@ class ModelOffsetNormal(ModelClass):
 #       return hmat
     # ====================================== #
 
-    def unscaleaf(self, ain):
+    def unscaleaf(self, ain, **kwargs):
         """
         If fitting with scaling, then the algebra necessary to unscale the problem
         to original units is:
@@ -3467,12 +3532,29 @@ class ModelOffsetNormal(ModelClass):
                  b = b'*xs + xo
                  c = c'*xs
         """
-        ain = _np.copy(ain)
-        aout = _np.copy(ain)
-        aout[0] = self.slope*ain[0] + self.offset
-        aout[1] = self.slope*self.xslope*ain[1]
-        aout[2] = self.xslope*ain[2]+self.xoffset
-        aout[3] = self.xslope*aout[3]
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset)
+
+        aout[0] = ys*ain[0] + yo
+        aout[1] = ys*xs*ain[1]
+        aout[2] = xs*ain[2]+xo
+        aout[3] = xs*aout[3]
+        return aout
+
+    def scaleaf(self, ain, **kwargs):
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset)
+
+        aout[0] = (ain[0]-yo)/ys
+        aout[1] = (ain[1]/xs)/ys
+        aout[2] = (ain[2]-xo)/xs
+        aout[3] = ain[3]/xs
         return aout
 
     # ====================================== #
@@ -3672,7 +3754,7 @@ class ModelNormal(ModelClass):
     # ====================================== #
 
 
-    def unscaleaf(self, ain):
+    def unscaleaf(self, ain, **kwargs):
         """
         If fitting with scaling, then the algebra necessary to unscale the problem
         to original units is:
@@ -3698,12 +3780,29 @@ class ModelNormal(ModelClass):
                  iff yo=0.0
                  x-shift and xy-scaling works, but yo shifting does not
         """
-        ain = _np.copy(ain)
-        aout = _np.copy(ain)
-        aout[0] = self.slope*self.xslope*aout[0]
-        aout[1] = self.xslope*aout[1]+self.xoffset
-        aout[2] = self.xslope*aout[2]
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset) # analysis:ignore
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset)
+
+        aout[0] = ys*xs*aout[0]
+        aout[1] = xs*aout[1]+xo
+        aout[2] = xs*aout[2]
         return aout
+
+    def scaleaf(self, ain, **kwargs):
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)  # analysis:ignore
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset)
+
+        aout[0] = (ain[0]/xs)/ys
+        aout[1] = (ain[1]-xo)/xs
+        aout[2] = (ain[2])/xs
+        return aout
+
 
     def scalings(self, xdat, ydat, **kwargs):
         self.offset = 0.0
@@ -3940,7 +4039,7 @@ class ModelLogGaussian(ModelClass):
     # ====================================== #
 
 
-    def unscaleaf(self, ain):
+    def unscaleaf(self, ain, **kwargs):
         """
         If fitting with scaling, then the algebra necessary to unscale the problem
         to original units is much easier than the gaussian case:
@@ -3970,13 +4069,35 @@ class ModelLogGaussian(ModelClass):
                     possible to shift and scale x- and y-data
          found in the info Structure
         """
-        ain = _np.copy(ain)
-        aout = _np.copy(ain)
-        aout[0] = _np.exp( _np.log(10.0)*self.offset/10.0 + self.slope*_np.log(_np.abs(aout[0])))
-        aout[1] = self.xslope*aout[1]+self.xoffset
-        aout[2] = self.xslope*aout[2]*_np.sqrt( _np.log(10.0)/(10.0*self.slope))
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset)
+
+        aout[0] = _np.exp( _np.log(10.0)*yo/10.0 + ys*_np.log(_np.abs(aout[0])))
+        aout[1] = xs*aout[1]+xo
+        aout[2] = xs*aout[2]*_np.sqrt( _np.log(10.0)/(10.0*ys))
         return aout
 
+    def scaleaf(self, ain, **kwargs):
+        """
+
+        a = exp( ln(10)*yo/10.0+ys*ln(a') )
+        a' = exp( (ln(a)-ln(10)*yo/10.0)/ys )
+
+        """
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset)
+
+
+        aout[0] = _np.exp( (_np.log(_np.abs(aout[0])) - _np.log(10.0)*yo/10.0)/ys )
+        aout[1] = (ain[1]-xo)/xs
+        aout[2] = (ain[2])/(xs*_np.power( _np.log(10.0)/ (10.0*ys), 0.5))
+        return aout
     # ====================================== #
 
 #    def checkbounds(self, dat, ain):
@@ -4234,7 +4355,7 @@ class ModelLorentzian(ModelClass):
     # ====================================== #
 
 
-    def unscaleaf(self, ain):
+    def unscaleaf(self, ain, **kwargs):
         """
         If fitting with scaling, then the algebra necessary to unscale the problem
         to original units is:
@@ -4258,11 +4379,34 @@ class ModelLorentzian(ModelClass):
             c = xs*c'
             and yo = 0.0
         """
-        ain = _np.copy(ain)
-        aout = _np.copy(ain)
-        aout[0] = self.slope*self.xslope*aout[0]
-        aout[1] = self.xslope*aout[1]+self.xoffset
-        aout[2] = self.xslope*aout[2]
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)  # analysis:ignore
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset)
+
+        aout[0] = ys*xs*aout[0]
+        aout[1] = xs*aout[1]+xo
+        aout[2] = xs*aout[2]
+        return aout
+
+    def scaleaf(self, ain, **kwargs):
+        """
+            a = ys*xs*a'
+            b = xs*b'+xo
+            c = xs*c'
+            and yo = 0.0
+        """
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)  # analysis:ignore
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset)
+
+
+        aout[0] = ain[0]/(xs*ys)
+        aout[1] = (ain[1]-xo)/xs
+        aout[2] = ain[2]/xs
         return aout
 
     def scalings(self, xdat, ydat, **kwargs):
@@ -4358,28 +4502,49 @@ class ModelPseudoVoigt(ModelClass):
 
     # ====================================== #
 
-    def unscaleaf(self, ain):
+    def unscaleaf(self, ain, **kwargs):
         """
         A combination of lorentzian and normal models
         y = a * L + (1-a)*N
             Note that x-shift and xy-scaling works for Normal/Lorentzian models
             but that y-shifting does not
         """
-        ain = _np.copy(ain)
-        aout = _np.copy(ain)
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)  # analysis:ignore
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset)
 
         LM = ModelLorentzian(None)
-        LM.slope = self.slope
-        LM.xslope = self.xslope
-        LM.xoffset = self.xoffset
-        aout[1:4] = LM.unscaleaf(aout[1:4])
+#        LM.slope = ys
+#        LM.xslope = xs
+#        LM.xoffset = xo
+        aout[1:4] = LM.unscaleaf(aout[1:4], xo=xo, xs=xs, ys=ys, yo=0.0)
 
         NM = ModelNormal(None)
-        NM.slope = self.slope
-        NM.xslope = self.xslope
-        NM.xoffset = self.xoffset
-        aout[4:] = NM.unscaleaf(aout[4:])
+#        NM.slope = ys
+#        NM.xslope = xs
+#        NM.xoffset = xo
+        aout[4:] = NM.unscaleaf(aout[4:], xo=xo, xs=xs, ys=ys, yo=0.0)
+        return aout
 
+    def scaleaf(self, ain, **kwargs):
+        """
+            a = ys*xs*a'
+            b = xs*b'+xo
+            c = xs*c'
+            and yo = 0.0
+        """
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)  # analysis:ignore
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset)
+
+        LM = ModelLorentzian(None)
+        NM = ModelNormal(None)
+        aout[1:4] = LM.scaleaf(aout[1:4], xo=xo, xs=xs, ys=ys, yo=0.0)
+        aout[4:] = NM.scaleaf(aout[4:], xo=xo, xs=xs, ys=ys, yo=0.0)
         return aout
 
     def scalings(self, xdat, ydat, **kwargs):
@@ -4559,7 +4724,7 @@ class ModelLogLorentzian(ModelClass):
     # ====================================== #
 
 
-    def unscaleaf(self, ain):
+    def unscaleaf(self, ain, **kwargs):
         """
         If fitting with scaling, then the algebra necessary to unscale the problem
         to original units is:
@@ -4588,11 +4753,34 @@ class ModelLogLorentzian(ModelClass):
                          b = xs*b'+xo
                          c = xs*c'
         """
-        ain = _np.copy(ain)
-        aout = _np.copy(ain)
-        aout[0] = _np.exp( _np.log(10.0)*self.offset/10.0 - 2.0*self.slope*_np.log(_np.abs(self.xslope))+self.slope*_np.log(_np.abs(aout[0])))
-        aout[1] = self.xslope*aout[1]+self.xoffset
-        aout[2] = self.xslope*aout[2]
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)  # analysis:ignore
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset)
+
+        aout[0] = _np.exp( _np.log(10.0)*yo/10.0 - 2.0*ys*_np.log(_np.abs(xs))+ys*_np.log(_np.abs(aout[0])))
+        aout[1] = xs*aout[1]+xo
+        aout[2] = xs*aout[2]
+        return aout
+
+    def scaleaf(self, ain, **kwargs):
+        """
+            a = ys*xs*a'
+            b = xs*b'+xo
+            c = xs*c'
+            and yo = 0.0
+        """
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)  # analysis:ignore
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset)
+
+
+        aout[0] = _np.exp( (_np.log(_np.abs(ain[0]))-_np.log(10.0)/10.0*yo-2.0*ys*_np.log(_np.abs(xs)))/ys )
+        aout[1] = (ain[1]-xo)/xs
+        aout[2] = ain[2]/xs
         return aout
 
     # ====================================== #
@@ -4780,28 +4968,60 @@ class ModelDoppler(ModelClass):
 
     # ====================================== #
 
-    def unscaleaf(self, ain):
+    def unscaleaf(self, ain, **kwargs):
         """
         A combination of Lorentzian and Normal models.
         Both can be xy-scaled, and x-shifted but not y-shifted
         """
-        ain = _np.copy(ain)
-        aout = _np.copy(ain)
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)  # analysis:ignore
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset)
         a0, a1, a2 = _parse_noshift(aout, model_order=self.model_order)
 
         NM = ModelNormal(None)
-        NM.slope = self.slope
-        NM.xoffset = self.xoffset
-        NM.xslope = self.xslope
+        NM.slope = ys
+        NM.xoffset = xo
+        NM.xslope = xs
         aout = NM.unscaleaf(a0)
         if self.model_order>0:
             LM = ModelLorentzian(None)
-            LM.slope = self.slope
-            LM.xoffset = self.xoffset
-            LM.xslope = self.xslope
+            LM.slope = ys
+            LM.xoffset = xo
+            LM.xslope = xs
             aout = _np.concatenate(aout, LM.unscaleaf(a1), axis=0)
         if self.model_order>1:
             aout = _np.concatenate(aout, NM.unscaleaf(a2), axis=0)
+        return aout
+
+    def scaleaf(self, ain, **kwargs):
+        """
+            a = ys*xs*a'
+            b = xs*b'+xo
+            c = xs*c'
+            and yo = 0.0
+        """
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)  # analysis:ignore
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset)
+        a0, a1, a2 = _parse_noshift(aout, model_order=self.model_order)
+
+        NM = ModelNormal(None)
+        NM.slope = ys
+        NM.xoffset = xo
+        NM.xslope = xs
+        aout = NM.scaleaf(a0)
+        if self.model_order>0:
+            LM = ModelLorentzian(None)
+            LM.slope = ys
+            LM.xoffset = xo
+            LM.xslope = xs
+            aout = _np.concatenate(aout, LM.scaleaf(a1), axis=0)
+        if self.model_order>1:
+            aout = _np.concatenate(aout, NM.scaleaf(a2), axis=0)
         return aout
 
     def scalings(self, xdat, ydat, **kwargs):
@@ -5011,26 +5231,54 @@ class ModelLogDoppler(ModelDoppler):
 
     # ====================================== #
 
-    def unscaleaf(self, ain):
+    def unscaleaf(self, ain, **kwargs):
         """
         """
-        ain = _np.copy(ain)
-        aout = _np.copy(ain)
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)  # analysis:ignore
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset)
+
         a0, a1, a2 = _parse_noshift(aout, model_order=self.model_order)
 
         NM = ModelNormal(None)
-        NM.slope = self.slope
-        NM.xoffset = self.xoffset
-        NM.xslope = self.xslope
+        NM.slope = ys
+        NM.xoffset = xo
+        NM.xslope = xs
         aout = ModelNormal.unscaleaf(a0)
         if self.model_order>0:
             LM = ModelLorentzian(None)
-            LM.slope = self.slope
-            LM.xoffset = self.xoffset
-            LM.xslope = self.xslope
+            LM.slope = ys
+            LM.xoffset = xo
+            LM.xslope = xs
             aout = _np.concatenate(aout, LM.unscaleaf(a1), axis=0)
         if self.model_order>1:
             aout = _np.concatenate(aout, NM.unscaleaf(a2), axis=0)
+        return aout
+
+    def scaleaf(self, ain, **kwargs):
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)  # analysis:ignore
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset)
+
+        a0, a1, a2 = _parse_noshift(aout, model_order=self.model_order)
+
+        NM = ModelNormal(None)
+        NM.slope = ys
+        NM.xoffset = xo
+        NM.xslope = xs
+        aout = ModelNormal.scaleaf(a0)
+        if self.model_order>0:
+            LM = ModelLorentzian(None)
+            LM.slope = ys
+            LM.xoffset = xo
+            LM.xslope = xs
+            aout = _np.concatenate(aout, LM.scaleaf(a1), axis=0)
+        if self.model_order>1:
+            aout = _np.concatenate(aout, NM.scaleaf(a2), axis=0)
         return aout
 
     def scalings(self, xdat, ydat, **kwargs):
@@ -5345,7 +5593,7 @@ class _ModelTwoPower(ModelClass):
     # ====================================== #
 
 
-    def unscaleaf(self, ain):
+    def unscaleaf(self, ain, **kwargs):
         """
          y-scaling is possible, but everything else is non-linear
                      f = a*(1.0 - x^c)^d
@@ -5353,18 +5601,26 @@ class _ModelTwoPower(ModelClass):
         y = a*ys*(1-x^c)^d
         a = ys*a'
         """
-        ain = _np.copy(ain)
-        aout = _np.copy(ain)
-        aout[0] = self.slope*ain[0]
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)  # analysis:ignore
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset)
+
+        aout[0] = ys*ain[0]
         return aout
 
-    def scaleaf(self, ain):
+    def scaleaf(self, ain, **kwargs):
         """
         a = ys*a'   0> a'=a/ys
         """
-        ain = _np.copy(ain)
-        aout = _np.copy(ain)
-        aout[0] = ain[0]/self.slope
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)  # analysis:ignore
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset)
+
+        aout[0] = ain[0]/ys
         return aout
 
     def scalings(self, xdat, ydat, **kwargs):
@@ -5537,7 +5793,7 @@ class ModelTwoPower(ModelClass):
     # ====================================== #
 
 
-    def unscaleaf(self, ain):
+    def unscaleaf(self, ain, **kwargs):
         """
         y = a*(1-b)*(1-x^c)^d + a*b
 
@@ -5566,15 +5822,17 @@ class ModelTwoPower(ModelClass):
                 doesn't work due to the nonlinearity, xo=0, xs=1
             ========
         """
-        ain = _np.copy(ain)
-        aout = _np.copy(ain)
-        yo = self.offset
-        ys = self.slope
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)
+        xs = kwargs.setdefault('xs', self.xslope)  # analysis:ignore
+        xo = kwargs.setdefault('xo', self.xoffset)  # analysis:ignore
+
         aout[0] = yo + ys*ain[0]
         aout[1] = 1.0 - ys*(1-ain[1])*ain[0]/aout[0]
         return aout
 
-    def scaleaf(self, ain):
+    def scaleaf(self, ain, **kwargs):
         """
         y = a*(1-b)*(1-x^c)^d + a*b
 
@@ -5588,10 +5846,12 @@ class ModelTwoPower(ModelClass):
                  1-b' = -(b-1)*a/(ys*a')
              b' = 1.0-(1-b)*a/(ys*a')
         """
-        ain = _np.copy(ain)
-        aout = _np.copy(ain)
-        yo = self.offset
-        ys = self.slope
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)
+        xs = kwargs.setdefault('xs', self.xslope)  # analysis:ignore
+        xo = kwargs.setdefault('xo', self.xoffset)  # analysis:ignore
+
         aout[0] = (ain[0] - yo)/ys
         aout[1] = 1.0 - (1-ain[1])*aout[0]/(ys*ain[0])
         return aout
@@ -5796,7 +6056,7 @@ class ModelExpEdge(ModelClass):
     # ====================================== #
 
 
-    def unscaleaf(self, ain):
+    def unscaleaf(self, ain, **kwargs):
         """
             y-scaling: y' = y/ys
             y' = y/ys = e'*(1-exp(-x^2/h'^2))
@@ -5829,13 +6089,17 @@ class ModelExpEdge(ModelClass):
                 h = h' * xs
                 iff xo, yo = 0
         """
-        ain = _np.copy(ain)
-        aout = _np.copy(ain)
-        aout[0] = self.slope*aout[0]
-        aout[1] = self.xslope*aout[1]
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)  # analysis:ignore
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset) # analysis:ignore
+
+        aout[0] = ys*aout[0]
+        aout[1] = xs*aout[1]
         return aout
 
-    def scaleaf(self, ain):
+    def scaleaf(self, ain, **kwargs):
         """
         Undo above:
             y' = y/ys = e'*(1-exp(-x^2/(xs*h')^2))
@@ -5846,10 +6110,14 @@ class ModelExpEdge(ModelClass):
                 h' = h / xs
                 iff xo, yo = 0
         """
-        ain = _np.copy(ain)
-        aout = _np.copy(ain)
-        aout[0] = aout[0]/self.slope
-        aout[1] = aout[1]/self.xslope
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)  # analysis:ignore
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset) # analysis:ignore
+
+        aout[0] = aout[0]/ys
+        aout[1] = aout[1]/xs
         return aout
 
     def scalings(self, xdat, ydat, **kwargs):
@@ -6514,7 +6782,7 @@ class ModelFlattop(ModelClass):
     # ====================================== #
 
 
-    def unscaleaf(self, ain):
+    def unscaleaf(self, ain, **kwargs):
         """
         y = = a / (1 + (x/b)^c)
         y-scaling:  y'=y/ys
@@ -6539,10 +6807,25 @@ class ModelFlattop(ModelClass):
         c = c'
         iff xo, yo = 0.0
         """
-        ain = _np.copy(ain)
-        aout = _np.copy(ain)
-        aout[0] *= self.slope
-        aout[1] *= self.xslope
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)  # analysis:ignore
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset)  # analysis:ignore
+
+        aout[0] *= ys
+        aout[1] *= xs
+        return aout
+
+    def scaleaf(self, ain, **kwargs):
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)  # analysis:ignore
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset)  # analysis:ignore
+
+        aout[0] /= ys
+        aout[1] /= xs
         return aout
 
     def scalings(self, xdat, ydat, **kwargs):
@@ -6776,7 +7059,7 @@ class ModelMassberg(ModelClass):
     # ====================================== #
 
 
-    def unscaleaf(self, ain):
+    def unscaleaf(self, ain, **kwargs):
         """
         f = a*(1-h*x/b)/(1+(x/b)^c)
           = flattop*(1-h*x/b)
@@ -6808,10 +7091,25 @@ class ModelMassberg(ModelClass):
         c = c'
         iff xo, yo = 0.0
         """
-        ain = _np.copy(ain)
-        aout = _np.copy(ain)
-        aout[0] *= self.slope
-        aout[1] *= self.xslope
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)  # analysis:ignore
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset)  # analysis:ignore
+        aout[0] *= ys
+        aout[1] *= xs
+        return aout
+
+
+    def scaleaf(self, ain, **kwargs):
+        ain, aout = _np.copy(ain), _np.copy(ain)
+        ys = kwargs.setdefault('ys', self.slope)
+        yo = kwargs.setdefault('yo', self.offset)  # analysis:ignore
+        xs = kwargs.setdefault('xs', self.xslope)
+        xo = kwargs.setdefault('xo', self.xoffset)  # analysis:ignore
+
+        aout[0] /= ys
+        aout[1] /= xs
         return aout
 
     def scalings(self, xdat, ydat, **kwargs):
