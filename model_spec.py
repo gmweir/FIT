@@ -110,6 +110,8 @@ class ModelLine(ModelClass):
     _LB = _np.array([-_np.inf, -_np.inf], dtype=_np.float64)
     _UB = _np.array([_np.inf, _np.inf], dtype=_np.float64)
     _fixed = _np.array([0, 0], dtype=int)
+    _analytic_xscaling = True
+    _analytic_yscaling = True
     def __init__(self, XX=None, af=None, **kwargs):
         self._af = _np.random.uniform(low=-10.0, high=10.0, size=2)
         super(ModelLine, self).__init__(XX, af, **kwargs)
@@ -326,6 +328,8 @@ class ModelSines(ModelClass):
     _UB = _np.asarray([ _np.inf]+[ _np.inf, _np.inf,  _np.pi], dtype=_np.float64)
     _fixed = _np.asarray([0]+[0, 0, 0], dtype=int)
     _params_per_freq = 3
+    _analytic_xscaling = True
+    _analytic_yscaling = True
     def __init__(self, XX=None, af=None, **kwargs):
         # Tile defaults to the number of frequencies requested
         if af is not None:
@@ -859,11 +863,13 @@ class ModelFourier(ModelClass):
         af - [fundamental frequency, offset,
               a_ii, b_ii, a_ii+1, b_ii+1, ...]
     """
-    _af = _np.asarray([  33.0,     0.0,     0.5,     0.5], dtype=_np.float64)
-    _LB = _np.asarray([  1e-18,-_np.inf,-_np.inf,-_np.inf], dtype=_np.float64)
-    _UB = _np.asarray([_np.inf, _np.inf, _np.inf, _np.inf], dtype=_np.float64)
-    _fixed = _np.zeros( (4,), dtype=int)
+    _af = _np.asarray([  33.0,     0.0], dtype=_np.float64)
+    _LB = _np.asarray([  1e-18,-_np.inf], dtype=_np.float64)
+    _UB = _np.asarray([_np.inf, _np.inf], dtype=_np.float64)
+    _fixed = _np.zeros( (2,), dtype=int)
     _params_per_freq = 2
+    _analytic_xscaling = True
+    _analytic_yscaling = True
     def __init__(self, XX=None, af=None, **kwargs):
         # Tile defaults to the number of frequencies requested
         if af is not None:
@@ -1379,6 +1385,8 @@ class ModelPoly(ModelClass):
     af    - estimate of fitting parameters
     XX    - independent variable
     """
+    _analytic_xscaling = True
+    _analytic_yscaling = True
     def __init__(self, XX, af=None, **kwargs):
         if af is not None:
             npoly = _np.size(af)  # Number of fitting parameters
@@ -1526,7 +1534,7 @@ class ModelPoly(ModelClass):
 
             The matrix is sorted in powers of x in the columns
                 Rewrite the series for the coefficients
-                ai' = ys*sum_k (i,k)*(-xo)^(i-k)*xs^(-i)*ys*ai
+                ak' = ys*sum_i (i,k)*(-xo)^(i-k)*xs^(-i)*ai
                 ao' = ao' + yo
         """
         ain, aout = _np.copy(ain), _np.copy(ain)
@@ -1552,9 +1560,15 @@ class ModelPoly(ModelClass):
 
     def scaleaf(self, ain, **kwargs):
         """
-                Rewrite the series for the coefficients
-                ai' = ys*sum_i=[kton](i,k)*(-xo)^(i-k)*xs^(-i)*ys*ai
-                ao' = ao'+yo
+        Rewrite the series for the coefficients
+            ak' = ys*sum_i (i,k)*(-xo)^(i-k)*xs^(-i)*ai
+            ao' = ao' + yo
+
+            ys*ao + yo = sum_i=[0ton](i,0)*xo^(i-0)*xs^i*ai'
+            ys*ak = sum_i=[kton](i,k)*xo^(i-k)*xs^i*ai'
+
+            ao = sum_i=[1ton](i,1)*xo^(i-1)*xs^i*ai'/ys + (ao'-yo)/ys
+            ai = sum_i=[kton](i,k)*xo^(i-k)*xs^(i)*ai' / ys
         """
         ain, aout = _np.copy(ain), _np.copy(ain)
         ys = kwargs.setdefault('ys', self.slope)
@@ -1578,6 +1592,97 @@ class ModelPoly(ModelClass):
         # end for
         return aout
 
+#    def unscalecov(self, covin, **kwargs):
+#        """
+#        to scale the covariances, simplify the unscaleaf function to ignore offsets
+#        Use identitites:
+#         (1)   cov(X, Y) = cov(Y, X)
+#         (2)   cov(a+X, b+Y) = cov(X,Y)
+#         (3)   cov(aX, bY) = ab*cov(X,Y)
+#         (4)   cov(aX+bY, cW+dV) = ac*cov(X,W) + ad*cov(X,V) + bc*cov(Y,W) + bd*cov(Y,V)
+#         (5)   cov(aX+bY, aX+bY) = a^2*cov(X,X) + b^2*cov(Y,Y) + 2*ab*cov(X,Y)
+#
+#        Model:
+#            y'= (y-yo)/ys = sum( a_i'*((x-xo)/xs)^i )
+#
+#            y = yo + ys*sum( a_i'*((x-xo)/xs)^i )
+#
+#        Rewrite the series for the coefficients
+#            ak' = ys*sum_i=[kton](i,k)*(-xo)^(i-k)*xs^(-i)*ai
+#            ao' = ao'+yo
+#
+#        varao = varai at i=0   use (2)
+#        varak = cov(ys*sum_i=[kton](i,k)*(-xo)^(i-k)*xs^(-i)*ai, ys*sum_i=[kton](i,k)*(-xo)^(i-k)*xs^(-i)*ai)
+#              = ys^2*cov(sum_i=[kton](i,k)*(-xo)^(i-k)*xs^(-i)*ai)   use (5)
+#              = ys^2*sum_i=[kton](
+#                  ((i,k)*(-xo)^(i-k)*xs^(-i))^2* varai'      variance of i
+#                + sum_j=[k'ton',j!=i](  ((j,k')*(-xo)^(j-k')*xs^(-j))^2*varaj')    variance of j not equal to i
+#                + 2*(i,k)*(-xo)^(i-k)*xs^(-i)*sum_j=[k'ton',j!=i](  ((j,k')*(-xo)^(j-k')*xs^(-j))^2)*cov(ai',aj')    covariance of i with j (not equal to i)
+#                )
+#
+#        cov(ak,aj) =  use (4)
+#              = cov(ys*sum_i1=[kton](i1,k)*(-xo)^(i1-k)*xs^(-i1)*ai1, ys*sum_i2=[jton](i2,j)*(-xo)^(i2-j)*xs^(-i2)*ai2)
+#              = ys^2* sum_i1[kton]( sum_i2[jton] (i1,k)*(i2,j)*(-xo)^(i1+i2-k-j)*xs^(-i1-i2)*cov(ai1,ai2) )
+#        """
+#        covin = _np.copy(covin)
+#        covout = _np.copy(covin)
+#        ys = kwargs.setdefault('ys', self.slope)
+#        yo = kwargs.setdefault('yo', self.offset) # analysis:ignore unnec. for cov
+#        xs = kwargs.setdefault('xs', self.xslope)
+#        xo = kwargs.setdefault('xo', self.xoffset)
+#
+#        # Cover entire matrix then overwrite the diagonals
+#        nn = _np.size(covout, axis=0)    # maximum order of x in the problem#
+#        covout = _np.zeros_like(covin)
+#        for kk in range(nn):
+#            for jj in range(nn):
+#                for ii in range(kk,nn):
+#                    for ij in range(jj,nn):
+#                        tmp = _np.copy(covin[-(ii+1), -(ij+1)])
+#                        tmp *= _np.power(1.0/xs, kk+jj)
+#                        tmp *= self.nCr(ii,kk)
+#                        tmp *= self.nCr(ij,jj)
+#                        tmp *= _np.power(-1.0*xo/xs, ii-kk)
+#                        tmp *= _np.power(-1.0*xo/xs, ij-jj)
+#                        covout[-(ii+1),-(ij+1)] += _np.copy(tmp)
+#                    # end for
+#                # end for
+#            # end for
+#        # end for
+#
+#sum_i=[kton](
+#            ((i,k)*(-xo)^(i-k)*xs^(-i))^2* varai'      variance of i
+#                + sum_j=[k'ton',j!=i](  ((j,k')*(-xo)^(j-k')*xs^(-j))^2*varaj')    variance of j not equal to i
+#                + 2*(i,k)*(-xo)^(i-k)*xs^(-i)*sum_j=[k'ton',j!=i](  ((j,k')*(-xo)^(j-k')*xs^(-j))^2)*cov(ai',aj')    covariance of i with j (not equal to i)
+#                )
+#        # overwrite the diagonals
+#        for kk in range(nn):
+#            for ii in range(kk,nn):
+#                tmp = _np.copy(covin[-(ii+1), -(ii+1)])
+#                tmp *= _np.power(1.0/xs, kk)
+#                tmp *= self.nCr(ii,kk)
+#                        tmp *= self.nCr(ij,jj)
+#                        tmp *= _np.power(-1.0*xo/xs, ii-kk)
+#                        tmp *= _np.power(-1.0*xo/xs, ij-jj)
+#                        covout[-(ii+1),-(ij+1)] += _np.copy(tmp)
+#
+#             for jj in range(nn):
+#                for ii in range(kk,nn):
+#                    for ij in range(jj,nn):
+#                        tmp = _np.copy(covin[-(ii+1), -(ij+1)])
+#                        tmp *= _np.power(1.0/xs, kk+jj)
+#                        tmp *= self.nCr(ii,kk)
+#                        tmp *= self.nCr(ij,jj)
+#                        tmp *= _np.power(-1.0*xo/xs, ii-kk)
+#                        tmp *= _np.power(-1.0*xo/xs, ij-jj)
+#                        covout[-(ii+1),-(ij+1)] += _np.copy(tmp)
+#                    # end for
+#                # end for
+#            # end for
+#        # end for
+#        covout *= _np.power(ys, 2.0)
+#
+#        return covout
     # ====================================== #
 
 #    def checkbounds(self, dat):
@@ -1623,6 +1728,8 @@ class ModelProdExp(ModelClass):
         npoly is overruled by the shape of af.  It is only used if af is None
 
     """
+    _analytic_xscaling = True
+    _analytic_yscaling = True
     def __init__(self, XX, af=None, **kwargs):
         if af is not None:
             npoly = _np.size(af)  # Number of fitting parameters
@@ -1859,6 +1966,8 @@ class ModelEvenPoly(ModelClass):
 
     I do this by fitting a regular polynomial in sqrt(XX) space
     """
+    _analytic_xscaling = True
+    _analytic_yscaling = True
     def __init__(self, XX, af=None, **kwargs):
         if af is not None:
             npoly = _np.size(af)  # Number of fitting parameters
@@ -2125,6 +2234,8 @@ class ModelPowerLaw(ModelClass):
     y-shift:  y'=y/ys
        y = ys*a(n+2) * exp(a(n+1)*x) * x^( a1*x^(n)+a2*x^(n-1)+...a(n) )
     """
+    _analytic_xscaling = False
+    _analytic_yscaling = True
     def __init__(self, XX, af=None, **kwargs):
         if af is not None:
             num_fit = _np.size(af)  # Number of fitting parameters
@@ -2518,6 +2629,8 @@ class ModelParabolic(ModelClass):
     _LB = _np.asarray([1e-18], dtype=_np.float64)
     _UB = _np.asarray([_np.inf], dtype=_np.float64)
     _fixed = _np.zeros( (1,), dtype=int)
+    _analytic_xscaling = False
+    _analytic_yscaling = True
     def __init__(self, XX, af=None, **kwargs):
         super(ModelParabolic, self).__init__(XX, af, **kwargs)
     # end def __init__
@@ -2658,6 +2771,8 @@ class ModelExponential(ModelClass):
     _UB = _np.array([_np.inf, _np.inf, _np.inf, _np.inf], dtype=_np.float64)
     _fixed = _np.zeros( (4,), dtype=int)
 #    leftboundary = 0.0
+    _analytic_xscaling = False
+    _analytic_yscaling = True
     def __init__(self, XX, af=None, **kwargs):
         super(ModelExponential, self).__init__(XX, af, **kwargs)
     # end def __init__
@@ -3013,6 +3128,8 @@ class ModelGaussian(ModelClass):
     _LB = _np.array([-_np.inf, -_np.inf, -_np.inf], dtype=_np.float64)
     _UB = _np.array([_np.inf, _np.inf, _np.inf], dtype=_np.float64)
     _fixed = _np.array([0, 0, 0], dtype=int)
+    _analytic_xscaling = True
+    _analytic_yscaling = True
     def __init__(self, XX, af=None, **kwargs):
         super(ModelGaussian, self).__init__(XX, af, **kwargs)
     # end def __init__
@@ -3286,6 +3403,8 @@ class ModelOffsetGaussian(ModelClass):
     _LB = _np.array([-_np.inf, -_np.inf, -_np.inf, -_np.inf], dtype=_np.float64)
     _UB = _np.array([_np.inf, _np.inf, _np.inf, _np.inf], dtype=_np.float64)
     _fixed = _np.array([0, 0, 0, 0], dtype=int)
+    _analytic_xscaling = True
+    _analytic_yscaling = True
     def __init__(self, XX, af=None, **kwargs):
         super(ModelOffsetGaussian, self).__init__(XX, af, **kwargs)
     # end def __init__
@@ -3423,6 +3542,8 @@ class ModelOffsetNormal(ModelClass):
     _LB = _np.array([-_np.inf, -_np.inf, -_np.inf, -_np.inf], dtype=_np.float64)
     _UB = _np.array([ _np.inf,  _np.inf,  _np.inf,  _np.inf], dtype=_np.float64)
     _fixed = _np.array([0, 0, 0, 0], dtype=int)
+    _analytic_xscaling = True
+    _analytic_yscaling = True
     def __init__(self, XX, af=None, **kwargs):
         super(ModelOffsetNormal, self).__init__(XX, af, **kwargs)
     # end def __init__
@@ -3601,6 +3722,8 @@ class ModelNormal(ModelClass):
     _LB = _np.array([-_np.inf, -_np.inf, -_np.inf], dtype=_np.float64)
     _UB = _np.array([_np.inf, _np.inf, _np.inf], dtype=_np.float64)
     _fixed = _np.array([0, 0, 0], dtype=int)
+    _analytic_xscaling = True
+    _analytic_yscaling = True
     def __init__(self, XX, af=None, **kwargs):
         super(ModelNormal, self).__init__(XX, af, **kwargs)
     # end def __init__
@@ -3889,6 +4012,8 @@ class ModelLogGaussian(ModelClass):
     _LB = _np.asarray([ 1e-18, -_np.inf, -_np.inf], dtype=_np.float64)
     _UB = _np.asarray([_np.inf, _np.inf,  _np.inf], dtype=_np.float64)
     _fixed = _np.zeros( (3,), dtype=int)
+    _analytic_xscaling = True
+    _analytic_yscaling = True
     def __init__(self, XX, af=None, **kwargs):
         super(ModelLogGaussian, self).__init__(XX, af, **kwargs)
     # end def __init__
@@ -4145,6 +4270,8 @@ class ModelLorentzian(ModelClass):
     _LB = _np.asarray([-_np.inf, -_np.inf, -_np.inf], dtype=_np.float64)
     _UB = _np.asarray([_np.inf, _np.inf, _np.inf], dtype=_np.float64)
     _fixed = _np.zeros( (3,), dtype=int)
+    _analytic_xscaling = True
+    _analytic_yscaling = True
     def __init__(self, XX, af=None, **kwargs):
         super(ModelLorentzian, self).__init__(XX, af, **kwargs)
     # end def __init__
@@ -4451,6 +4578,8 @@ class ModelPseudoVoigt(ModelClass):
     _LB = _np.concatenate(([0.0], ModelLorentzian._LB, ModelNormal._LB), axis=0)
     _UB = _np.concatenate(([1.0], ModelLorentzian._UB, ModelNormal._UB), axis=0)
     _fixed = _np.zeros( (7,), dtype=int)
+    _analytic_xscaling = True
+    _analytic_yscaling = True
     def __init__(self, XX, af=None, **kwargs):
         # initialize with the two profiles overlapping in position
         self._af[5] = self._af[2]
@@ -4598,6 +4727,8 @@ class ModelLogLorentzian(ModelClass):
     _LB = _np.asarray([  1e-18, -_np.inf,   1e-18], dtype=_np.float64)
     _UB = _np.asarray([_np.inf,  _np.inf, _np.inf], dtype=_np.float64)
     _fixed = _np.zeros( (3,), dtype=int)
+    _analytic_xscaling = True
+    _analytic_yscaling = True
     def __init__(self, XX, af=None, **kwargs):
         super(ModelLogLorentzian, self).__init__(XX, af, **kwargs)
     # end def __init__
@@ -4841,6 +4972,8 @@ class ModelDoppler(ModelClass):
         3) Double peak - additional 3 parameter fit
             - Gaussian (2nd Doppler shift, integrated reflected power, width)
     """
+    _analytic_xscaling = True
+    _analytic_yscaling = True
     def __init__(self, XX, af=None, **kwargs):
         model_order = kwargs.setdefault('model_order', 2)
         noshift = kwargs.setdefault('noshift', True)
@@ -5047,6 +5180,8 @@ class ModelLogDoppler(ModelDoppler):
         3) Double peak - additional 3 parameter fit
             - Gaussian (2nd Doppler shift, integrated reflected power, width)
     """
+    _analytic_xscaling = True
+    _analytic_yscaling = True
     def __init__(self, XX, af=None, **kwargs):
         model_order = kwargs.setdefault('model_order', 2)
         noshift = kwargs.setdefault('noshift', True)
@@ -5324,6 +5459,8 @@ class _ModelTwoPower(ModelClass):
 
         non-trival domain:  c>0 and 0<=x<1  or   c<0 and x>1
     """
+    _analytic_xscaling = False
+    _analytic_yscaling = True
     _af = _np.asarray([1.0, 2.0, 1.0], dtype=_np.float64)
     _LB = _np.asarray([  1e-18,   1e-18, -_np.inf], dtype=_np.float64)
     _UB = _np.asarray([_np.inf, _np.inf, _np.inf], dtype=_np.float64)
@@ -5604,8 +5741,8 @@ class _ModelTwoPower(ModelClass):
         ain, aout = _np.copy(ain), _np.copy(ain)
         ys = kwargs.setdefault('ys', self.slope)
         yo = kwargs.setdefault('yo', self.offset)  # analysis:ignore
-        xs = kwargs.setdefault('xs', self.xslope)
-        xo = kwargs.setdefault('xo', self.xoffset)
+        xs = kwargs.setdefault('xs', self.xslope)  # analysis:ignore
+        xo = kwargs.setdefault('xo', self.xoffset)  # analysis:ignore
 
         aout[0] = ys*ain[0]
         return aout
@@ -5617,8 +5754,8 @@ class _ModelTwoPower(ModelClass):
         ain, aout = _np.copy(ain), _np.copy(ain)
         ys = kwargs.setdefault('ys', self.slope)
         yo = kwargs.setdefault('yo', self.offset)  # analysis:ignore
-        xs = kwargs.setdefault('xs', self.xslope)
-        xo = kwargs.setdefault('xo', self.xoffset)
+        xs = kwargs.setdefault('xs', self.xslope)   # analysis:ignore
+        xo = kwargs.setdefault('xo', self.xoffset)  # analysis:ignore
 
         aout[0] = ain[0]/ys
         return aout
@@ -5670,6 +5807,8 @@ class ModelTwoPower(ModelClass):
     _LB = _np.asarray([1e-18, 0.0, 1e-18, -20.0], dtype=_np.float64)
     _UB = _np.asarray([   20, 1.0,  20.0,  20.0], dtype=_np.float64)
     _fixed = _np.zeros( (4,), dtype=int)
+    _analytic_xscaling = False
+    _analytic_yscaling = True
     def __init__(self, XX, af=None, **kwargs):
         super(ModelTwoPower, self).__init__(XX, af, **kwargs)
     # end def __init__
@@ -5904,6 +6043,8 @@ class ModelExpEdge(ModelClass):
     _LB = _np.asarray([   1e-18, 1e-18], dtype=_np.float64)
     _UB = _np.asarray([ _np.inf, _np.inf], dtype=_np.float64)
     _fixed = _np.zeros( (2,), dtype=int)
+    _analytic_xscaling = True
+    _analytic_yscaling = True
     def __init__(self, XX, af=None, **kwargs):
         super(ModelExpEdge, self).__init__(XX, af, **kwargs)
     # end def __init__
@@ -6255,6 +6396,8 @@ class ModelQuasiParabolic(ModelClass):
     _LB = _np.asarray([1e-18, 0.0,  1e-18,-10,-1, 0], dtype=_np.float64)
     _UB = _np.asarray([ 20.0, 1.0, 10, 10, 1, 1], dtype=_np.float64)
     _fixed = _np.zeros( (6,), dtype=int)
+    _analytic_xscaling = False
+    _analytic_yscaling = True
     def __init__(self, XX, af=None, **kwargs):
         nohollow = kwargs.setdefault('nohollow', False)
         if nohollow:
@@ -6599,6 +6742,8 @@ class ModelFlattop(ModelClass):
     _LB = _np.asarray([1e-18, 1e-18, 1.0], dtype=_np.float64)
     _UB = _np.asarray([_np.inf, 1.0, _np.inf], dtype=_np.float64)
     _fixed = _np.zeros( (3,), dtype=int)
+    _analytic_xscaling = True
+    _analytic_yscaling = True
     def __init__(self, XX, af=None, **kwargs):
         super(ModelFlattop, self).__init__(XX, af, **kwargs)
     # end def __init__
@@ -6880,6 +7025,8 @@ class ModelMassberg(ModelClass):
     _LB = _np.asarray([1e-18, 0.0, 1.0, -1], dtype=_np.float64)
     _UB = _np.asarray([_np.inf, 1.0, _np.inf, 1], dtype=_np.float64)
     _fixed = _np.zeros( (4,), dtype=int)
+    _analytic_xscaling = True
+    _analytic_yscaling = True
     def __init__(self, XX, af=None, **kwargs):
         super(ModelMassberg, self).__init__(XX, af, **kwargs)
     # end def __init__
@@ -7099,7 +7246,6 @@ class ModelMassberg(ModelClass):
         aout[0] *= ys
         aout[1] *= xs
         return aout
-
 
     def scaleaf(self, ain, **kwargs):
         ain, aout = _np.copy(ain), _np.copy(ain)
@@ -8027,10 +8173,10 @@ if __name__ == '__main__':
 #    mod = ModelPoly.test_numerics(npoly=2) # checked
 #    mod = ModelPoly.test_numerics(npoly=5)  # checked
 #    mod = ModelPoly.test_numerics(npoly=12)  # checked
-#    mod = ModelPoly.test_scaling(npoly=1)  # checked
-#    mod = ModelPoly.test_scaling(npoly=2)  # checked
-#    mod = ModelPoly.test_scaling(npoly=5)  # checked
-#    mod = ModelPoly.test_scaling(npoly=12)  # checked
+    mod = ModelPoly.test_scaling(npoly=1)  # checked
+    mod = ModelPoly.test_scaling(npoly=2)  # checked
+    mod = ModelPoly.test_scaling(npoly=5)  # checked
+    mod = ModelPoly.test_scaling(npoly=12)  # checked
 
 #    mod = ModelProdExp.test_numerics(npoly=1) # checked
 #    mod = ModelProdExp.test_numerics(npoly=2) # checked

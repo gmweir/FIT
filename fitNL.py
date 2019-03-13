@@ -236,19 +236,19 @@ def gen_random_init_conds(func, **fkwargs):
 
 # Fitting using the Levenberg-Marquardt algorithm.    #
 def modelfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
-#    kwargs.setdefault('xtol', 1e-16)  # 1e-16
-#    kwargs.setdefault('ftol', 1e-16)
-#    kwargs.setdefault('gtol', 1e-16)
-#    kwargs.setdefault('damp', 10)
-#    kwargs.setdefault('maxiter', 1200)
+    kwargs.setdefault('xtol', 1e-16)  # 1e-16
+    kwargs.setdefault('ftol', 1e-16)
+    kwargs.setdefault('gtol', 1e-16)
+    kwargs.setdefault('damp', 0)
+    kwargs.setdefault('maxiter', 1600)
 #    kwargs.setdefault('factor', 100)  # 100
     kwargs.setdefault('nprint', 10) # 100
 #    kwargs.setdefault('iterfunct', 'default')
 #    kwargs.setdefault('iterkw', {})
 #    kwargs.setdefault('nocovar', 0)
 #    kwargs.setdefault('rescale', 0
-    kwargs.setdefault('autoderivative', 1)
-#    kwargs.setdefault('autoderivative', 0)
+#    kwargs.setdefault('autoderivative', 1)
+    kwargs.setdefault('autoderivative', 0)
 #    kwargs.setdefault('quiet', 1)
 #    kwargs.setdefault('diag', None)
 #    kwargs.setdefault('epsfcn', max((_np.nanmean(_np.diff(x.copy())),1e-2))) #5e-4) #1e-3
@@ -283,7 +283,10 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
         print('Input error meant for weights includes zeros! this is not allowed')
         return None
     # subfunction kwargs
-    scale_by_data = kwargs.setdefault('scale_problem',True)
+
+    # This is incredibly slow, but improves the convergence for some problems.
+    # Also messes up the error propagation, so you have to rerun the minimizer
+    # and set the initial conditions to match the output of the first run.
     use_perpendicular_distance = kwargs.setdefault('perpchi2', False)
 
     # fitter kwargs
@@ -313,6 +316,7 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
         print('oops')
     # end if
 
+    scale_by_data = kwargs.setdefault('scale_problem',True)
     if scale_by_data:
 #        xo = _np.nanmin(x)
 #        xs = _np.nanmax(x)-_np.nanmin(x)
@@ -322,17 +326,15 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
         x, y, vy = info.scaledat(_np.copy(x), _np.copy(y), _np.power(_np.copy(ey), 2.0))
         ey = _np.sqrt(vy)
 
-        # Scale the initial guess as well
+        # Scale the initial guess and the bounds as well
         p0 = info.scaleaf(p0)
-
-        # Scale the bounds on the problem
         LB = info.scaleaf(LB)
         UB = info.scaleaf(UB)
 #    # end if
-    autoderivative = kwargs.setdefault('autoderivative', 1)
 
     # ============================================= #
 
+    autoderivative = kwargs.setdefault('autoderivative', 1)
     def mymodel(p, fjac=None, x=None, y=None, err=None, nargout=1):
         # Parameter values are passed in "p"
         # If fjac==None then partial derivatives should not be
@@ -381,7 +383,11 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
 #            raise Exception('Nan detected in chi2. Check model parameters and bounds \n %s'%(str(residual),))
 
         if autoderivative == 0 and nargout == 1:
-            fjac = gvec.copy().T   # use analytic jacobian  # TODO!: transpose is from weird reshape in mpfit
+            fjac = gvec.copy().T   # use analytic jacobian  # transpose is from weird reshape in mpfit
+
+            # analytic jacobian of the resiudal function
+#            fjac = -1.0*fjac
+            fjac = fjac/(_np.atleast_2d(err).T*_np.ones( (1,len(p)), dtype=fjac.dtype))
 #            if _np.isnan(fjac).any():
 #                raise Exception('Nan detected in jacobian. Check model parameters and bounds \n %s'%(str(fjac),))
             return {'status':status, 'residual':residual, 'jacobian':fjac}
@@ -416,6 +422,19 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
         m = LMFIT(mymodel, p0, parinfo=parinfo, residual_keywords=fa, **mpwargs)
         p0 = m.params
         mpwargs['damp'] = 0
+#    elif 'autoderivative' in mpwargs and mpwargs['autoderivative']:
+#        autoderivative = 0    # damp and autoderivative are mutually exclusive
+#        mpwargs['autoderivative'] = autoderivative
+#        parinfo = getparinfo()
+#        m = LMFIT(mymodel, p0, parinfo=parinfo, residual_keywords=fa, **mpwargs)
+#        p0 = m.params
+#        autoderivative = 1
+#        mpwargs['autoderivative'] = autoderivative
+    if use_perpendicular_distance:
+        parinfo = getparinfo()
+        m = LMFIT(mymodel, p0, parinfo=parinfo, residual_keywords=fa, **mpwargs)
+        p0 = m.params
+        use_perpendicular_distance = False
     # end if
     parinfo = getparinfo()
     m = LMFIT(mymodel, p0, parinfo=parinfo, residual_keywords=fa, **mpwargs)
@@ -1351,43 +1370,83 @@ def test_fit(func=_ms.model_qparab, **fkwargs):
 
 def test_fourier_fit(func=_ms.model_sines, **fkwargs):
     plotit = fkwargs.pop('plotit', True)
-
+    fmod = fkwargs.setdefault('fmod', 33.0)
     Fs = fkwargs.pop('Fs', 10.0e3)
-    tstart, tend = tuple(fkwargs.pop('tbnds', [0.0, 6.0/33.0]))
+    tstart, tend = tuple(fkwargs.pop('tbnds', [0.0, 6.0/fmod]))
     numpts = fkwargs.pop('num', int((tend-tstart)*Fs))
     xdat = _np.linspace(tstart, tend, num=numpts)
     XX = _np.linspace(tstart, tend, num=numpts)
+    Fs = len(xdat)/(xdat[-1]-xdat[0])
 
     # Model to fit
-    yxx, _, temp = func(XX=XX, **fkwargs)
-    aa =temp.af
+    af0 = gen_random_init_conds(func, **fkwargs)
+    yxx, _, temp = func(XX=XX, af=af0, **fkwargs)
+#    yxx, _, temp = func(XX=XX, **fkwargs)
+    aa =_np.copy(temp.af)
     ydat, _, _, _ = temp.update(xdat)
     kwargs = temp.dict_from_class()
     kwargs.pop('XX')
     kwargs.pop('af')
     kwargs['scale_problem'] = True
+    kwargs['perpchi2'] = False   # This is incredibly slow, but greatly improves the convergence.
+
     # ====================== #
 
     # Estimate of noise on data
-    yerr = 0.4*_np.ones_like(ydat)
+    yerr = 0.1*_np.ones_like(ydat)
     yerr = 0.5*_np.abs(_np.nanmax(ydat)-_np.nanmin(ydat))*yerr
 
     # Noise on data
-    ytmp = ydat + 0.3*_np.abs(_np.nanmax(ydat)-_np.nanmin(ydat))*_np.random.normal(0.0, 1.0, len(ydat))
+    ytmp = ydat + 0.1*_np.abs(_np.nanmax(ydat)-_np.nanmin(ydat))*_np.random.normal(0.0, 1.0, len(ydat))
 
+    # ====================== #
     # Loop through frequencies and build the results 1 frequency at a time
     nfreqs = fkwargs.pop('nfreqs', 1)
+
+    # Use the auto-power spectrum to select initial guessed for the model
+    from FFT.fft_analysis import getNpeaks
+    afps = getNpeaks(nfreqs, xdat, ytmp, ytmp, plotit=plotit, Navr=1, windowoverlap=0.0,
+                     detrend_style=1, windowfunction='box', fmin=0.5*fmod, minsep=0.3*fmod)
+    aoffset = 0.0
+    poffset = 2.0*_np.pi*fmod*xdat[_np.argmax(ytmp[:int(0.5*Fs/fmod)])]
+#    aoffset = 2.0*_np.nanmean(ytmp)
+
+#    fkwargs['offset'] = 0.0  # used in scaling
+    if temp._params_per_freq == 3:  # model sines
+        af0 = _np.asarray([aoffset]+afps[0])
+        af0[-1] = poffset
+#        kwargs['fixed'] = _np.zeros(af0.shape, dtype=int)
+#        kwargs['fixed'][0] = 1  # offset fixed for looped runs
+    elif temp._params_per_freq == 2:  # fourier model
+        af0 = _np.asarray([fmod]+(_ms.ModelSines._convert2fourier(afps[0])).tolist())
+#        kwargs['fixed'] = _np.zeros(af0.shape, dtype=int)
+#        kwargs['fixed'][1] = 1
+    # end if
+
     info1, info2 = None, None
     for ii in range(nfreqs):
         fkwargs['nfreqs'] = ii+1
         # Initial conditions for model
 #        af0 = gen_random_init_conds(func, **fkwargs)
-        itmp = func(XX=None, **fkwargs)
-        af0 = _np.copy(itmp._af)
+#        itmp = func(XX=None, **fkwargs)
+#        af0 = _np.copy(itmp._af)
 
 #        kwargs['maxiter'] = 200 if ii<(nfreqs-1) else 1200
         if ii>0:
-            af0 = _np.asarray( info1.af.tolist() + af0[-info1._params_per_freq:].tolist() )
+            af0 = _np.copy(info1.af)
+#            af0 = _np.copy(info2.af)
+            if temp._params_per_freq == 3:  # model sines
+                af0 = _np.asarray(af0.tolist() + afps[ii], dtype=_np.float64)
+                # if the input cross-phase is zero, initialize with the solved
+                # for cross-phase from the previous step.
+                if af0[-1] == 0:
+#                    af0[-1] = _np.copy(info2.af[-1])
+                    af0[-1] = poffset
+                # end if
+            elif temp._params_per_freq == 2:  # fourier model
+                af0 = _np.asarray(af0.tolist()+(_ms.ModelSines._convert2fourier(afps[ii])).tolist())
+            # end if
+#            af0 = _np.asarray( info1.af.tolist() + af0[-info1._params_per_freq:].tolist() )
             kwargs['fixed'] = _np.hstack(( _np.ones_like(info1.fixed),
                                 _np.zeros((info1._params_per_freq,), dtype=int)))
 #            kwargs['Lbounds'] = _np.asarray(
@@ -2159,11 +2218,12 @@ if __name__=="__main__":
 
 
 #    test_fit(_ms.model_line, scale_problem=True)  # scaling and shifting works
-#
-#    test_fourier_fit(_ms.model_sines, nfreqs=1,  Fs=10e3, numpts=int(6.0*1e3/33.0), fmod=33.0)
-#    test_fourier_fit(_ms.model_sines, nfreqs=3, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0)
-#    test_fourier_fit(_ms.model_sines, nfreqs=7, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
-#    # =====  #
+
+#    test_fourier_fit(_ms.model_sines, nfreqs=1,  Fs=100e3, numpts=int(6.0*1e3/33.0), fmod=33.0)
+    test_fourier_fit(_ms.model_sines, nfreqs=1,  Fs=10e3, fmod=33.0)
+    test_fourier_fit(_ms.model_sines, nfreqs=3, Fs=10e3, fmod=33.0)
+    test_fourier_fit(_ms.model_sines, nfreqs=7, Fs=10e3, fmod=33.0, shape='square', duty=0.66667)
+    # =====  #
 ##    test_fourier_fit(_ms.model_fourier, nfreqs=3, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0)
 ##    test_fourier_fit(_ms.model_fourier, nfreqs=14, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square')
 ##    test_fourier_fit(_ms.model_fourier, nfreqs=6, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
@@ -2181,12 +2241,11 @@ if __name__=="__main__":
 #    test_fit(_ms.model_evenpoly, npoly=3)
 #    test_fit(_ms.model_evenpoly, npoly=6)
 #    test_fit(_ms.model_evenpoly, npoly=10)
-    test_fit(_ms.model_PowerLaw, npoly=4)   # Nan's generated in model parameters
-    test_fit(_ms.model_PowerLaw, npoly=5)   #
-    test_fit(_ms.model_PowerLaw, npoly=6)   #
-    test_fit(_ms.model_Exponential)
-    test_fit(_ms.model_parabolic)
-
+#    test_fit(_ms.model_PowerLaw, npoly=4)   # Nan's generated in model parameters
+#    test_fit(_ms.model_PowerLaw, npoly=5)   #
+#    test_fit(_ms.model_PowerLaw, npoly=6)   #
+#    test_fit(_ms.model_Exponential)
+#    test_fit(_ms.model_parabolic)
 
 #    test_fit(_ms.model_gaussian, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
 #    test_fit(_ms._model_offsetgaussian, Fs=10e3, numpts=int(10e3*6*1.2/33.0))

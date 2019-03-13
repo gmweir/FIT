@@ -1394,14 +1394,16 @@ class ModelClass(FD):
         self.ydat = (ydat-self.offset)/self.slope
         self.vdat = vdat/(self.slope*self.slope)
         self.scaled = True
-        if hasattr(self, 'XX'):
-            self.XX = (self.XX-self.xoffset)/self.xslope
-        if vxdat is None:
-            self.vxdat = None
-            return self.xdat, self.ydat, self.vdat
+        out = []
+        out.append(self.xdat)
+        out.append(self.ydat)
+        out.append(self.vdat)
+        if hasattr(self, 'XX'):   self.XX = (self.XX-self.xoffset)/self.xslope
+        if vxdat is None:   self.vxdat = None
         else:
             self.vxdat = _np.copy(vxdat)/(self.xslope*self.xslope)
-            return self.xdat, self.ydat, self.vdat, self.vxdat
+            out.append(self.vxdat)
+        return tuple(out)
         # end if
     # end def
 
