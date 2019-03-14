@@ -2,6 +2,70 @@
 """
 Created on Mon Jul 18 14:59:28 2016
 
+Methods supported:
+    non-linear least squares - see fitNL.LMFIT methods
+            chi2_function = argmin ||y-X*B||^2
+    Stepwise regression - see fitNL.fit_fourier
+            Uses non-linear least squares by fitting at lowest order and
+            adding terms to the fitting function sequentially
+
+Methods to be added:
+    Ridge regression - add a shrinkage parameter to the least-squares residual function
+            chi2_function = argmin ||y-X*B||^2 + lambda* ||B||^2
+
+    Lasso regression - argmin ||y- X*B||^2
+            chi2_function = argmin ||y-X*B||^2 + lambda* ||B||
+
+    ElasticNet regression
+            chi2_function = argmin ||y-X*B||^2 + lambda2* ||B||^2 + lambda1* ||B||
+
+Fits to add:
+    Sigmoid function (S-curve) - approximated by an arctangent function or other logistics function
+        - logistic regression for binary problems
+        ex// odds = p/(1-p)  - probability of event occuring (or not)
+             ln|odds| = ln|p/(1-p)|
+             logit(p) = ln|p/(1-p)| = b0 + b1*x1+b2*x2+b3*x3 + ... + bk*xk
+                 f(x) = L/(1+exp(-k*(x-xo)))
+                     xo - Sigmoid mid-point
+                     L is the curve's maximum value
+                     k is the logistic growth rate or steepness of the curve
+
+    Step series  - This is a series of sigmoid functions that approximate a
+            profile by a discrete series of levels
+
+    Supergaussian intensity profile
+        I(r) = Ip exp(-2(r/w)^n)  ... order (n) increases steepness towards
+                        ideal flat top measured versus radius from axis (r)
+    Gaussian beam
+        I(r) = 2P/(pi*w_z^2) * exp(-2r^2/w_z^2) - Gaussian beam intensity distribution for quasioptics
+
+        E(r,z) = Eo*(wo/wz)*exp(-r^2/wz^2)*exp(i*[k*z-atan(z/zr)+k*r^2/(2*Rz)])
+            monochromatic Gaussian beam propagating in z-direction (Amplitude phasor)
+            ... oscillating real electric field is E(r,z)*exp(-i*2pi*c*t/lambda)
+            wavenumber = 2pi/lambda,
+            Rayleigh length / range = zr= pi*wo^2/lambda (or confocal length b=2*zr)
+            beam radius wz = wo*sqrt( 1+ (z/zr)^2),
+            Radius of curv. of wavefronts = Rz = z*[1+(zr/z)^2]
+            Beam divergence in far field = theta = lambda/(pi*wo)
+            Complex beam parameter, qz = z+i*zr = (1/Rz - i*lambda/(pi*wz^2))^-1
+            Transforming through optics follows the ABCD matrix formalism
+
+    Spline models with variable knot positions
+            curvature, kappa = y''/(1+y'^2)^1.5
+                      and qi'(xi) = q'[i+1](xi)
+                      and qi''(xi) = q''[i+1](xi) for 1<=i<= n-1
+        simple piece-wise polynomial function S: [a,b]
+        quadratic
+        cubic  -  interpolating cubic spline
+            Si(x) = zi*(x-t(i-1))^3/(6hi) + z(i-1)*(ti-x)^3/(6hi)
+                  + [f(ti)/hi - zihi/6](x-t(i-1))
+                  + [f(ti-1)/hi - z(i-1)hi/6](ti-x)
+                  where zi = f''(ti) = second derivative of f at ith knot
+                        hi = ti - t(i-1)
+                        f(ti) are teh values of the function at the ith knot
+        pchip
+
+
 @author: gawe
 """
 # ========================================================================== #
@@ -6833,6 +6897,12 @@ class ModelFlattop(ModelClass):
         super(ModelFlattop, self).__init__(XX, af, **kwargs)
     # end def __init__
 
+    def __str__(self):
+        return "Model: f(x)= %3.1f/(1+(x/%3.1f)^%3.1f)"%(self.af[0], self.af[1], self.af[2])
+
+    def __repr__(self):
+        return "Flattop Model(a=%3.1f, b=%3.1f, c=%3.1f)"%(self.af[0], self.af[1], self.af[2])
+
     @staticmethod
     def _model(XX, aa, **kwargs):
         """
@@ -7141,6 +7211,12 @@ class ModelMassberg(ModelClass):
 #    def _model(XX, aa, **kwargs):
 #        a, b, c, h = tuple(aa)
 #        return a*(1.0-h*(XX/b)) / (1+_np.power(XX/b, c))
+
+    def __str__(self):
+        return "Model: f(x)= %3.1f(1-%3.1fx/%3.1f)/(1+(x/%3.1f)^%3.1f)"%(self.af[0], self.af[3], self.af[1], self.af[2])
+
+    def __repr__(self):
+        return "Flattop Model(a=%3.1f, b=%3.1f, c=%3.1f, h=%3.1f)"%(self.af[0], self.af[1], self.af[2], self.af[3])
 
     @staticmethod
     def _model(XX, aa, **kwargs):
@@ -8344,18 +8420,18 @@ if __name__ == '__main__':
 ##    mod = _ModelTwoPower.test_numerics(start=0.1, stop=1.3)   # checked
 #    mod = _ModelTwoPower.test_scaling() # checked
     mod = ModelQuasiParabolic.test_numerics(start=0.1, stop=0.9)  # checked
-    mod = ModelQuasiParabolic.test_scaling(start=0.1, stop=0.9)  # checked
-    mod = ModelQuasiParabolic.test_scaling()  # checked
+#    mod = ModelQuasiParabolic.test_scaling(start=0.1, stop=0.9)  # checked
+#    mod = ModelQuasiParabolic.test_scaling()  # checked
 #    mod = ModelPowerLaw.test_numerics(npoly=2, start=0.1, stop=0.9, num=100)
 #    mod = ModelPowerLaw.test_numerics(npoly=3, start=0.1, stop=0.9, num=100)
 #    mod = ModelPowerLaw.test_numerics(npoly=4, start=0.1, stop=0.9) # checked
 #    mod = ModelPowerLaw.test_numerics(npoly=8, start=0.1, stop=0.9) # checked
 #    mod = ModelExponential.test_numerics(start=0.1, stop=0.9) # checked
 #    mod = ModelExponential.test_numerics(start=0.1, stop=1.0) # checked
-    mod = ModelFlattop.test_numerics(start=0.1, stop=1.0) # checked
-    mod = ModelMassberg.test_numerics(start=0.1, stop=1.0) # checked
-    mod = ModelFlattop.test_scaling() # checked
-    mod = ModelMassberg.test_scaling() # checked
+#    mod = ModelFlattop.test_numerics(start=0.1, stop=1.0) # checked
+#    mod = ModelMassberg.test_numerics(start=0.1, stop=1.0) # checked
+#    mod = ModelFlattop.test_scaling() # checked
+#    mod = ModelMassberg.test_scaling() # checked
 
     # numerical issues in test near boundaries: unsolved yet
 #    mod = _ModelTwoPower.test_numerics()   # left boundary
