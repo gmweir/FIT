@@ -291,9 +291,9 @@ class ModelLine(ModelClass):
         xo = kwargs.setdefault('xo', self.xoffset)
 
         covout[0,0] = _np.power(ys/xs, 2.0)*covin[0,0]
-        covout[0,1] = _np.power(ys, 2.0)*( covin[0,1]/xs - xo*covin[0,0]/_np.power(xs, 2.0) )
+        covout[0,1] = (ys*ys)*( covin[0,1]/xs - xo*covin[0,0]/(xs*xs) )
         covout[1,0] = _np.copy(covout[0,1])
-        covout[1,1] = _np.power(ys, 2.0)*( covin[1,1] + _np.power(xo/xs, 2.0)*covin[0,0] - 2.0*xo/xs*covin[1,0])
+        covout[1,1] = (ys*ys)*( covin[1,1] + (xo*xo/(xs*xs))*covin[0,0] - 2.0*xo/xs*covin[1,0])
         return covout
 # end def ModelLine
 
@@ -792,15 +792,15 @@ class ModelSines(ModelClass):
         xo = kwargs.setdefault('xo', self.xoffset)
 
         # diagonal terms
-        covout[0,0] = _np.power(ys, 2.0)*covin[0,0]
-        covout[1::3, 1::3] = _np.power(ys, 2.0)*covin[1::3, 1::3]
+        covout[0,0] = (ys*ys)*covin[0,0]
+        covout[1::3, 1::3] = (ys*ys)*covin[1::3, 1::3]
         covout[2::3, 2::3] = _np.power(1.0/xs, 2.0)*covin[2::3, 2::3]
         covout[3::3, 3::3] = (covin[3::3, 3::3]
-                        + _np.power(2.0*_np.pi*xo/xs, 2.0)*covin[2::3,2::3]
+                        + _np.power(_np.abs(2.0*_np.pi*xo/xs), 2.0)*covin[2::3,2::3]
                         - 2.0*_np.pi*xo/xs*covin[3::3, 2::3])
 
         # first row
-        covout[0,1::3] = _np.power(ys, 2.0)*covin[0,1::3]  # ao-a_i
+        covout[0,1::3] = (ys*ys)*covin[0,1::3]  # ao-a_i
         covout[0,2::3] = (ys/xs)*covin[0,2::3]             # ao-f_i
         covout[0,3::3] = ys*(covin[0,3::3] - 2.0*_np.pi*xo/xs*covin[0,2::3]) # ao-p_i
 
@@ -966,7 +966,7 @@ class ModelFourier(ModelClass):
         aout = _np.zeros((3*nfreqs+1,), dtype=_np.float64)
 
         aout[0] = _np.copy(aa[1])  # offset
-        aout[1::3] = _np.sqrt( _np.power(aa[2::2], 2.0) + _np.power(aa[3::2], 2.0)) # amplitude
+        aout[1::3] = _np.sqrt( aa[2::2]*aa[2::2] + aa[3::2]*aa[3::2] ) # amplitude
         aout[2::3] = (_np.asarray(range(nfreqs))+1.0)*f # frequency
         aout[3::3] = _np.arctan2(aa[2::2], aa[3::2])    # phase
         return aout
@@ -1311,20 +1311,20 @@ class ModelFourier(ModelClass):
         xo = kwargs.setdefault('xo', self.xoffset)
 
         # diagonal first
-        covout[0, 0] = covin[0, 0]/_np.power(xs, 2.0)  # varf
-        covout[1, 1] = covin[1, 1]*_np.power(ys, 2.0)  # varao
-        covout[2::2, 2::2] = (_np.power(ys, 2.0)*covin[2::2, 2::2]
-               + (_np.power(ys, 2.0)+2.0*_np.power(xo/xs, 2.0))*covin[0, 0]
-               + _np.power(ys, 2.0)*covin[3::2, 3::2]
+        covout[0, 0] = covin[0, 0]/(xs*xs)  # varf
+        covout[1, 1] = covin[1, 1]*(ys*ys)  # varao
+        covout[2::2, 2::2] = ((ys*ys)*covin[2::2, 2::2]
+               + ((ys*ys)+2.0*_np.power(xo/xs, 2.0))*covin[0, 0]
+               + (ys*ys)*covin[3::2, 3::2]
                + 3.0*ys*xo/xs*(_np.atleast_2d(covin[2::2,0]).T*_np.ones(1,len(covout[0,2::2])))
                + 3.0*ys*xo/xs*(_np.atleast_2d(covin[3::2,0]).T*_np.ones(1,len(covout[0,2::2])))
-               + _np.power(ys, 2.0)*covin[2::2,3::2])  # varai
-        covout[3::2, 3::2] = (_np.power(ys, 2.0)*covin[3::2, 3::2]
-               + (_np.power(ys, 2.0) + 2.0*_np.power(xo/xs, 2.0))*covin[0, 0]
-               + _np.power(ys, 2.0)*covin[2::2, 2::2]
+               + (ys*ys)*covin[2::2,3::2])  # varai
+        covout[3::2, 3::2] = ((ys*ys)*covin[3::2, 3::2]
+               + ((ys*ys) + 2.0*_np.power(xo/xs, 2.0))*covin[0, 0]
+               + (ys*ys)*covin[2::2, 2::2]
                + 3.0*ys*xo/xs*(_np.atleast_2d(covin[3::2,0]).T*_np.ones(1,len(covout[0,2::2])))
                - 3.0*ys*xo/xs*(_np.atleast_2d(covin[2::2,0]).T*_np.ones(1,len(covout[0,2::2])))
-               - _np.power(ys, 2.0)*covin[3::2, 2::2])
+               - (ys*ys)*covin[3::2, 2::2])
 
         # Constant offset / frequency covariance
         covout[1,0] = ys/xs*covin[1,0]   # cov ao-fi
@@ -1339,11 +1339,11 @@ class ModelFourier(ModelClass):
         covout[0,3::2] = covout[3::2,0]
 
         # 2nd row - cov ao-ai
-        covout[1,2::2] = _np.power(ys, 2.0)*( covin[1,2::2] + 2.0*xo/xs*covin[1,0] + covin[1,3::2] )
+        covout[1,2::2] = (ys*ys)*( covin[1,2::2] + 2.0*xo/xs*covin[1,0] + covin[1,3::2] )
         covout[2::2, 1] = covout[1,2::2]
 
         # 2nd row - cov ao-bi
-        covout[1,3::2] = _np.power(ys, 2.0)*( covin[1,3::2] + 2.0*xo/xs*covin[1,0] - covin[1,2::2] )
+        covout[1,3::2] = (ys*ys)*( covin[1,3::2] + 2.0*xo/xs*covin[1,0] - covin[1,2::2] )
         covout[3::2, 1] = covout[1,3::2]
 
         # mixed coefficient covariance
@@ -1584,9 +1584,9 @@ class ModelPoly(ModelClass):
         for kk in range(nn):
             for ii in range(kk, nn):
                 tmp = _np.copy(ain[-(ii+1)])
-                tmp *= _np.power(xs, kk)
+                tmp *= _np.power(_np.complex128(xs), kk).real
                 tmp *= self.nCr(ii,kk)
-                tmp *= _np.power(xo, ii-kk)
+                tmp *= _np.power(_np.complex128(xo), ii-kk).real
                 aout[-(kk+1)] += _np.copy(tmp)
             # end for
         # end for
@@ -1680,7 +1680,7 @@ class ModelPoly(ModelClass):
 #                # end for
 #            # end for
 #        # end for
-#        covout *= _np.power(ys, 2.0)
+#        covout *= (ys*ys)
 #
 #        return covout
     # ====================================== #
@@ -1749,7 +1749,7 @@ class ModelProdExp(ModelClass):
          y = exp( a0*x^n + a1*x^(n-1) + ... a1*x + a0)
         """
         # Polynomial of order len(af)
-        return _np.exp( ModelPoly._model(XX, aa, **kwargs) )
+        return _np.exp( _np.asarray(ModelPoly._model(XX, aa, **kwargs), dtype=_np.complex128) ).real
 
     @staticmethod
     def _partial(XX, aa, **kwargs):
@@ -1769,7 +1769,7 @@ class ModelProdExp(ModelClass):
 
         gvec = _np.zeros((npoly, nx), dtype=_np.float64)
         for ii in range(npoly):
-            gvec[ii, :] = _np.power(XX, ii)*prof
+            gvec[ii, :] = _np.power(_np.asarray(XX, dtype=_np.complex128), ii).real*prof
 #            # Formulated this way, there is an analytic jacobian:
 #            kk = num_fit - (ii + 1)
 #            gvec[ii, :] = (XX**kk)*prof
@@ -1827,8 +1827,9 @@ class ModelProdExp(ModelClass):
 
          d2fdxdai =poly_partial_deriv*model + poly_deriv*model_partial
         """
-        return _np.power(ModelProdExp._deriv(XX,aa), 2.0)/ModelProdExp._model(XX,aa) \
-                      + ModelPoly._deriv2(XX, aa)*ModelProdExp._model(XX, aa)
+        dfdx = ModelProdExp._deriv(XX,aa)
+        return (dfdx*dfdx/ModelProdExp._model(XX,aa)
+                + ModelPoly._deriv2(XX, aa)*ModelProdExp._model(XX, aa))
 
     @staticmethod
     def _partial_deriv2(XX, aa, **kwargs):
@@ -1979,18 +1980,6 @@ class ModelEvenPoly(ModelClass):
         self._fixed = _np.zeros( _np.shape(self._LB), dtype=int)
         super(ModelEvenPoly, self).__init__(XX, af, **kwargs)
     # end def __init__
-#    def __init__(self, XX, af=None, **kwargs):
-#        if af is not None:
-#            num_fit = _np.size(af)  # Number of fitting parameters
-#            npoly = _np.int(2*(num_fit-1))  # Polynomial order from input af
-#        else:
-#            npoly = kwargs.setdefault('npoly', 4)
-#        self._af = 0.1*_np.ones((npoly//2+1,), dtype=_np.float64)
-#        self._LB = -_np.inf*_np.ones((npoly//2+1,), dtype=_np.float64)
-#        self._UB = _np.inf*_np.ones((npoly//2+1,), dtype=_np.float64)
-#        self._fixed = _np.zeros( _np.shape(self._LB), dtype=int)
-#        super(ModelEvenPoly, self).__init__(XX, af, **kwargs)
-#    # end def __init__
 
     @staticmethod
     def _model(XX, aa, **kwargs):
@@ -2004,10 +1993,6 @@ class ModelEvenPoly(ModelClass):
             prof += aa[-(ii+1)]*_np.power(XX, 2.0*ii)
         # end for
         return prof
-#        return ModelPoly._model(_np.power(XX, 2.0), aa, **kwargs)
-#        num_fit = _np.size(aa)  # Number of fitting parameters
-#        a0 = _np.insert(aa, _np.linspace(1, num_fit-1, 2), 0.0)
-#        return poly(XX, a0)
 
     @staticmethod
     def _partial(XX, aa, **kwargs):
@@ -2025,10 +2010,9 @@ class ModelEvenPoly(ModelClass):
         nx = _np.size(XX)
         gvec = _np.zeros((num_fit, nx), dtype=_np.float64)
         for ii in range(num_fit):
-            gvec[ii, :] = _np.power(XX, 2.0*ii)
+            gvec[ii, :] = _np.power(_np.asarray(XX, dtype=_np.complex128), 2.0*ii).real
         # end for
         return gvec[::-1, :]
-#        return ModelPoly._partial(_np.power(XX, 2.0), aa, **kwargs)
 
     @staticmethod
     def _deriv(XX, aa, **kwargs):
@@ -2039,13 +2023,9 @@ class ModelEvenPoly(ModelClass):
         nx = _np.size(XX)
         dfdx = _np.zeros((nx,), dtype=_np.float64)
         for ii in range(1, num_fit):
-            dfdx += (2.0*ii)*aa[-(ii+1)]*_np.power(XX, 2.0*ii-1.0)
+            dfdx += (2.0*ii)*aa[-(ii+1)]*_np.power(_np.asarray(XX, dtype=_np.complex128), 2.0*ii-1.0).real
         # end for
         return dfdx
-#        return ModelPoly._deriv(_np.power(XX, 2.0), aa, **kwargs)
-#        num_fit = _np.size(aa)  # Number of fitting parameters
-#        a0 = _np.insert(aa, _np.linspace(1, num_fit-1, 2), 0.0)
-#        return deriv_poly(XX, a0)
 
     @staticmethod
     def _partial_deriv(XX, aa, **kwargs):
@@ -2064,10 +2044,9 @@ class ModelEvenPoly(ModelClass):
         nx = _np.size(XX)
         dgdx = _np.zeros((num_fit, nx), dtype=_np.float64)
         for ii in range(1, num_fit):
-            dgdx[ii, :] = (2.0*ii)*_np.power(XX, 2.0*ii-1.0)
+            dgdx[ii, :] = (2.0*ii)*_np.power(_np.asarray(XX, dtype=_np.complex128), 2.0*ii-1.0).real
         # end for
         return dgdx[::-1, :]
-#        return ModelPoly._partial_deriv(_np.power(XX, 2.0), aa, **kwargs)
 
     @staticmethod
     def _deriv2(XX, aa, **kwargs):
@@ -2089,12 +2068,9 @@ class ModelEvenPoly(ModelClass):
         nx = _np.size(XX)
         d2fdx2 = _np.zeros((nx,), dtype=_np.float64)
         for ii in range(1,num_fit):
-            d2fdx2 += (2.0*ii)*(2.0*ii-1.0)*aa[-(ii+1)]*_np.power(XX, 2.0*ii-2.0)
+            d2fdx2 += (2.0*ii)*(2.0*ii-1.0)*aa[-(ii+1)]*_np.power(_np.asarray(XX, dtype=_np.complex128), 2.0*ii-2.0).real
         # end for
-#        d2fdx2 += 2.0*aa[-2]
         return d2fdx2
-#        return ModelPoly._deriv2(_np.power(XX, 2.0), aa, **kwargs)
-
 
     @staticmethod
     def _partial_deriv2(XX, aa, **kwargs):
@@ -2119,11 +2095,9 @@ class ModelEvenPoly(ModelClass):
         nx = _np.size(XX)
         d2gdx2 = _np.zeros((num_fit, nx), dtype=_np.float64)
         for ii in range(1,num_fit):
-            d2gdx2[ii, :] = (2.0*ii)*(2.0*ii-1.0)*_np.power(XX, 2.0*ii-2.0)
+            d2gdx2[ii, :] = (2.0*ii)*(2.0*ii-1.0)*_np.power(_np.asarray(XX, dtype=_np.complex128), 2.0*ii-2.0).real
         # end for
-#        d2gdx2[1,:] = 2.0
         return d2gdx2[::-1, :]
-#        return ModelPoly._partial_deriv2(_np.power(XX, 2.0), aa, **kwargs)
 
 #    @staticmethod
 #    def _hessian(XX, aa):
@@ -2165,11 +2139,18 @@ class ModelEvenPoly(ModelClass):
         xs = kwargs.setdefault('xs', self.xslope)
         xo = kwargs.setdefault('xo', self.xoffset)  # analysis:ignore
 
-        # x-scaling:
-        aout = aout/_np.power(xs, 2.0*_np.asarray(range(_np.size(aout)))[::-1])
-        # y-scaling and shifting:
-        aout = ys*aout
-        aout[-1] += yo
+        if len(aout)>1:
+            aout = _np.zeros((2*len(ain),), dtype=_np.float64)
+            aout[0::2] = _np.copy(ain)
+            PM = ModelPoly(None)
+            PM.slope = ys
+            PM.offset = yo
+            PM.xslope = xs
+            PM.xoffset = 0.0
+            aout = PM.unscaleaf(aout)
+            aout = aout[0::2]
+        else:
+            aout[0] = ys*aout[0]+yo
         return aout
 
     def scaleaf(self, ain, **kwargs):
@@ -2182,9 +2163,18 @@ class ModelEvenPoly(ModelClass):
         xs = kwargs.setdefault('xs', self.xslope)
         xo = kwargs.setdefault('xo', self.xoffset)  # analysis:ignore
 
-        aout[-1] -= yo
-        aout = aout/ys
-        aout = aout*_np.power(xs, 2.0*_np.asarray(range(_np.size(aout)))[::-1])
+        if len(ain)>1:
+            aout = _np.zeros((2*len(ain),), dtype=_np.float64)
+            aout[0::2] = _np.copy(ain)
+            PM = ModelPoly(None)
+            PM.slope = ys
+            PM.offset = yo
+            PM.xslope = xs
+            PM.xoffset = 0.0
+            aout = PM.scaleaf(aout)
+            aout = aout[0::2]
+        else:
+            aout[0] = (ain[0]-yo)/ys
         return aout
 
     def scalings(self, xdat, ydat, **kwargs):
@@ -2273,8 +2263,8 @@ class ModelPowerLaw(ModelClass):
         """
 #        XX = _np.abs(XX)
         polys = ModelPoly._model(XX, aa[:-2])
-        exp_factor = _np.exp(aa[-2]*XX)
-        return aa[-1]*exp_factor*_np.power(XX, polys)
+        exp_factor = _np.exp(_np.asarray(aa[-2]*XX, dtype=_np.complex128)).real
+        return aa[-1]*exp_factor*_np.power(_np.asarray(XX, dtype=_np.complex128), polys).real
 
     @staticmethod
     def _deriv(XX, aa, **kwargs):
@@ -2353,7 +2343,7 @@ class ModelPowerLaw(ModelClass):
         dpolys = ModelPoly._deriv(XX, aa[:-2], **kwargs)
         d2poly = ModelPoly._deriv2(XX, aa[:-2], **kwargs)
         return dprofdx*dlnfdx + prof*( d2poly*_np.log(_np.abs(XX))
-                + 2.0*dpolys/XX - polys/_np.power(XX, 2.0) )
+                + 2.0*dpolys/XX - polys/(XX*XX) )
 
     @staticmethod
     def _partial(XX, aa, **kwargs):
@@ -2383,7 +2373,7 @@ class ModelPowerLaw(ModelClass):
 
         gvec = _np.zeros((num_fit, nx), dtype=_np.float64)
         for ii in range(2, num_fit):
-            gvec[ii, :] = _np.power(XX, ii-2.0)
+            gvec[ii, :] = _np.power(_np.asarray(XX, dtype=_np.complex128), ii-2.0).real
         # end for
         gvec = gvec[::-1, :]
 
@@ -2452,9 +2442,9 @@ class ModelPowerLaw(ModelClass):
 
         dgdx = _np.zeros((num_fit, nx), dtype=_np.float64)
         for ii in range(2, num_fit):
-            dgdx[ii, :] = (ii-2.0)*_np.power(XX, ii-3.0)*_np.log(_np.abs(XX)) * prof
-            dgdx[ii, :] += _np.power(XX, ii-2.0)*_np.log(_np.abs(XX)) * dprofdx
-            dgdx[ii, :] += _np.power(XX, ii-2.0)*prof/XX
+            dgdx[ii, :] = (ii-2.0)*_np.power(_np.asarray(XX, dtype=_np.complex128), ii-3.0).real*_np.log(_np.abs(XX)) * prof
+            dgdx[ii, :] += _np.power(_np.asarray(XX, dtype=_np.complex128), ii-2.0).real*_np.log(_np.abs(XX)) * dprofdx
+            dgdx[ii, :] += _np.power(_np.asarray(XX, dtype=_np.complex128), ii-2.0).real*prof/XX
 #            dgdx[ii, :] = (_np.power(XX, ii)*_np.log(_np.abs(XX))*dprofdx
 #                              + (1.0+ii*_np.log(_np.abs(XX)))*_np.power(XX, ii-1.0)*prof )
         # end for
@@ -2506,9 +2496,9 @@ class ModelPowerLaw(ModelClass):
         poly_partial_deriv2 = _np.concatenate((poly_partial_deriv2, _np.zeros((2,nx), dtype=_np.float64)), axis=0)
 
         d2gdx2 = ( (2.0*tmp*dlnfdx)*dgdx + gvec*(tmp*_np.atleast_2d(
-               poly_deriv2*_np.log(_np.abs(XX)) + 2.0*poly_deriv/XX - polys/_np.power(XX, 2.0) - _np.power(dlnfdx, 2.0)))
-               + (tmp*_np.atleast_2d(f/_np.power(XX, 2.0)))*(
-                  poly_partial_deriv2*(tmp*_np.atleast_2d(_np.power(XX, 2.0)*_np.log(_np.abs(XX))))
+               poly_deriv2*_np.log(_np.abs(XX)) + 2.0*poly_deriv/XX - polys/(XX*XX) - (dlnfdx*dlnfdx)))
+               + (tmp*_np.atleast_2d(f/(XX*XX)))*(
+                  poly_partial_deriv2*(tmp*_np.atleast_2d((XX*XX)*_np.log(_np.abs(XX))))
                         + (2.0*tmp*XX)*poly_partial_deriv - poly_partial) )
         return d2gdx2
 #        d2gdx2 = (tmp*dlnfdx)*(2.0*dgdx - (tmp*dlnfdx)*gvec)
@@ -2532,7 +2522,6 @@ class ModelPowerLaw(ModelClass):
         f = a(n+2) * exp(a(n+1)*x) * x^( a1*x^(n)+a2*x^(n-1)+...a(n) )
 
         f = a(n+2) * exp(a(n+1)*XX) * fc(x)
-
 
         y-scaling:   y' = y/ys
          y = ys*an2 * exp(an1*x) * x^( a1*x^(n)+a2*x^(n-1)+...a(n) )
@@ -2637,7 +2626,7 @@ class ModelParabolic(ModelClass):
 
     @staticmethod
     def _model(XX, aa, **kwargs):
-        return aa*(1.0 - _np.power(XX, 2.0))
+        return aa*(1.0 - XX*XX)
 
     @staticmethod
     def _deriv(XX, aa, **kwargs):
@@ -2649,7 +2638,7 @@ class ModelParabolic(ModelClass):
 
     @staticmethod
     def _partial(XX, aa, **kwargs):
-        return _np.atleast_2d(parabolic(XX, aa) / aa)
+        return _np.atleast_2d(ModelParabolic._model(XX, aa) / aa)
 
     @staticmethod
     def _partial_deriv(XX, aa, **kwargs):
@@ -2779,7 +2768,8 @@ class ModelExponential(ModelClass):
 
     @staticmethod
     def absX(XX):
-        return _np.copy(_np.abs(XX))
+        XX = _np.copy(XX)
+        return _np.abs(XX)
 
     @staticmethod
     def _separate_model(XX, aa, **kwargs):
@@ -2788,8 +2778,8 @@ class ModelExponential(ModelClass):
         """
         XX = ModelExponential.absX(XX)
         a, b, c, d = tuple(aa)
-        prof1 = a*_np.exp(b* _np.power(XX, c))
-        prof2 = a*_np.power(XX, d)
+        prof1 = a*_np.exp(b* _np.power(_np.asarray(XX, dtype=_np.complex128), c).real)
+        prof2 = a*_np.power(_np.asarray(XX, dtype=_np.complex128), d).real
         return prof1, prof2
 
     @staticmethod
@@ -2820,8 +2810,8 @@ class ModelExponential(ModelClass):
 
         XX = ModelExponential.absX(XX)
         a, b, c, d = tuple(aa)
-        dprof1dx = b*c*_np.power(XX, c-1.0)*prof1
-        dprof2dx = a*d*_np.power(XX, d-1.0)
+        dprof1dx = b*c*_np.power(_np.asarray(XX, dtype=_np.complex128), c-1.0).real*prof1
+        dprof2dx = a*d*_np.power(_np.asarray(XX, dtype=_np.complex128), d-1.0).real
 #        dprof2dx = d*prof2/XX
         return dprof1dx, dprof2dx
 
@@ -2871,8 +2861,9 @@ class ModelExponential(ModelClass):
         XX = ModelExponential.absX(XX)
 #        d2prof1dx2 = b*c*_np.power(XX, c-1.0)*( (c-1.0)*prof1/XX + dprof1dx )
 #        d2prof2dx2 = (d-1.0)*prof2/XX
-        d2prof1dx2 = b*c*_np.power(XX, c-2.0)*prof1*(b*c*_np.power(XX, c)+c-1.0)
-        d2prof2dx2 = a*(d-1.0)*d*_np.power(XX, d-2.0)
+        d2prof1dx2 = (b*c*_np.power(_np.asarray(XX, dtype=_np.complex128), c-2.0).real
+                    *prof1*(b*c*_np.power(_np.asarray(XX, dtype=_np.complex128), c).real+c-1.0) )
+        d2prof2dx2 = a*(d-1.0)*d*_np.power(_np.asarray(XX, dtype=_np.complex128), d-2.0).real
         return d2prof1dx2, d2prof2dx2
 
     @staticmethod
@@ -2927,8 +2918,8 @@ class ModelExponential(ModelClass):
 
 #        gvec[0, :] = _np.exp(b* _np.power(XX, c)) + _np.power(XX, d)
         gvec[0, :] = prof/a
-        gvec[1, :] = prof1*_np.power(XX, c)
-        gvec[2, :] = b*_np.log(_np.abs(XX))*_np.power(XX, c)*prof1
+        gvec[1, :] = prof1*_np.power(_np.asarray(XX, dtype=_np.complex128), c).real
+        gvec[2, :] = b*_np.log(_np.abs(XX))*_np.power(_np.asarray(XX, dtype=_np.complex128), c).real*prof1
         gvec[3, :] = _np.log(_np.abs(XX))*prof2
 #        gvec[2, :] = b*prof1*_np.log(_np.abs(XX))*_np.power(XX, c)
 #        gvec[3, :] = a*_np.log(_np.abs(XX))*_np.power(XX, d)
@@ -2964,9 +2955,12 @@ class ModelExponential(ModelClass):
         XX = ModelExponential.absX(XX)
 
         dgdx[0, :] = dprofdx / a
-        dgdx[1, :] = dprof1dx*( _np.power(XX, c) + 1.0/b )
-        dgdx[2, :] = dprof1dx*( b*_np.log(_np.abs(XX))*_np.power(XX, c) + _np.log(_np.abs(XX)) + 1.0/c )
-        dgdx[3, :] = a*_np.power(XX, d-1.0)*( 1.0 + d*_np.log(_np.abs(XX)) )
+        dgdx[1, :] = dprof1dx*( _np.power(_np.asarray(XX, dtype=_np.complex128), c).real + 1.0/b )
+        dgdx[2, :] = dprof1dx*( b*_np.log(_np.abs(XX))
+            *_np.power(_np.asarray(XX, dtype=_np.complex128), c).real
+            + _np.log(_np.abs(XX)) + 1.0/c )
+        dgdx[3, :] = ( a*_np.power(_np.asarray(XX, dtype=_np.complex128), d-1.0).real
+                        *( 1.0 + d*_np.log(_np.abs(XX)) ) )
         return dgdx
 
     @staticmethod
@@ -3013,9 +3007,12 @@ class ModelExponential(ModelClass):
 
         d2gdx2 = _np.zeros( (num_fit,nx), dtype=float)
         d2gdx2[0, :] = d2profdx2 / a
-        d2gdx2[1, :] = d2prof1dx2*( _np.power(XX, c) + 1.0/b ) + dprof1dx*c*_np.power(XX, c-1.0)
-        d2gdx2[2, :] = d2prof1dx2*( b*_np.log(_np.abs(XX))*_np.power(XX, c) + _np.log(_np.abs(XX)) + 1.0/c ) \
-                    + dprof1dx*( b*c*_np.log(_np.abs(XX))*_np.power(XX, c-1.0) + b*_np.power(XX, c-1.0) + 1.0/XX )
+        d2gdx2[1, :] = (d2prof1dx2*( _np.power(_np.asarray(XX, dtype=_np.complex128), c).real + 1.0/b )
+                      + dprof1dx*c*_np.power(_np.asarray(XX, dtype=_np.complex128), c-1.0).real )
+        d2gdx2[2, :] = d2prof1dx2*( b*_np.log(_np.abs(XX))*_np.power(_np.asarray(XX, dtype=_np.complex128), c).real
+                    + _np.log(_np.abs(XX)) + 1.0/c ) \
+                    + dprof1dx*( b*c*_np.log(_np.abs(XX))*_np.power(_np.asarray(XX, dtype=_np.complex128), c-1.0).real
+                    + b*_np.power(_np.asarray(XX, dtype=_np.complex128), c-1.0).real + 1.0/XX )
         d2gdx2[3, :] = d2prof2dx2/d + d2prof2dx2*_np.log(_np.abs(XX)) + dprof2dx/XX
         return d2gdx2
 
@@ -3146,7 +3143,7 @@ class ModelGaussian(ModelClass):
             ss = af[2]
         """
         AA, x0, ss = tuple(aa)
-        return AA*_np.exp(-_np.power(XX-x0, 2.0)/(2.0*_np.power(ss, 2.0)))
+        return AA*_np.exp(-(XX-x0)*(XX-x0)/(2.0*(ss*ss)))
 
     @staticmethod
     def _deriv(XX, aa, **kwargs):
@@ -3161,7 +3158,7 @@ class ModelGaussian(ModelClass):
         """
         AA, x0, ss = tuple(aa)
         prof = ModelGaussian._model(XX, aa, **kwargs)
-        return -1.0*(XX-x0)/_np.power(ss, 2.0) * prof
+        return -1.0*(XX-x0)/(ss*ss) * prof
 
     @staticmethod
     def _deriv2(XX, aa, **kwargs):
@@ -3178,7 +3175,7 @@ class ModelGaussian(ModelClass):
         AA, x0, ss = tuple(aa)
         prof = ModelGaussian._model(XX, aa, **kwargs)
         dprofdx = ModelGaussian._deriv(XX, aa, **kwargs)
-        return -1.0*prof/_np.power(ss, 2.0) - dprofdx*(XX-x0)/_np.power(ss, 2.0)
+        return -1.0*prof/(ss*ss) - dprofdx*(XX-x0)/(ss*ss)
 
     @staticmethod
     def _partial(XX, aa, **kwargs):
@@ -3201,8 +3198,8 @@ class ModelGaussian(ModelClass):
         prof = ModelGaussian._model(XX, aa, **kwargs)
         gvec = _np.zeros( (3,_np.size(XX)), dtype=_np.float64)
         gvec[0,:] = prof/AA
-        gvec[1,:] = ((XX-x0)/_np.power(ss, 2.0))*prof
-        gvec[2,:] = (_np.power(XX-x0, 2.0)/_np.power(ss, 3.0)) * prof
+        gvec[1,:] = ((XX-x0)/(ss*ss))*prof
+        gvec[2,:] = ((XX-x0)*(XX-x0)/(ss*ss*ss)) * prof
         return gvec
 
     @staticmethod
@@ -3238,7 +3235,7 @@ class ModelGaussian(ModelClass):
         dgdx = _np.zeros( (3,_np.size(XX)), dtype=_np.float64)
         dgdx[0,:] = dfdx/AA
         dgdx[1,:] = -d2fdx2
-        dgdx[2,:] = -2.0*dfdx/ss + dfdx*_np.power(XX-x0,2.0)/_np.power(ss, 3.0)
+        dgdx[2,:] = -2.0*dfdx/ss + dfdx*(XX-x0)*(XX-x0)/(ss*ss*ss)
         return dgdx
 
     @staticmethod
@@ -3280,8 +3277,8 @@ class ModelGaussian(ModelClass):
 
         d2gdx = _np.zeros( (3,_np.size(XX)), dtype=_np.float64)
         d2gdx[0,:] = d2fdx2/AA
-        d2gdx[1,:] = -(XX-x0)*prof/_np.power(ss, 4.0) + dfdx/_np.power(ss, 2.0) + (XX-x0)*d2fdx2/_np.power(ss, 2.0)
-        d2gdx[2,:] = -2.0*d2fdx2/ss + 2.0*(XX-x0)/_np.power(ss, 3.0)*dfdx + _np.power(XX-x0, 2.0)*d2fdx2/_np.power(ss, 3.0)
+        d2gdx[1,:] = -(XX-x0)*prof/(ss*ss*ss*ss) + dfdx/(ss*ss) + (XX-x0)*d2fdx2/(ss*ss)
+        d2gdx[2,:] = -2.0*d2fdx2/ss + 2.0*(XX-x0)/(ss*ss*ss)*dfdx + (XX-x0)*(XX-x0)*d2fdx2/(ss*ss*ss)
         return d2gdx
 
 #    @staticmethod
@@ -3521,7 +3518,7 @@ def deriv_offsetnormal(XX, aa):
 def partial_deriv_offsetnormal(XX, aa):
     return ModelOffsetNormal._partial_deriv(XX, aa)
 
-def model_offsetnormal(XX, af, **kwargs):
+def model_offsetnormal(XX=None, af=None, **kwargs):
     norm = kwargs.pop('norm', True)  # analysis:ignore
     return _model(ModelOffsetNormal, XX, af, **kwargs)
 
@@ -3738,7 +3735,7 @@ class ModelNormal(ModelClass):
             ss = af[2]
         """
         AA, x0, ss = tuple(aa)
-        nn = _np.sqrt(2.0*_np.pi*_np.power(ss, 2.0))
+        nn = _np.sqrt(2.0*_np.pi*(ss*ss))
         return ModelGaussian._model(XX, aa, **kwargs)/nn
 
     @staticmethod
@@ -3751,7 +3748,7 @@ class ModelNormal(ModelClass):
         dfdx = -(x-xo)/ss^2 *f  = dgdx/nn
         """
         AA, x0, ss = tuple(aa)
-        nn = _np.sqrt(2.0*_np.pi*_np.power(ss, 2.0))
+        nn = _np.sqrt(2.0*_np.pi*ss*ss)
         return ModelGaussian._deriv(XX, aa, **kwargs)/nn
 
     @staticmethod
@@ -3765,7 +3762,7 @@ class ModelNormal(ModelClass):
         d2fdx2 = d2gdx2/nn
         """
         AA, x0, ss = tuple(aa)
-        nn = _np.sqrt(2.0*_np.pi*_np.power(ss, 2.0))
+        nn = _np.sqrt(2.0*_np.pi*ss*ss)
         return ModelGaussian._deriv2(XX, aa, **kwargs)/nn
 
     @staticmethod
@@ -3784,7 +3781,7 @@ class ModelNormal(ModelClass):
           where dnds = 0.5*2*2pi*ss/nn = 2pi*ss/nn = sqrt(2pi)*sign(ss)
         """
         AA, x0, ss = tuple(aa)
-        nn = _np.sqrt(2.0*_np.pi*_np.power(ss, 2.0))
+        nn = _np.sqrt(2.0*_np.pi*ss*ss)
         dnds = _np.sqrt(2.0*_np.pi)*_np.sign(ss)
 
         prof = ModelNormal._model(XX, aa, **kwargs)
@@ -3816,7 +3813,7 @@ class ModelNormal(ModelClass):
         d2fdxdss = (d2gdxdss - dnds*dfdx)/nn
         """
         AA, x0, ss = tuple(aa)
-        nn = _np.sqrt(2.0*_np.pi*_np.power(ss, 2.0))
+        nn = _np.sqrt(2.0*_np.pi*ss*ss)
         dnds = _np.sqrt(2.0*_np.pi)*_np.sign(ss)
 
         dfdx = ModelNormal._deriv(XX, aa, **kwargs)
@@ -3852,7 +3849,7 @@ class ModelNormal(ModelClass):
         d3fdx2dss = (d3gdx2dss - dnds*d2fdx2)/nn
         """
         AA, x0, ss = tuple(aa)
-        nn = _np.sqrt(2.0*_np.pi*_np.power(ss, 2.0))
+        nn = _np.sqrt(2.0*_np.pi*ss*ss)
         dnds = _np.sqrt(2.0*_np.pi)*_np.sign(ss)
 
         d2fdx2 = ModelNormal._deriv2(XX, aa, **kwargs)
@@ -4035,7 +4032,7 @@ class ModelLogGaussian(ModelClass):
         """
         AA, x0, ss = tuple(aa)
 #        return 10.0*_np.log10(ModelGaussian._model(XX, aa, **kwargs))
-        return (10.0/_np.log(10.0))*(_np.log(AA)-_np.power(XX-x0, 2.0)/(2.0*_np.power(ss, 2.0)))
+        return (10.0/_np.log(10.0))*(_np.log(AA)-(XX-x0)*(XX-x0)/(2.0*ss*ss))
 
     @staticmethod
     def _deriv(XX, aa, **kwargs):
@@ -4056,7 +4053,7 @@ class ModelLogGaussian(ModelClass):
         dfdx = -10.0*(x-xo)/(ss**2.0 * _np.log(10))
         """
         AA, xo, ss = tuple(aa)
-        return -10.0*(XX-xo)/(_np.log(10.0)*_np.power(ss, 2.0))
+        return -10.0*(XX-xo)/(_np.log(10.0)*ss*ss)
 #        return (10.0*ModelGaussian._deriv(XX, aa, **kwargs)/
 #               (_np.log(10)*ModelGaussian._model(XX, aa, **kwargs)))
 
@@ -4083,7 +4080,7 @@ class ModelLogGaussian(ModelClass):
         d2fdx2 = -10.0/(ss**2.0 * _np.log(10))
         """
         AA, xo, ss = tuple(aa)
-        return (-10.0/(_np.power(ss, 2.0) * _np.log(10.0)))*_np.ones_like(XX)
+        return (-10.0/(ss*ss * _np.log(10.0)))*_np.ones_like(XX)
 
     @staticmethod
     def _partial(XX, aa, **kwargs):
@@ -4098,8 +4095,8 @@ class ModelLogGaussian(ModelClass):
         AA, x0, ss = tuple(aa)
         gvec = _np.zeros( (3,_np.size(XX)), dtype=_np.float64)
         gvec[0,:] = 10.0/(AA*_np.log(10.0))
-        gvec[1,:] = 10.0*((XX-x0)/(_np.power(ss, 2.0)*_np.log(10.0)))
-        gvec[2,:] = 10.0*_np.power(XX-x0, 2.0)/(_np.power(ss, 3.0)*_np.log(10.0))
+        gvec[1,:] = 10.0*((XX-x0)/(ss*ss*_np.log(10.0)))
+        gvec[2,:] = 10.0*(XX-x0)*(XX-x0)/(ss*ss*ss*_np.log(10.0))
         return gvec
 
     @staticmethod
@@ -4126,8 +4123,8 @@ class ModelLogGaussian(ModelClass):
         AA, x0, ss = tuple(aa)
 
         dgdx = _np.zeros( (3,_np.size(XX)), dtype=_np.float64)
-        dgdx[1,:] = 10.0/(_np.log(10.0)*_np.power(ss,2.0))
-        dgdx[2,:] = 20.0*(XX-x0)/(_np.log(10.0)*_np.power(ss,3.0))
+        dgdx[1,:] = 10.0/(_np.log(10.0)*ss*ss)
+        dgdx[2,:] = 20.0*(XX-x0)/(_np.log(10.0)*ss*ss*ss)
         return dgdx
 
     @staticmethod
@@ -4154,7 +4151,7 @@ class ModelLogGaussian(ModelClass):
         """
         AA, x0, ss = tuple(aa)
         d2gdx2 = _np.zeros( (3,_np.size(XX)), dtype=_np.float64)
-        d2gdx2[2,:] = 20.0/(_np.log(10.0)*_np.power(ss,3.0))
+        d2gdx2[2,:] = 20.0/(_np.log(10.0)*ss*ss*ss)
         return d2gdx2
 
 
@@ -4470,7 +4467,7 @@ class ModelLorentzian(ModelClass):
         d2gdx2 = _np.zeros( (3,_np.size(XX)), dtype=_np.float64)
         d2gdx2[0,:] = d2fdx2/AA
         d2gdx2[1,:] = (2.0*d2fdx2*dx+6.0*dfdx-dx*d2fdxdxo)/denom
-        d2gdx2[2,:] = d2fdx2/ss - ss*d2fdx2/denom + dx*ss*dfdx/_np.power(denom, 2.0)
+        d2gdx2[2,:] = d2fdx2/ss - ss*d2fdx2/denom + dx*ss*dfdx/(denom*denom)
 #        d2gdx2[0,:] = -1.0*16.0*ss*( ss*ss-12.0*(XX-x0)*(XX-x0) )/_np.power( ss*ss +4.0*(XX-x0)*(XX-x0), 3.0) / _np.pi
 #        d2gdx2[1,:] =768.0*AA*ss*(x0-XX)*(ss*ss-4.0*_np.power(x0-XX,4.0))/_np.power(ss*ss+4.0*_np.power(x0-XX,2.0), 4.0)/_np.pi
 #        d2gdx2[2,:] = 48.0*AA*(_np.power(ss,4.0)-24.0*ss*ss*_np.power(XX-x0,2.0)+16.0*_np.power(XX-x0,4.0))/_np.power(ss*ss+4.0*_np.power(XX-x0,2.0), 4.0)/_np.pi
@@ -4530,7 +4527,6 @@ class ModelLorentzian(ModelClass):
         xs = kwargs.setdefault('xs', self.xslope)
         xo = kwargs.setdefault('xo', self.xoffset)
 
-
         aout[0] = ain[0]/(xs*ys)
         aout[1] = (ain[1]-xo)/xs
         aout[2] = ain[2]/xs
@@ -4564,7 +4560,7 @@ def partial_pyseudovoigt(XX, aa):
 def partial_deriv_pyseudovoigt(XX, aa):
     return ModelPseudoVoigt._partial_deriv(XX, aa)
 
-def model_pyseudovoigt(XX=None, af=None, **kwargs):
+def model_pseudovoigt(XX=None, af=None, **kwargs):
     return _model(ModelPseudoVoigt, XX, af, **kwargs)
 
 class ModelPseudoVoigt(ModelClass):
@@ -4645,16 +4641,18 @@ class ModelPseudoVoigt(ModelClass):
         xo = kwargs.setdefault('xo', self.xoffset)
 
         LM = ModelLorentzian(None)
-#        LM.slope = ys
-#        LM.xslope = xs
-#        LM.xoffset = xo
-        aout[1:4] = LM.unscaleaf(aout[1:4], xo=xo, xs=xs, ys=ys, yo=0.0)
+        LM.slope = ys
+        LM.offset = yo
+        LM.xslope = xs
+        LM.xoffset = xo
+        aout[1:4] = LM.unscaleaf(aout[1:4])
 
         NM = ModelNormal(None)
-#        NM.slope = ys
-#        NM.xslope = xs
-#        NM.xoffset = xo
-        aout[4:] = NM.unscaleaf(aout[4:], xo=xo, xs=xs, ys=ys, yo=0.0)
+        NM.slope = ys
+        NM.offset = yo
+        NM.xslope = xs
+        NM.xoffset = xo
+        aout[4:] = NM.unscaleaf(aout[4:])
         return aout
 
     def scaleaf(self, ain, **kwargs):
@@ -4671,9 +4669,17 @@ class ModelPseudoVoigt(ModelClass):
         xo = kwargs.setdefault('xo', self.xoffset)
 
         LM = ModelLorentzian(None)
+        LM.slope = ys
+        LM.offset = yo
+        LM.xslope = xs
+        LM.xoffset = xo
         NM = ModelNormal(None)
-        aout[1:4] = LM.scaleaf(aout[1:4], xo=xo, xs=xs, ys=ys, yo=0.0)
-        aout[4:] = NM.scaleaf(aout[4:], xo=xo, xs=xs, ys=ys, yo=0.0)
+        NM.slope = ys
+        NM.offset = yo
+        NM.xslope = xs
+        NM.xoffset = xo
+        aout[1:4] = LM.scaleaf(aout[1:4])
+        aout[4:] = NM.scaleaf(aout[4:])
         return aout
 
     def scalings(self, xdat, ydat, **kwargs):
@@ -4747,8 +4753,8 @@ class ModelLogLorentzian(ModelClass):
         """
 #        return 10.0*_np.log(lorentzian(XX, aa))/_np.log(10.0)
         AA, x0, ss = tuple(aa)
-        return ( 10.0*_np.log10(0.5) + 10.0*_np.log10(AA)  + 10.0*_np.log10(ss) - 10.0*_np.log10(_np.pi)
-               - 10.0*_np.log10(_np.abs(_np.power(XX-x0, 2.0) + 0.25*_np.power(ss, 2.0) ) ) )
+        return ( 10.0*_np.log10(0.5) + 10.0*_np.log10(AA)  + 10.0*_np.log10(_np.abs(ss)) - 10.0*_np.log10(_np.pi)
+               - 10.0*_np.log10(_np.abs((XX-x0)*(XX-x0) + 0.25*ss*ss) ) )
 
     @staticmethod
     def _deriv(XX, aa, **kwargs):
@@ -4761,7 +4767,7 @@ class ModelLogLorentzian(ModelClass):
                  = -2.0*(x-xo)*10.0/((x-xo)**2.0 + 0.25*ss**2.0 )/_np.log(10)
         """
         AA, x0, ss = tuple(aa)
-        return -20.0*(XX-x0)/( _np.log(10.0) *( _np.power(XX-x0, 2.0)+0.25*_np.power(ss, 2.0)) )
+        return -20.0*(XX-x0)/( _np.log(10.0) *((XX-x0)*(XX-x0) + 0.25*ss*ss) )
 
     @staticmethod
     def _deriv2(XX, aa, **kwargs):
@@ -4774,7 +4780,8 @@ class ModelLogLorentzian(ModelClass):
                  = -2.0*(x-xo)*10.0/((x-xo)**2.0 + 0.25*ss**2.0 )/_np.log(10)
         """
         AA, x0, ss = tuple(aa)
-        return -80.0*(ss*ss-4.0*_np.power(XX-x0,2.0))/( _np.log(10.0) *_np.power( 4.0*_np.power(XX-x0, 2.0)+_np.power(ss, 2.0), 2.0) )
+        denom = 4.0*(XX-x0)*(XX-x0)+ss*ss
+        return -80.0*(ss*ss-4.0*(XX-x0)*(XX-x0))/( _np.log(10.0) *(denom*denom) )
 
     @staticmethod
     def _partial(XX, aa, **kwargs):
@@ -4796,11 +4803,11 @@ class ModelLogLorentzian(ModelClass):
 
        """
         AA, x0, ss = tuple(aa)
-
+        denom = (XX-x0)*(XX-x0)+0.25*ss*ss
         gvec = _np.zeros( (3,_np.size(XX)), dtype=_np.float64)
         gvec[0,:] = 10.0/(_np.log(10.0)*AA)
-        gvec[1,:] = 20.0*(XX-x0)/( _np.log(10.0)*(_np.power(XX-x0, 2.0) + 0.25*_np.power(ss, 2.0 )))
-        gvec[2,:] = 10.0/(_np.log(10.0)*ss) - 5.0*ss/( _np.log(10.0)*(_np.power(XX-x0, 2.0) + 0.25*_np.power(ss, 2.0 )))
+        gvec[1,:] = 20.0*(XX-x0)/( _np.log(10.0)*denom)
+        gvec[2,:] = 10.0/(_np.log(10.0)*ss) - 5.0*ss/( _np.log(10.0)*denom)
         return gvec
 
     @staticmethod
@@ -4818,10 +4825,11 @@ class ModelLogLorentzian(ModelClass):
         d2f/dxds = 10*s*(x-xo)/( ln|10|*( (x-xo)^2+0.25s^2 )^2 )
         """
         AA, x0, ss = tuple(aa)
-
+        denom1 = 4.0*(XX-x0)*(XX-x0)+ss*ss
+        denom2 = (XX-x0)*(XX-x0)+0.25*ss*ss
         dgdx = _np.zeros( (3,_np.size(XX)), dtype=_np.float64)
-        dgdx[1,:] = 80.0*(ss-2.0*(XX-x0))*(ss+2.0*(XX-x0))/( _np.log(10)*_np.power( 4.0*_np.power(XX-x0, 2.0) + _np.power(ss, 2.0) , 2.0) )
-        dgdx[2,:] = 10.0*ss*(XX-x0)/(_np.log(10.0)*_np.power(_np.power(XX-x0, 2.0)+0.25*_np.power(ss, 2.0), 2.0) )
+        dgdx[1,:] = 80.0*(ss-2.0*(XX-x0))*(ss+2.0*(XX-x0))/( _np.log(10)*denom1*denom1 )
+        dgdx[2,:] = 10.0*ss*(XX-x0)/(_np.log(10.0)*denom2*denom2 )
         return dgdx
 
     @staticmethod
@@ -4843,10 +4851,10 @@ class ModelLogLorentzian(ModelClass):
         d2fdx2ds = 2.5*s*(s^2-12*(x-xo)^2)/(ln|10|*(s^2/4+(x-xo)^2)^3)
         """
         AA, x0, ss = tuple(aa)
-
+        denom1 = 4.0*(XX-x0)*(XX-x0)+ss*ss
         d2gdx2 = _np.zeros( (3,_np.size(XX)), dtype=_np.float64)
-        d2gdx2[1,:] = -640.0*(XX-x0)*(3.0*ss*ss-4.0*_np.power(XX-x0,2.0))/(_np.log(10.0)*_np.power(ss*ss+4.0*_np.power(XX-x0,2.0), 3.0))
-        d2gdx2[2,:] = 160.0*ss*(ss*ss-12.0*_np.power(XX-x0,2.0))/(_np.log(10.0)*_np.power(ss*ss+4.0*_np.power(XX-x0,2.0), 3.0))
+        d2gdx2[1,:] = -640.0*(XX-x0)*(3.0*ss*ss-4.0*(XX-x0)*(XX-x0))/(_np.log(10.0)*denom1*denom1*denom1)
+        d2gdx2[2,:] = 160.0*ss*(ss*ss-12.0*(XX-x0)*(XX-x0))/(_np.log(10.0)*denom1*denom1*denom1)
         return d2gdx2
 
 #    @staticmethod
@@ -5229,7 +5237,7 @@ class ModelLogDoppler(ModelDoppler):
           + Normalized Gaussain2
         """
         kwargs.setdefault('model_order', 2)
-        return 10.0*_np.log10(ModelDoppler._model(XX, aa, **kwargs))
+        return 10.0*_np.log10(_np.asarray(ModelDoppler._model(XX, aa, **kwargs), dtype=_np.complex128)).real
 
     @staticmethod
     def _deriv(XX, aa, **kwargs):
@@ -5266,7 +5274,7 @@ class ModelLogDoppler(ModelDoppler):
         prof = ModelDoppler._model(XX, aa, **kwargs)
         deriv = ModelDoppler._deriv(XX, aa, **kwargs)
         deriv2 = ModelDoppler._deriv2(XX, aa, **kwargs)
-        return (10.0/_np.log(10.0))*(deriv2/prof-_np.power(deriv/prof, 2.0))
+        return (10.0/_np.log(10.0))*(deriv2/prof-(deriv/prof)*(deriv/prof))
 
     @staticmethod
     def _partial(XX, aa, **kwargs):
@@ -5316,7 +5324,7 @@ class ModelLogDoppler(ModelDoppler):
         d2ydxda = ModelDoppler._partial_deriv(XX, aa, **kwargs)
         dlngdx = _np.zeros_like(dyda)
         for ii in range(len(aa)):
-            dlngdx[ii,:] = d2ydxda[ii,:]/y - dyda[ii,:]*dydx/_np.power(y, 2.0)
+            dlngdx[ii,:] = d2ydxda[ii,:]/y - dyda[ii,:]*dydx/(y*y)
         # end for
         return 10.0*dlngdx/_np.log(10.0)
 
@@ -5350,8 +5358,8 @@ class ModelLogDoppler(ModelDoppler):
 
         d2lngdx2 = _np.zeros_like(dyda)
         for ii in range(len(aa)):
-            d2lngdx2[ii,:] = ( d3ydx2da[ii,:]/y -2.0*d2ydxda[ii,:]*dydx/_np.power(y, 2.0)
-            - dyda[ii,:]*d2ydx2/_np.power(y, 2.0) + 2.0*dyda[ii,:]*_np.power(dydx, 2.0)/_np.power(y, 3.0) )
+            d2lngdx2[ii,:] = ( d3ydx2da[ii,:]/y -2.0*d2ydxda[ii,:]*dydx/(y*y)
+            - dyda[ii,:]*d2ydx2/(y*y) + 2.0*dyda[ii,:]*(dydx*dydx)/(y*y*y) )
         # end for
         return 10.0*d2lngdx2/_np.log(10.0)
 #
@@ -5461,20 +5469,21 @@ class _ModelTwoPower(ModelClass):
     """
     _analytic_xscaling = False
     _analytic_yscaling = True
-    _af = _np.asarray([1.0, 2.0, 1.0], dtype=_np.float64)
+#    _af = _np.asarray([1.0, 2.0, 1.0], dtype=_np.float64)
+    _af = _np.asarray([5.0, 6.0, 10.0], dtype=_np.float64)
     _LB = _np.asarray([  1e-18,   1e-18, -_np.inf], dtype=_np.float64)
     _UB = _np.asarray([_np.inf, _np.inf, _np.inf], dtype=_np.float64)
     _fixed = _np.zeros( (3,), dtype=int)
 
     # Neumann boundary condition on left boundary
     #        dydx(xlim) = 0.0
-    leftboundary = 0.0
+#    leftboundary = 0.0
 #    leftboundary = {'x':0.0, 'neumann': True, 'value': 0.0}
 
     # Dirichlet boundary condition on right boundary
     # this model requires dirichlet boundary condition on right
     #        y(xlim) = 0.0
-    rightboundary = 1.0
+#    rightboundary = 1.0
 #    rightboundary = {'x':1.0, 'dirichlet': False, 'value': 0.0}
     # _rzero = 1.0
     def __init__(self, XX, af=None, **kwargs):
@@ -5492,16 +5501,15 @@ class _ModelTwoPower(ModelClass):
             if f is modified to (r-x**c)**d, then the boundary changes to r
         """
         XX = _np.copy(XX)
+#        XX = _np.abs(XX)
         c, d = tuple(aa)
 
-        cs = c
-#        cs = c*_np.ones_like(XX)
-#        cs[XX>=1.0] *= -1.0
+        arg1 = _np.power(_np.asarray(_np.abs(XX), dtype=_np.complex128), c).real
+        prof = _np.power(_np.asarray(1.0-arg1, dtype=_np.complex128), d).real
+#        prof = _np.power(_np.abs(1.0-_np.power(_np.abs(XX), c)), d)
 
-        prof = _np.sign(cs)*_np.power(1.0-_np.power(_np.abs(XX), cs), d)
-#        prof = _np.zeros_like(XX)
-#        prof[XX<1] = _np.power(1.0-_np.power(_np.abs(XX[XX<1]), c), d)
-#        prof[XX>=1] = -1.0*_np.power(1.0-_np.power(_np.abs(XX[XX>=1]), -c), d)
+#        if (prof<0).any():
+#            prof -= prof.min()
         return prof
 
     @staticmethod
@@ -5529,22 +5537,29 @@ class _ModelTwoPower(ModelClass):
               = a*(1.0 - x^c)^d * ln1p|-x^c|
        """
         XX = _np.copy(XX)
+#        XX = _np.abs(XX)
         a, c, d = tuple(aa)
 
-        cs = c
-#        cs = c*_np.ones_like(XX)
-#        cs[XX>=1.0] *= -1.0
+        cs = _np.copy(c)
+#        cs = cs*_np.ones_like(XX)
+#        cs[XX>1.0] *= -1.0
 
         gvec = _np.zeros((3,_np.size(XX)), dtype=_np.float64)
         gvec[0,:] = _ModelTwoPower._model_base(XX, [c, d])
-        gvec[1,:] = -1.0*d*_np.power(XX, cs)*_np.log(_np.abs(XX))*_ModelTwoPower._model(XX, [a, c, d-1.0])
-        gvec[2,:] = _ModelTwoPower._model(XX, aa)*_np.log1p(-_np.abs(_np.power(XX, cs)))
+        gvec[1,:] = (-1.0*d*_np.power(_np.asarray(XX, dtype=_np.complex128), cs).real
+                     *_np.log(_np.abs(XX))*_ModelTwoPower._model(XX, [a, c, d-1.0]))
+
+        # Error in log1p for 1-X^c at x>1 - returns nan
+#        gvec[2,:] = _ModelTwoPower._model(XX, aa)*_np.log1p(-_np.abs(_np.power(XX, cs)))
+        gvec[2,:] = _ModelTwoPower._model(XX, aa)
+        gvec[2,:] *= _np.log(_np.asarray(1.0 - _np.power(_np.asarray(XX, dtype=_np.complex128)
+                                  , cs).real, dtype=_np.complex128)).real
 
 #        gvec[0,:] = _ModelTwoPower._model_base(XX, [c, d])
-#        gvec[1,XX<1] = -1.0*d*_np.power(XX[XX<1], c)*_np.log(_np.abs(XX[XX<1]))
-#        gvec[1,XX>=1] = -1.0*d*_np.power(XX[XX>=1], -c)*_np.log(_np.abs(XX[XX>=1]))
-#        gvec[2,XX<1] = _np.log1p(-_np.abs(_np.power(XX[XX<1], c)))
-#        gvec[2,XX>=1] = _np.log1p(-_np.abs(_np.power(XX[XX>=1], -c)))
+#        gvec[1,XX<=1] = -1.0*d*_np.power(XX[XX<=1], c)*_np.log(_np.abs(XX[XX<=1]))
+#        gvec[1,XX>1] = 1.0*d*_np.power(XX[XX>1], -c)*_np.log(_np.abs(XX[XX>1]))
+#        gvec[2,XX<=1] = _np.log1p(-_np.abs(_np.power(XX[XX<=1], c)))
+#        gvec[2,XX>1] = _np.log1p(-_np.abs(_np.power(XX[XX>1], -c)))
 #        gvec[1,:] *= _ModelTwoPower._model(XX, [a, c, d-1.0])
 #        gvec[2,:] *= _ModelTwoPower._model(XX, aa)
         return gvec
@@ -5562,17 +5577,20 @@ class _ModelTwoPower(ModelClass):
          dfdd = a*(1.0 - x^c)^d * ln|1.0 - x^c|
               = a*(1.0 - x^c)^d * ln1p|-x^c|
        """
-        XX = _np.copy(_np.abs(XX))
+        XX = _np.copy(XX)
+#        XX = _np.abs(XX)
         a, c, d = tuple(aa)
 
-        cs = c
-#        cs = c*_np.ones_like(XX)
-#        cs[XX>=1.0] *= -1.0
-        dfdx = -1.0*cs*d*_np.power(XX, cs-1.0)*_ModelTwoPower._model(XX, [a, c, d-1.0])
+        cs = _np.copy(c)
+#        cs = cs*_np.ones_like(XX)
+#        cs[XX>1.0] *= -1.0
+
+        dfdx = -1.0*cs*d*_np.power(_np.asarray(XX, dtype=_np.complex128), cs-1.0).real
+        dfdx *= _ModelTwoPower._model(XX, [a, c, d-1.0])
 
 #        dfdx = _np.zeros_like(XX)
-#        dfdx[XX<1] = -1.0*c*d*_np.power(XX[XX<1], c-1.0)
-#        dfdx[XX>=1] = 1.0*c*d*_np.power(XX[XX>=1], -c-1.0)
+#        dfdx[XX<=1] = -1.0*c*d*_np.power(XX[XX<=1], c-1.0)
+#        dfdx[XX>1] = 1.0*c*d*_np.power(XX[XX>1], -c-1.0)
 #        dfdx *= _ModelTwoPower._model(XX, [a, c, d-1.0])
     #    return -1.0*a*c*d*_np.power(XX, c-1.0)*_np.power(1.0-_np.power(XX,c), d-1.0)
         return dfdx
@@ -5593,7 +5611,7 @@ class _ModelTwoPower(ModelClass):
         d2fdxda = dfdx/a
         d2fdxdc = a*d*x^(c-1)*(1-x^c)^(d-2)*(c*ln|x|*(d*x^c-1)+x^c-1)
                 = d*x^(c-1)*_twopower(x, [a, c, d-2.0])*(c*ln|x|*(d*x^c-1)+x^c-1)
-        d2fdxdc = -a*c*x^(c-1)*(1-x^c)^(d-1)*( -d*ln|1-x^c| - 1)
+        d2fdxdd = -a*c*x^(c-1)*(1-x^c)^(d-1)*( -d*ln|1-x^c| - 1)
                 = -1*c*x^(c-1)*_twopower(x, [a, c, d-1.0])*( d*ln1p(-x^c) + 1)
 
 #        d2fdxdc = dfdx/c + ln|x|*dfdx - a*c*d*x^(c-1)*(d-1)*(1.0 - x^c)^(d-2)*-1*x^c*ln|x|
@@ -5603,19 +5621,37 @@ class _ModelTwoPower(ModelClass):
 #        d2fdxdd = dfdx/d + dfdx*ln|(1.0 - x^c)^(d-1)|
        """
         XX = _np.copy(XX)
+#        XX = _np.abs(XX)
         a, c, d = tuple(aa)
         dfdx = _ModelTwoPower._deriv(XX, aa)
 
-        cs = c
-#        cs = c*_np.ones_like(XX)
-#        cs[XX>=1.0] *= -1.0
+        cs = _np.copy(c)
+#        cs = cs*_np.ones_like(XX)
+#        cs[XX>1.0] *= -1.0
+
+        Xcs = _np.power(_np.asarray(XX, dtype=_np.complex128), cs).real
+        Xcs1 = _np.power(_np.asarray(XX, dtype=_np.complex128), cs-1.0).real
 
         dgdx = _np.zeros((3,_np.size(XX)), dtype=_np.float64)
         dgdx[0,:] = dfdx/a
-        dgdx[1,:] = d*_np.power(XX,cs-1.0)*_ModelTwoPower._model(XX, [a, c, d-2.0])*(
-                cs*_np.log(_np.abs(XX))*(d*_np.power(XX,cs)-1.0)+_np.power(XX,cs)-1.0)
-        dgdx[2,:] = -1.0*cs*_np.power(XX,cs-1.0)*_ModelTwoPower._model(XX, [a, c, d-1.0])*( d*_np.log1p(-_np.power(XX,cs)) + 1.0)
+#        dgdx[1,XX<=1.0] = d*_np.power(XX[XX<=1.0],c-1.0)*_ModelTwoPower._model(XX[XX<=1.0], [a, c, d-2.0])*(
+#                c*_np.log(_np.abs(XX[XX<=1.0]))*(d*_np.power(XX[XX<=1.0],c)-1.0)+_np.power(XX[XX<=1.0],c)-1.0)
+#        dgdx[1,XX>1.0] = -d*_np.power(XX[XX>1.0],-c-1.0)*_ModelTwoPower._model(XX[XX>1.0], [a, c, d-2.0])*(
+#                -1.0*c*_np.log(_np.abs(XX[XX>1.0]))*(d*_np.power(XX[XX>1.0],-c)-1.0)+_np.power(XX[XX>1.0],-c)-1.0)
+#        dgdx[2,XX<=1.0] = -1.0*c*_np.power(XX[XX<=1.0],c-1.0)*_ModelTwoPower._model(XX[XX<=1.0], [a, c, d-1.0])*( d*_np.log1p(-_np.power(XX[XX<=1.0],c)) + 1.0)
+#        dgdx[2,XX>1.0] = 1.0*c*_np.power(XX[XX>1.0],-c-1.0)*_ModelTwoPower._model(XX[XX>1.0], [a, c, d-1.0])*( d*_np.log1p(-_np.power(XX[XX>1.0],-c)) + 1.0)
 
+        dgdx[1,:] = d*_np.power(_np.asarray(XX, dtype=_np.complex128),cs-1.0).real
+        dgdx[1,:] *= _ModelTwoPower._model(XX, [a, c, d-2.0])*(
+                cs*_np.log(_np.abs(XX))*(d*_np.power(_np.asarray(XX, dtype=_np.complex128),cs).real-1.0)
+                +_np.power(_np.asarray(XX, dtype=_np.complex128), cs).real-1.0)
+        # Error in log1p at x>1 ... this is solved using complex numbers
+#        dgdx[2,:] = -1.0*cs*_np.power(XX,cs-1.0)*_ModelTwoPower._model(XX, [a, c, d-1.0])*( d*_np.log1p(-_np.power(XX,cs)) + 1.0)
+        dgdx[2,:] = -1.0*cs*Xcs1*_ModelTwoPower._model(XX, [a, c, d-1.0])*(
+            d*_np.log1p(_np.asarray(-Xcs, dtype=_np.complex128)).real + 1.0)
+#            d*_np.log(_np.asarray(1.0-Xcs, dtype=_np.complex128)).real + 1.0)
+#        if (dgdx>40).any():
+#            print('pause')
 #        dgdx[1,:] = dfdx*(_np.power(c, -1.0) + _np.log(_np.abs(XX))
 #            - (d-1.0)*_np.power(XX, c)*_np.log(_np.abs(XX))*_ModelTwoPower._model(XX, [1.0, c, -1.0]))
 #        dgdx[2,:] = dfdx*(_np.power(d, -1.0) + _np.log(_np.abs(_ModelTwoPower._model_base(XX, [c, d-1.0]))))
@@ -5644,15 +5680,21 @@ class _ModelTwoPower(ModelClass):
                 = -1*c*x^(c-1)*_twopower(x, [a, c, d-1.0])*( d*ln1p(-x^c) + 1)
 
        """
-        XX = _np.copy(_np.abs(XX))
+        XX = _np.copy(XX)
+#        XX = _np.abs(XX)
         a, c, d = tuple(aa)
 
-        cs = c
-#        cs = c*_np.ones_like(XX)
-#        cs[XX>=1.0] *= -1.0
+        cs = _np.copy(c)
+#        cs = cs*_np.ones_like(XX)
+#        cs[XX>1.0] *= -1.0
 
-        d2fdx2 = cs*cs*d*(d-1.0)*_np.power(XX, 2.0*cs-2.0)*_ModelTwoPower._model(XX, [a, c, d-2.0])
-        d2fdx2 -= cs*d*(cs-1.0)*_np.power(XX, cs-2.0)*_ModelTwoPower._model(XX, [a, c, d-1.0])
+        d2fdx2 = cs*cs*d*(d-1.0)*_np.power(_np.asarray(XX, dtype=_np.complex128), 2.0*cs-2.0).real
+        d2fdx2 *=_ModelTwoPower._model(XX, [a, c, d-2.0])
+        d2fdx2 -= cs*d*(cs-1.0)*(_np.power(_np.asarray(XX, dtype=_np.complex128), cs-2.0).real
+            *_ModelTwoPower._model(XX, [a, c, d-1.0]))
+
+#        d2fdx2 = cs*cs*d*(d-1.0)*_np.power(XX, 2.0*cs-2.0)*_ModelTwoPower._model(XX, [a, c, d-2.0])
+#        d2fdx2 -= cs*d*(cs-1.0)*_np.power(XX, cs-2.0)*_ModelTwoPower._model(XX, [a, c, d-1.0])
         return d2fdx2
 
     @staticmethod
@@ -5689,28 +5731,35 @@ class _ModelTwoPower(ModelClass):
 
        """
         XX = _np.copy(XX)
+#        XX = _np.abs(XX)
         a, c, d = tuple(aa)
-
-        cs = c
-#        cs = c*_np.ones_like(XX)
-#        cs[XX>=1.0] *= -1.0
+        cs = _np.copy(c)
+#        cs = cs*_np.ones_like(XX)
+#        cs[XX>1.0] *= -1.0
 
 #        dfdx = _ModelTwoPower._deriv(XX, aa)
 #        d2fdx2 = _ModelTwoPower._deriv2(XX, aa)
+        Xcs = _np.power(_np.asarray(XX, dtype=_np.complex128), cs).real
+        Xcs2 = _np.power(_np.asarray(XX, dtype=_np.complex128), cs-2.0).real
+        X2cs = _np.power(_np.asarray(XX, dtype=_np.complex128), 2.0*cs).real
+        d2 = _np.power(_np.asarray(d, dtype=_np.complex128), 2.0).real
 
         d2gdx2 = _np.zeros((3,_np.size(XX)), dtype=_np.float64)
-        d2gdx2[0, :] = cs*d*_np.power(XX, cs-2.0)*_ModelTwoPower._model_base(XX, [c, d-2.0])*(
-                cs*(d*_np.power(XX, cs)-1.0)-_np.power(XX, cs)+1.0 )
-        d2gdx2[1, :] = -d*_np.power(XX, cs-2.0)*_ModelTwoPower._model(XX, [a, c, d-3.0])*(
-                cs*_np.log(_np.abs(XX))*(
-                cs*( _np.power(d,2.0)*_np.power(XX,2.0*cs) + (1.0-3.0*d)*_np.power(XX, cs)+1.0)
-              - d*_np.power(XX,2.0*cs)+(d+1.0)*_np.power(XX,cs)-1.0)
-              + cs*( 2.0*d*_np.power(XX,2.0*cs)+(-2.0*d-2.0)*_np.power(XX, cs) + 2.0 )
+        d2gdx2[0, :] = cs*d*Xcs2*_ModelTwoPower._model_base(XX, [c, d-2.0])*(
+                cs*(d*Xcs-1.0)-Xcs+1.0 )
+        d2gdx2[1, :] = -d*Xcs2*_ModelTwoPower._model(XX, [a, c, d-3.0])*(
+                cs*_np.log(_np.abs(XX))*( cs*( d2*X2cs + (1.0-3.0*d)*Xcs+1.0)
+              - d*X2cs+(d+1.0)*Xcs-1.0) + cs*( 2.0*d*X2cs+(-2.0*d-2.0)*Xcs + 2.0 )
               - _ModelTwoPower._model(XX, [1.0, c, 2.0]) )
-        d2gdx2[2, :] = cs*_np.power(XX, cs-2.0)*_ModelTwoPower._model(XX, [a, c, d-2.0])*(
-            cs*(2.0*d*_np.power(XX, cs)-1.0)
-          + d*(cs*(d*_np.power(XX, cs)-1.0)-_np.power(XX, cs)+1.0)*_np.log1p(-1*_np.power(XX, cs))
-          - _np.power(XX, cs)+1.0)
+        # Error in log1p ... returns nan for x>1.  Solve this with complex numbers
+#        d2gdx2[2, :] = cs*_np.power(XX, cs-2.0)*_ModelTwoPower._model(XX, [a, c, d-2.0])*(
+#            cs*(2.0*d*_np.power(XX, cs)-1.0)
+#          + d*(cs*(d*_np.power(XX, cs)-1.0)-_np.power(XX, cs)+1.0)*_np.log1p(-1*_np.power(XX, cs))
+#          - _np.power(XX, cs)+1.0)
+        d2gdx2[2, :] = cs*Xcs2*_ModelTwoPower._model(XX, [a, c, d-2.0])*(
+            cs*(2.0*d*Xcs-1.0) + d*(cs*(d*Xcs-1.0)-Xcs+1.0)*(
+          _np.log1p(-_np.asarray(Xcs, dtype=_np.complex128)).real )- Xcs+1.0)
+#          _np.log(_np.asarray(1-Xcs, dtype=_np.complex128)).real )- Xcs+1.0)
 
 #        d2gdx2[0,:] = d2fdx2/a
 #        d2gdx2[1,:] = d2fdx2*(_np.power(c, -1.0) + _np.log(_np.abs(XX))
@@ -5860,14 +5909,18 @@ class ModelTwoPower(ModelClass):
               = (1.0-b)*_twopower() * ln|_twopower(x, [1.0, c, 1.0])|
         """
         XX = _np.copy(XX)
+#        XX = _np.abs(XX)
         a, b, c, d = tuple(aa)
 
         nx = _np.size(XX)
         gvec = _np.zeros((4, nx), dtype=_np.float64)
         gvec[0, :] = ModelTwoPower._model(XX, [1.0, b, c, d])
         gvec[1, :] = a-_ModelTwoPower._model(XX, [a, c, d])
-        gvec[2, :] = -d*(1.0-b)*_np.log(_np.abs(XX))*_np.power(_np.abs(XX), c)*_ModelTwoPower._model(XX, [a, c, d-1.0])
-        gvec[3, :] = (1.0-b)*_ModelTwoPower._model(XX, [a, c, d])*_np.log(_np.abs(_ModelTwoPower._model(XX, [1.0, c, 1.0])))
+        gvec[2, :] = (-d*(1.0-b)*_np.log(_np.array(_np.abs(XX), dtype=_np.complex128)).real
+            *_np.power(_np.asarray(_np.abs(XX), dtype=_np.complex128), c).real
+            *_ModelTwoPower._model(XX, [a, c, d-1.0]))
+        gvec[3, :] = ((1.0-b)*_ModelTwoPower._model(XX, [a, c, d])
+            *_np.log(_np.asarray(_np.abs(_ModelTwoPower._model(XX, [1.0, c, 1.0])), dtype=_np.complex128)).real )
 #        if (_np.isnan(gvec)).any():
 #            print('debugging')
         return gvec
@@ -5895,6 +5948,7 @@ class ModelTwoPower(ModelClass):
 
         """
         a, b, c, d = tuple(aa)
+#        XX = _np.abs(XX)
         dfdx = ModelTwoPower._deriv(XX, aa)
 
         nx = _np.size(XX)
@@ -5902,8 +5956,11 @@ class ModelTwoPower(ModelClass):
         dgdx[0, :] = dfdx/a
         dgdx[1, :] = -dfdx/(1.0-b)
         dgdx[2, :] = dfdx*( 1.0/c + _np.log(_np.abs(XX))
-                - (d-1.0)*_np.power(XX, c)*_np.log(_np.abs(XX))/_ModelTwoPower._model_base(XX,[c, 1.0]))
-        dgdx[3, :] = dfdx*( 1.0/d + _np.log(_np.abs(_ModelTwoPower._model_base(XX, [c, 1.0]))) )
+                - (d-1.0)*_np.power(_np.asarray(XX, dtype=_np.complex128), c).real
+                *_np.log(_np.asarray(_np.abs(XX), dtype=_np.complex128) ).real
+                /_ModelTwoPower._model_base(XX,[c, 1.0]))
+        dgdx[3, :] = dfdx*( 1.0/d +
+            _np.log(_np.asarray(_np.abs(_ModelTwoPower._model_base(XX, [c, 1.0])), dtype=_np.complex128) ).real )
         return dgdx
 
     @staticmethod
@@ -5911,18 +5968,23 @@ class ModelTwoPower(ModelClass):
         a, b, c, d = tuple(aa)
         dfdx = ModelTwoPower._deriv(XX, aa)
         d2fdx2 = ModelTwoPower._deriv2(XX, aa)
+#        XX = _np.abs(XX)
+
+        xc = _np.power(_np.asarray(XX, dtype=_np.complex128), c).real
+        xc1 = _np.power(_np.asarray(XX, dtype=_np.complex128), c-1.0).real
 
         nx = _np.size(XX)
         dgdx = _np.zeros((4, nx), dtype=_np.float64)
         dgdx[0, :] = d2fdx2/a
         dgdx[1, :] = -d2fdx2/(1.0-b)
         dgdx[2, :] = d2fdx2*( 1.0/c + _np.log(_np.abs(XX))
-                - (d-1.0)*_np.power(XX, c)*_np.log(_np.abs(XX))/_ModelTwoPower._model_base(XX,[c, 1.0]))
-        dgdx[2, :] += dfdx*( 1.0/XX
-                - (d-1.0)*c*_np.power(XX, c-1.0)*_np.log(_np.abs(XX))/_ModelTwoPower._model_base(XX,[c, 1.0])
-                - (d-1.0)*_np.power(XX, c)*1.0/XX/_ModelTwoPower._model_base(XX,[c, 1.0])
-                + (d-1.0)*_np.power(XX, c)*_np.log(_np.abs(XX))*a*_ModelTwoPower._deriv(XX,[a, c, 1.0])/_np.power(_ModelTwoPower._model(XX,[a, c, 1.0]), 2.0))
-        dgdx[3, :] = d2fdx2*( 1.0/d + _np.log(_np.abs(_ModelTwoPower._model_base(XX, [c, 1.0]))) )
+                - (d-1.0)*xc*_np.log(_np.abs(XX))/_ModelTwoPower._model_base(XX,[c, 1.0]))
+        dgdx[2, :] += dfdx*( 1.0/XX - (d-1.0)*c*xc1*_np.log(_np.abs(XX))/_ModelTwoPower._model_base(XX,[c, 1.0])
+                - (d-1.0)*xc/(XX*_ModelTwoPower._model_base(XX,[c, 1.0]))
+                + (d-1.0)*xc*_np.log(_np.abs(XX))*a*_ModelTwoPower._deriv(XX,[a, c, 1.0])
+                /_np.power(_np.asarray(_ModelTwoPower._model(XX,[a, c, 1.0]), dtype=_np.complex128), 2.0).real )
+        dgdx[3, :] = d2fdx2*( 1.0/d +
+            _np.log(_np.asarray(_np.abs(_ModelTwoPower._model_base(XX, [c, 1.0])), dtype=_np.complex128) ).real )
         dgdx[3, :] += dfdx*( _ModelTwoPower._deriv(XX, [a, c, 1.0])/_ModelTwoPower._model(XX, [a, c, 1.0]))
         return dgdx
 
@@ -6052,7 +6114,9 @@ class ModelExpEdge(ModelClass):
     @staticmethod
     def _exp(XX, aa, **kwargs):
         e, h = tuple(aa)
-        return _np.exp(-_np.power(XX, 2.0)/_np.power(h, 2.0))
+        x2 = _np.power(_np.asarray(XX, dtype=_np.complex128), 2.0).real
+        h2 = _np.power(_np.asarray(h, dtype=_np.complex128), 2.0).real
+        return _np.exp(-x2/h2)
 
     @staticmethod
     def _model(XX, aa, **kwargs):
@@ -6079,7 +6143,8 @@ class ModelExpEdge(ModelClass):
         dfdx = 2ex/h^2 exp(-x^2/h^2)
         """
         e, h = tuple(aa)
-        return (2.0*XX*e/_np.power(h, 2.0))*ModelExpEdge._exp(XX, aa, **kwargs)
+        h2 = _np.power(_np.asarray(h, dtype=_np.complex128), 2.0).real
+        return (2.0*XX*e/h2)*ModelExpEdge._exp(XX, aa, **kwargs)
 
     @staticmethod
     def _deriv2(XX, aa, **kwargs):
@@ -6094,9 +6159,11 @@ class ModelExpEdge(ModelClass):
         d2fdx2
         """
         e, h = tuple(aa)
+        h2 = _np.power(_np.asarray(h, dtype=_np.complex128), 2.0).real
+        h4 = _np.power(_np.asarray(h, dtype=_np.complex128), 4.0).real
 #        dfdx = (2.0*XX*e/_np.power(h, 2.0))*ModelExpEdge._exp(XX, aa, **kwargs)
-        d2fdx2 = (2.0*e/_np.power(h, 2.0))*ModelExpEdge._exp(XX, aa, **kwargs)
-        d2fdx2 += -(4.0*XX*XX*e/_np.power(h, 4.0))*ModelExpEdge._exp(XX, aa, **kwargs)
+        d2fdx2 = (2.0*e/h2)*ModelExpEdge._exp(XX, aa, **kwargs)
+        d2fdx2 += -(4.0*XX*XX*e/h4)*ModelExpEdge._exp(XX, aa, **kwargs)
         return d2fdx2
 
     @staticmethod
@@ -6117,9 +6184,12 @@ class ModelExpEdge(ModelClass):
         dfdh = -x/h*dfdx
         """
         e, h = tuple(aa)
+        x2 = _np.power(_np.asarray(XX, dtype=_np.complex128), 2.0).real
+        h3 = _np.power(_np.asarray(h, dtype=_np.complex128), 3.0).real
+
         gvec = _np.zeros((2,_np.size(XX)), dtype=_np.float64)
         gvec[0,:] =  1.0 - ModelExpEdge._exp(XX, aa, **kwargs)
-        gvec[1,:] = (-2.0*e*_np.power(XX, 2.0)/_np.power(h, 3.0))*ModelExpEdge._exp(XX, aa, **kwargs)
+        gvec[1,:] = (-2.0*e*x2/h3)*ModelExpEdge._exp(XX, aa, **kwargs)
 #        gvec[0,:] =  ModelExpEdge._model(XX, aa, **kwargs)/e
 #        gvec[1,:] = (-XX/h)*ModelExpEdge._deriv(XX, aa, **kwargs)
         return gvec
@@ -6148,9 +6218,11 @@ class ModelExpEdge(ModelClass):
                 = -4ex/h^5 (h+x)(h-x)exp(-x^2/h^2)
         """
         e, h = tuple(aa)
+        h2 = _np.power(_np.asarray(h, dtype=_np.complex128), 2.0).real
+        h5 = _np.power(_np.asarray(h, dtype=_np.complex128), 5.0).real
         dgdx = _np.zeros((2,_np.size(XX)), dtype=_np.float64)
-        dgdx[0,:] = (2.0*XX/_np.power(h, 2.0))*ModelExpEdge._exp(XX, aa, **kwargs)
-        dgdx[1,:] = (-4.0*e*XX/_np.power(h,5.0))*(h-XX)*(h+XX)*ModelExpEdge._exp(XX, aa, **kwargs)
+        dgdx[0,:] = (2.0*XX/h2)*ModelExpEdge._exp(XX, aa, **kwargs)
+        dgdx[1,:] = (-4.0*e*XX/h5)*(h-XX)*(h+XX)*ModelExpEdge._exp(XX, aa, **kwargs)
         return dgdx
 
     @staticmethod
@@ -6177,15 +6249,21 @@ class ModelExpEdge(ModelClass):
                 = -4ex/h^5 (h+x)(h-x)exp(-x^2/h^2)
         """
         e, h = tuple(aa)
+
+        h2 = _np.power(_np.asarray(h, dtype=_np.complex128), 2.0).real
+        h4 = _np.power(_np.asarray(h, dtype=_np.complex128), 4.0).real
+        h5 = _np.power(_np.asarray(h, dtype=_np.complex128), 5.0).real
+        h7 = _np.power(_np.asarray(h, dtype=_np.complex128), 7.0).real
+
         d2gdx2 = _np.zeros((2,_np.size(XX)), dtype=_np.float64)
-        d2gdx2[0,:] = (2.0/_np.power(h, 2.0))*ModelExpEdge._exp(XX, aa, **kwargs)
-        d2gdx2[0,:] += -(4.0*XX*XX/_np.power(h, 4.0))*ModelExpEdge._exp(XX, aa, **kwargs)
+        d2gdx2[0,:] = (2.0/h2)*ModelExpEdge._exp(XX, aa, **kwargs)
+        d2gdx2[0,:] += -(4.0*XX*XX/h4)*ModelExpEdge._exp(XX, aa, **kwargs)
 
 
-        d2gdx2[1,:] = (-4.0*e/_np.power(h,5.0))*(h-XX)*(h+XX)*ModelExpEdge._exp(XX, aa, **kwargs)
-        d2gdx2[1,:] += (-4.0*e*XX/_np.power(h,5.0))*(-1.0)*(h+XX)*ModelExpEdge._exp(XX, aa, **kwargs)
-        d2gdx2[1,:] += (-4.0*e*XX/_np.power(h,5.0))*(h-XX)*(1.0)*ModelExpEdge._exp(XX, aa, **kwargs)
-        d2gdx2[1,:] += (8.0*e*XX*XX/_np.power(h,7.0))*(h-XX)*(h+XX)*ModelExpEdge._exp(XX, aa, **kwargs)
+        d2gdx2[1,:] = (-4.0*e/h5)*(h-XX)*(h+XX)*ModelExpEdge._exp(XX, aa, **kwargs)
+        d2gdx2[1,:] += (-4.0*e*XX/h5)*(-1.0)*(h+XX)*ModelExpEdge._exp(XX, aa, **kwargs)
+        d2gdx2[1,:] += (-4.0*e*XX/h5)*(h-XX)*(1.0)*ModelExpEdge._exp(XX, aa, **kwargs)
+        d2gdx2[1,:] += (8.0*e*XX*XX/h7)*(h-XX)*(h+XX)*ModelExpEdge._exp(XX, aa, **kwargs)
         return d2gdx2
 
 
@@ -6391,7 +6469,7 @@ class ModelQuasiParabolic(ModelClass):
         af = _np.hstack((af,1.0))
 
     """
-    _af = _np.asarray([1.0, 0.002, 2.0, 0.7, -0.24, 0.30], dtype=_np.float64)
+    _af = _np.asarray([1.0, 0.05, 2.0, 0.7, -0.24, 0.30], dtype=_np.float64)
 #    _af = _np.asarray([1.0, 0.52, 2.0, 0.7, -0.24, 0.30], dtype=_np.float64)
     _LB = _np.asarray([1e-18, 0.0,  1e-18,-10,-1, 0], dtype=_np.float64)
     _UB = _np.asarray([ 20.0, 1.0, 10, 10, 1, 1], dtype=_np.float64)
@@ -6427,6 +6505,8 @@ class ModelQuasiParabolic(ModelClass):
                 doesn't work for the jacobians, where we need the term separated.
         """
         a, e, c, d, h, w = tuple(aa)
+        XX = _np.copy(XX)
+#        XX = _np.abs(XX)
         prof = ( ModelTwoPower._model(XX, [a, e-h, c, d])
                  + a*ModelExpEdge._model(XX, [h, w]) )
         return prof
@@ -6446,6 +6526,8 @@ class ModelQuasiParabolic(ModelClass):
 
         dfdx = dprof1dx + a*dprof2dx
         """
+        XX = _np.copy(XX)
+#        XX = _np.abs(XX)
         a, e, c, d, h, w = tuple(aa)
         return ( ModelTwoPower._deriv(XX, [a, e-h, c, d])
                  + a*ModelExpEdge._deriv(XX, [h, w]) )
@@ -6466,6 +6548,8 @@ class ModelQuasiParabolic(ModelClass):
         dfdx = dprof1dx + a*dprof2dx
         d2fdx2 = d2prof1dx2 + a*d2prof2dx2
         """
+        XX = _np.copy(XX)
+#        XX = _np.abs(XX)
         a, e, c, d, h, w = tuple(aa)
         return ( ModelTwoPower._deriv2(XX, [a, e-h, c, d])
                  + a*ModelExpEdge._deriv2(XX, [h, w]) )
@@ -6501,6 +6585,8 @@ class ModelQuasiParabolic(ModelClass):
         dfdw = a*df2dw
         """
         a, e, c, d, h, w = tuple(aa)
+        XX = _np.copy(XX)
+#        XX = _np.abs(XX)
 
         # Note: b = e-h
         g1 = ModelTwoPower._partial(XX, [a, e-h, c, d])
@@ -6567,6 +6653,8 @@ class ModelQuasiParabolic(ModelClass):
         d2fdwdx = df2dwdx
         """
         a, e, c, d, h, w = tuple(aa)
+        XX = _np.copy(XX)
+#        XX = _np.abs(XX)
 
         # Note: b = e-h
         dg1dx = ModelTwoPower._partial_deriv(XX, [a, e-h, c, d])
@@ -6594,6 +6682,8 @@ class ModelQuasiParabolic(ModelClass):
     @staticmethod
     def _partial_deriv2(XX, aa, **kwargs):
         a, e, c, d, h, w = tuple(aa)
+        XX = _np.copy(XX)
+#        XX = _np.abs(XX)
 
         # Note: b = e-h
         d2g1dx2 = ModelTwoPower._partial_deriv2(XX, [a, e-h, c, d])
@@ -6638,16 +6728,13 @@ class ModelQuasiParabolic(ModelClass):
             twopower :    (2)  a*(1-b) = ys*a'*(1-b')
             exp term :    (3)   a*h = ys*a'*h'
 
-                    a = yo+ys*a'      or            a' = (a-yo)/ys
-                    b = 1-ys*a'/a * (1-b')          b' = 1-a/(ys*a')*(1-b)
-        b = e-h     e = 1+h-ys*a'/a * (1-e'+h')     e' = 1+h'-a/(ys*a')*(1-e+h)
-                    c = c'
-                    d = d'
-                    h = ys*a'*h'/a    or            h'=a*h/(ys*a')
-                    w = w'
+            a = yo+ys*a'         or            a' = (a-yo)/ys
+            h = ys*h'*a'/a                     h' = h*a/(ys*a')
+            e = h + (yo+ys*a'*(e'-h'))/a    e' = h'+1/ys *(a*(e-h)-yo)/a'
+                  c = c'
+                  d = d'
+                  w = w'
                                 iff xs = 1.0, xo = 0.0
-
-          b = e-h   e = 1+h-ys*(a'/a)*(1.0-e'+h') or e' = 1-h' - a/(ys*a')*(1-e+h)
 
         rescaling: x'=(x-xo)/xs
             is not possible because of the non-linearities in the x-functions
@@ -6661,20 +6748,19 @@ class ModelQuasiParabolic(ModelClass):
         xs = kwargs.setdefault('xs', self.xslope)   # analysis:ignore
         xo = kwargs.setdefault('xo', self.xoffset)  # analysis:ignore
 
-        aout[0] = yo+ys*ain[0]
+        aout[0] = ys*ain[0]+yo
         aout[4] = ys*ain[0]*ain[4]/aout[0]
-        aout[1] = 1.0+aout[4]-ys*(ain[0]/aout[0])*(1.0-ain[1]+ain[4])
+        aout[1] = aout[4] + (yo+ys*ain[0]*(ain[1]-ain[4]))/aout[0]
         return aout
 
     def scaleaf(self, ain, **kwargs):
         """
-                    a = yo+ys*a'      or            a' = (a-yo)/ys
-                    b = 1-ys*a'/a * (1-b')          b' = 1-a/(ys*a')*(1-b)
-        b = e-h     e = 1+h-ys*a'/a * (1-e'+h')     e' = 1+h'-a/(ys*a')*(1-e+h)
-                    c = c'
-                    d = d'
-                    h = ys*a'*h'/a    or            h'=a*h/(ys*a')
-                    w = w'
+            a = yo+ys*a'         or            a' = (a-yo)/ys
+            h = ys*h'*a'/a                     h' = h*a/(ys*a')
+            e = h + (yo+ys*a'*(e'-h'))/a    e' = h'+1/ys *(a*(e-h)-yo)/a'
+                  c = c'
+                  d = d'
+                  w = w'
                                 iff xs = 1.0, xo = 0.0
         """
         ain, aout = _np.copy(ain), _np.copy(ain)
@@ -6685,11 +6771,10 @@ class ModelQuasiParabolic(ModelClass):
 
         aout[0] = (ain[0]-yo)/ys
         aout[4] = ain[0]*ain[4]/(ys*aout[0])
-        aout[1] = 1.0+aout[4]-(ain[0]/(ys*aout[0]))*(1.0-ain[1]+ain[4])
+        aout[1] = (ain[0]*(ain[1]-ain[4])-yo)/(ys*aout[0]) + aout[4]
         return aout
 
     def scalings(self, xdat, ydat, **kwargs):
-        self.noxscaling = True
         self.xoffset = 0.0
         self.xslope = 1.0
 #        self.slope = 1.0
@@ -6756,8 +6841,10 @@ class ModelFlattop(ModelClass):
         prof ~ f(x) = a / (1 + (x/b)^c)
 
         """
+        XX = _np.copy(XX)
+#        XX = _np.abs(XX)
         a, b, c = tuple(aa)
-        temp = _np.power(XX/b, c)
+        temp = _np.power(_np.asarray(XX/b, dtype=_np.complex128), c).real
         return a / (1.0 + temp)
 
     @staticmethod
@@ -6768,8 +6855,10 @@ class ModelFlattop(ModelClass):
              = -a*c*(x/b)^c/(x*(1+(x/b)^c)^2)
         """
         a, b, c = tuple(aa)
-        temp = _np.power(XX/b, c)
-        return -1.0*a*c*temp/(XX*_np.power(1.0+temp,2.0))
+        XX = _np.copy(XX)
+#        XX = _np.abs(XX)
+        temp = _np.power(_np.asarray(XX/b, dtype=_np.complex128), c).real
+        return -1.0*a*c*temp/(XX*_np.power(_np.asarray(1.0+temp, dtype=_np.complex128),2.0).real)
 
     @staticmethod
     def _partial(XX, aa, **kwargs):
@@ -6785,14 +6874,17 @@ class ModelFlattop(ModelClass):
              = -1*(prof^2/a)*(x/b)^c*ln|x/b|
         """
         nx = _np.size(XX)
+        XX = _np.copy(XX)
+#        XX = _np.abs(XX)
         a, b, c = tuple(aa)
-        temp = _np.power(XX/b, c)
+        temp = _np.power(_np.asarray(XX/b, dtype=_np.complex128), c).real
         prof = flattop(XX, aa)
 
         gvec = _np.zeros((3, nx), dtype=_np.float64)
         gvec[0, :] = prof / a
-        gvec[1, :] = _np.power(prof, 2.0)*temp*c/(a*b)
-        gvec[2, :] = -1.0*_np.power(prof, 2.0)*(temp/a)*_np.log(_np.abs(XX/b))
+        gvec[1, :] = _np.power(_np.asarray(prof, dtype=_np.complex128), 2.0).real*temp*c/(a*b)
+        gvec[2, :] = (-1.0*_np.power(_np.asarray(prof, dtype=_np.complex128), 2.0).real
+                      *(temp/a)*_np.log(_np.asarray(_np.abs(XX/b), dtype=_np.complex128)).real)
         return gvec
 
     @staticmethod
@@ -6812,8 +6904,10 @@ class ModelFlattop(ModelClass):
         d2fdx2 = a*c*(x/b)^c*(c*(x/b)^c+(x/b)^c-c+1.0)/(x^2*(1+(x/b)^c)^3)
         """
         a, b, c = tuple(aa)
-        temp = _np.power(XX/b, c)
-        return a*c*temp*(c*temp+temp-c+1.0)/(_np.power(XX,2.0)*_np.power(1.0+temp,3.0))
+        temp = _np.power(_np.asarray(XX/b, dtype=_np.complex128), c).real
+        x2 = _np.power(_np.asarray(XX, dtype=_np.complex128),2.0).real
+        temp3 = _np.power(_np.asarray(1.0+temp, dtype=_np.complex128),3.0).real
+        return a*c*temp*(c*temp+temp-c+1.0)/(x2*temp3)
 
     @staticmethod
     def _partial_deriv(XX, aa, **kwargs):
@@ -6842,6 +6936,8 @@ class ModelFlattop(ModelClass):
                 = -1.0*prof*dfdx/(a*c)*( -(x/b)^c + c*(x/b)^c*ln|x/b| - c*ln|x/b| - 1.0  )
         """
         nx = _np.size(XX)
+        XX = _np.copy(XX)
+#        XX = _np.abs(XX)
         a, b, c = tuple(aa)
         temp = _np.power(XX/b, c)
         prof = flattop(XX, aa)
@@ -6850,8 +6946,9 @@ class ModelFlattop(ModelClass):
         dgdx = _np.zeros((3, nx), dtype=_np.float64)
         dgdx[0, :] = dprofdx / a
         dgdx[1, :] = prof * dprofdx * (c/a)*(temp-1.0)/b
-        dgdx[2, :] = -1.0*prof*dprofdx/(a*c) *(
-            -1.0*temp + c*temp*_np.log(_np.abs(XX/b)) - c*_np.log(_np.abs(XX/b)) - 1.0 )
+        dgdx[2, :] = -1.0*prof*dprofdx/(a*c) *( -1.0*temp
+            + c*temp*_np.log(_np.asarray(_np.abs(XX/b), dtype=_np.complex128)).real
+            - c*_np.log(_np.asarray(_np.abs(XX/b), dtype=_np.complex128)).real  - 1.0 )
         return dgdx
 
     @staticmethod
@@ -6893,9 +6990,16 @@ class ModelFlattop(ModelClass):
 
         """
         nx = _np.size(XX)
+        XX = _np.copy(XX)
+#        XX = _np.abs(XX)
         a, b, c = tuple(aa)
-        temp = _np.power(XX/b, c)
-        dtdx = c*_np.power(b, -1.0*c)*_np.power(XX, c-1.0)  # c*x^(c-1)/b^c = c*tmp/x
+
+        temp = _np.power(_np.asarray(XX/b, dtype=_np.complex128), c).real
+        bmc = _np.power(_np.asarray(1.0/b, dtype=_np.complex128), c).real
+        xc1 = _np.power(_np.asarray(XX, dtype=_np.complex128), c-1.0).real
+        dtdx = c*bmc*xc1  # c*x^(c-1)/b^c = c*tmp/x
+
+        logaXb = _np.log(_np.asarray(_np.abs(XX/b), dtype=_np.complex128)).real
 
         prof = ModelFlattop._model(XX, aa, **kwargs)
         dprofdx = ModelFlattop._deriv(XX, aa, **kwargs)
@@ -6908,10 +7012,12 @@ class ModelFlattop(ModelClass):
                        + prof * dprofdx * (c/a)*(dtdx)/b )
 
         d2gdx2[2, :] = -1.0*(dprofdx*dprofdx+prof*d2profdx2)/(a*c) *(
-            -1.0*temp + c*temp*_np.log(_np.abs(XX/b)) - c*_np.log(_np.abs(XX/b)) - 1.0 )
+            -1.0*temp + c*temp*logaXb - c*logaXb - 1.0 )
         d2gdx2[2, :] -= prof*dprofdx/(a*c) *(
-            -1.0*dtdx + c*dtdx*_np.log(_np.abs(XX/b))+c*temp/XX - c/XX)
+            -1.0*dtdx + c*dtdx*logaXb+c*temp/XX - c/XX)
 
+#        if _np.isnan(d2gdx2).any():
+#            print('pause')
 #        d2gdx2[2, :] = -1.0*_np.power(dprofdx, 2.0)/(a*c) *(
 #            -1.0*temp + c*temp*_np.log(_np.abs(XX/b)) - c*_np.log(_np.abs(XX/b)) - 1.0 )
 #        d2gdx2[2, :] += -1.0*prof*d2profdx2/(a*c) *(
@@ -7042,6 +7148,8 @@ class ModelMassberg(ModelClass):
         f = a*(1-h*x/b)/(1+(x/b)^c)
           = flattop*(1-h*x/b)
         """
+        XX = _np.copy(XX)
+#        XX = _np.abs(XX)
         a, b, c, h = tuple(aa)
         prft = flattop(XX, [a, b, c])
         temp = XX/b
@@ -7055,6 +7163,8 @@ class ModelMassberg(ModelClass):
 
         dfdx = dflattopdx*(1-h*x/b) - flattop*h/b
         """
+        XX = _np.copy(XX)
+#        XX = _np.abs(XX)
         a, b, c, h = tuple(aa)
         prft = flattop(XX,[a, b, c])
         drft = deriv_flattop(XX, [a, b, c])
@@ -7071,6 +7181,8 @@ class ModelMassberg(ModelClass):
         dfdx = dflattopdx*(1-h*x/b) - flattop*h/b
         """
         a, b, c, h = tuple(aa)
+        XX = _np.copy(XX)
+#        XX = _np.abs(XX)
 #        prft = ModelFlattop._model(XX,[a, b, c])
         drft = ModelFlattop._deriv(XX, [a, b, c])
         temp = XX/b
@@ -7095,6 +7207,8 @@ class ModelMassberg(ModelClass):
              = -flattop*x/b
         """
         nx = _np.size(XX)
+        XX = _np.copy(XX)
+#        XX = _np.abs(XX)
         a, b, c, h = tuple(aa)
         prft = flattop(XX, [a, b, c])
         gft = partial_flattop(XX, [a, b, c])
@@ -7104,7 +7218,8 @@ class ModelMassberg(ModelClass):
 
         gvec = _np.zeros((4, nx), dtype=_np.float64)
         gvec[0, :] = prof / a
-        gvec[1, :] = gft[1,:]*(1.0-h*temp) + prft*h*XX/_np.power(b, 2.0)
+        gvec[1, :] = ( gft[1,:]*(1.0-h*temp)
+            + prft*h*XX/_np.power(_np.asarray(b, dtype=_np.complex128), 2.0).real )
         gvec[2, :] = gft[2,:]*(1.0-h*temp)
         gvec[3, :] = (-1.0*XX / b)*prft
         return gvec
@@ -7130,6 +7245,8 @@ class ModelMassberg(ModelClass):
         d2fdxdh = dflattopdx*(-x/b) - flattop/b
         """
         nx = _np.size(XX)
+        XX = _np.copy(XX)
+#        XX = _np.abs(XX)
         a, b, c, h = tuple(aa)
     #    prof = massberg(XX, af)
 #        dprofdx = deriv_massberg(XX, aa)
@@ -7144,7 +7261,8 @@ class ModelMassberg(ModelClass):
         dgdx = _np.zeros((4, nx), dtype= float)
         dgdx[0, :] = dgft[0,:]*(1.0-h*temp) - gft[0,:]*h/b
         dgdx[1, :] = ( dgft[1,:]*(1.0-h*temp) - gft[1,:]*h/b
-                     + dflatdx*h*XX/_np.power(b,2.0) + prft*h/_np.power(b,2.0) )
+                     + dflatdx*h*XX/_np.power(_np.asarray(b, dtype=_np.complex128),2.0).real
+                     + prft*h/_np.power(_np.asarray(b, dtype=_np.complex128),2.0).real )
         dgdx[2, :] = dgft[2,:]*(1.0-h*temp) - gft[2,:]*h/b
         dgdx[3, :] = dflatdx*(-1.0*XX/b) - prft/b
 
@@ -7176,6 +7294,8 @@ class ModelMassberg(ModelClass):
         d2fdxdh = dflattopdx*(-x/b) - flattop/b
         """
         nx = _np.size(XX)
+        XX = _np.copy(XX)
+#        XX = _np.abs(XX)
         a, b, c, h = tuple(aa)
     #    prof = massberg(XX, af)
 #        dprofdx = deriv_massberg(XX, aa)
@@ -7194,7 +7314,8 @@ class ModelMassberg(ModelClass):
         d2gdx2 = _np.zeros((4, nx), dtype=_np.float64)
         d2gdx2[0, :] = d2gfdx2[0,:]*(1.0-h*temp)+dgft[0,:]*(-h*dtdx) - dgft[0,:]*h/b
         d2gdx2[1, :] = ( d2gfdx2[1,:]*(1.0-h*temp) + dgft[1,:]*(-h*dtdx) - dgft[1,:]*h/b
-                     + d2flatdx2*h*XX/_np.power(b,2.0) + 2.0*dflatdx*h/_np.power(b,2.0))
+                     + d2flatdx2*h*XX/_np.power(_np.asarray(b, dtype=_np.complex128), 2.0).real
+                     + 2.0*dflatdx*h/_np.power(_np.asarray(b, dtype=_np.complex128),2.0).real)
 
         d2gdx2[2, :] = d2gfdx2[2,:]*(1.0-h*temp)+dgft[2,:]*(-h*dtdx) - dgft[2,:]*h/b
         d2gdx2[3, :] = d2flatdx2*(-1.0*XX/b) + dflatdx*(-1.0/b) - dflatdx/b
@@ -8168,15 +8289,15 @@ if __name__ == '__main__':
 ##    mod = ModelFourier().test_numerics(num=int((6.0/33.0-0.0)*5.0e2), start=0.0, stop=6.0/33.0) # checked
 ##    mod = ModelFourier.test_numerics(nfreqs=5, num=20*int((6.0/33.0-0.0)*5.0e2), start=0.0, stop=6.0/33.0,
 ##                                     shape='square', duty=0.40)  # checked
-#
+
 #    mod = ModelPoly.test_numerics(npoly=1) # checked
 #    mod = ModelPoly.test_numerics(npoly=2) # checked
 #    mod = ModelPoly.test_numerics(npoly=5)  # checked
 #    mod = ModelPoly.test_numerics(npoly=12)  # checked
-    mod = ModelPoly.test_scaling(npoly=1)  # checked
-    mod = ModelPoly.test_scaling(npoly=2)  # checked
-    mod = ModelPoly.test_scaling(npoly=5)  # checked
-    mod = ModelPoly.test_scaling(npoly=12)  # checked
+#    mod = ModelPoly.test_scaling(npoly=1)  # checked
+#    mod = ModelPoly.test_scaling(npoly=2)  # checked
+#    mod = ModelPoly.test_scaling(npoly=5)  # checked
+#    mod = ModelPoly.test_scaling(npoly=12)  # checked
 
 #    mod = ModelProdExp.test_numerics(npoly=1) # checked
 #    mod = ModelProdExp.test_numerics(npoly=2) # checked
@@ -8217,20 +8338,24 @@ if __name__ == '__main__':
 #    mod = ModelDoppler.test_numerics(num=301)      # checked
 #    mod = ModelLogGaussian.test_numerics(num=301)  # checked
 #    mod = ModelLogDoppler.test_numerics(num=301)
-#
-#    # ----- Checked within bounds:
+
+##    # ----- Checked within bounds:
 #    mod = _ModelTwoPower.test_numerics(start=0.1, stop=0.9)   # checked
+##    mod = _ModelTwoPower.test_numerics(start=0.1, stop=1.3)   # checked
 #    mod = _ModelTwoPower.test_scaling() # checked
     mod = ModelQuasiParabolic.test_numerics(start=0.1, stop=0.9)  # checked
-    mod = ModelQuasiParabolic.test_scaling()  #
+    mod = ModelQuasiParabolic.test_scaling(start=0.1, stop=0.9)  # checked
+    mod = ModelQuasiParabolic.test_scaling()  # checked
 #    mod = ModelPowerLaw.test_numerics(npoly=2, start=0.1, stop=0.9, num=100)
 #    mod = ModelPowerLaw.test_numerics(npoly=3, start=0.1, stop=0.9, num=100)
 #    mod = ModelPowerLaw.test_numerics(npoly=4, start=0.1, stop=0.9) # checked
 #    mod = ModelPowerLaw.test_numerics(npoly=8, start=0.1, stop=0.9) # checked
 #    mod = ModelExponential.test_numerics(start=0.1, stop=0.9) # checked
 #    mod = ModelExponential.test_numerics(start=0.1, stop=1.0) # checked
-#    mod = ModelFlattop.test_numerics(start=0.1, stop=1.0) # checked
-#    mod = ModelMassberg.test_numerics(start=0.1, stop=1.0) # checked
+    mod = ModelFlattop.test_numerics(start=0.1, stop=1.0) # checked
+    mod = ModelMassberg.test_numerics(start=0.1, stop=1.0) # checked
+    mod = ModelFlattop.test_scaling() # checked
+    mod = ModelMassberg.test_scaling() # checked
 
     # numerical issues in test near boundaries: unsolved yet
 #    mod = _ModelTwoPower.test_numerics()   # left boundary

@@ -61,7 +61,7 @@ class FD(Struct):
 #        # end if
 #    # end def boundary conditions
 
-    def __step_size(self, model, XX, aa, deriv_order=1, order=6, **kwargs):
+    def __step_size(self, model, XX, aa, deriv_order=1, order=8, **kwargs):
         deriv_in = kwargs.pop('deriv_in', 'x')
 
         if 'hh' not in kwargs:
@@ -144,7 +144,7 @@ class FD(Struct):
         # 2nd order accurate will not pass standard numpy assertion test: atol=1e-5, rtol=1e-8
         # 4th order accurate passes standard numpy assertion test: atol=1e-5, rtol=1e-8
         # 6th order and 8th order also passes
-        order = kwargs.setdefault('order', 6)
+        order = kwargs.setdefault('order', 8)
         kwargs.setdefault('deriv_order', 2)
 
         d2ydx2 = self.centered_fd(self.model, XX=XX, aa=aa, **kwargs)
@@ -1318,18 +1318,17 @@ class ModelClass(FD):
         if 1:
             self.d2gdx2 = self.second_derivative_jacobian(XX, aa=af, **kwargs)
 #        self.updatevar(**kwargs)
-
         return self.prof, self.gvec, self.dprofdx, self.dgdx
     # end def
 
-#    def updatevar(self, **kwargs):
-#        if 'covmat' in kwargs:
-#            self.covmat = kwargs['covmat']
-#        if hasattr(self, 'covmat'):
-#            self.varprof = self.properror(self.XX, self.covmat, self.gvec)
-#            self.vardprofdx = self.properror(self.XX, self.covmat, self.dgdx)
-#        # end if
-#    # end def
+    def updatevar(self, **kwargs):
+        if 'covmat' in kwargs:
+            self.covmat = kwargs['covmat']
+        if hasattr(self, 'covmat'):
+            self.varprof = self.properror(self.XX, self.covmat, self.gvec)
+            self.vardprofdx = self.properror(self.XX, self.covmat, self.dgdx)
+        # end if
+    # end def
 
     @staticmethod
     def properror(XX, covmat, gvec):
@@ -1363,12 +1362,12 @@ class ModelClass(FD):
             self.xoffset = _np.nanmin(xdat)
         if not hasattr(self, 'xslope'):
             self.xslope = _np.nanmax(xdat) - _np.nanmin(xdat)
-            if self.xslope == 0.0:     self.xslope = 1.0   # end if
+#            if self.xslope == 0.0:     self.xslope = 1.0   # end if
         if not hasattr(self, 'offset'):
             self.offset = _np.nanmin(ydat)
         if not hasattr(self, 'slope'):
             self.slope = _np.nanmax(ydat)-_np.nanmin(ydat)
-            if self.slope == 0.0:     self.slope = 1.0   # end if
+#            if self.slope == 0.0:     self.slope = 1.0   # end if
 
         tt, itt = _ut.translation_matrix([self.xoffset, self.offset])
         ss, iss = _ut.scale_matrix([self.xslope, self.slope])
@@ -1398,7 +1397,8 @@ class ModelClass(FD):
         out.append(self.xdat)
         out.append(self.ydat)
         out.append(self.vdat)
-        if hasattr(self, 'XX'):   self.XX = (self.XX-self.xoffset)/self.xslope
+        if hasattr(self, 'XX') and self._analytic_xscaling:
+            self.XX = (self.XX-self.xoffset)/self.xslope
         if vxdat is None:   self.vxdat = None
         else:
             self.vxdat = _np.copy(vxdat)/(self.xslope*self.xslope)
@@ -1434,16 +1434,6 @@ class ModelClass(FD):
             # end if
             if hasattr(self, 'XX') and self.XX is not None:
                 self.XX = self.XX*self.xslope + self.xoffset
-            # Scaling model parameters to reproduce original data
-            self.af = self.unscaleaf(self.af)
-
-            # unscale the input covariance if there is one from a fitter
-#            if hasattr(self, 'covmat'):
-#                self.covmat = self.unscalecov(self.covmat)
-#            # end if
-
-            # Update with the unscaled parameters
-            self.update()
 
             # Calculated quantities  (if covmat already exists, this was done
             # in update through propper error propagation)
@@ -1583,7 +1573,7 @@ class ModelClass(FD):
             assert _ut.allclose(modnum.prof, modanal.prof, rtol=rtol, atol=atol, equal_nan=True)  # same functions, this has to be true
     ##        assert _ut.allclose(modnum.gvec, modanal.gvec, rtol=rtol, atol=atol, equal_nan=True)  # jacobian of model
 
-    ##        rtol, atol = (1e-4, 1e-5)
+#            rtol, atol = (1e-4, 1e-5)
             rtol, atol = (1e-5, _np.max((1e-8, _np.nanmax(1e-8*modanal.dprofdx))))
             aerr = _np.nanmax(modnum.dprofdx - modanal.dprofdx)
             rerr = 1.0-_np.nanmax(modnum.dprofdx/modanal.dprofdx)
@@ -1701,6 +1691,7 @@ class ModelClass(FD):
 
         # Then unscale the data analytically and compare it to the original data
         modanal.unscaledat()
+        modanal.af = modanal.unscaleaf(modanal.af)
         modanal.update()
 
         # And unscale the data non-analytically and compare it to the original data

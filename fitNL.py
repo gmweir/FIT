@@ -236,6 +236,10 @@ def gen_random_init_conds(func, **fkwargs):
 
 # Fitting using the Levenberg-Marquardt algorithm.    #
 def modelfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
+    kwargs = _default_mpfit_kwargs(**kwargs)
+    return fit_mpfit(x, y, ey, XX, func, fkwargs, **kwargs)
+
+def _default_mpfit_kwargs(**kwargs):
     kwargs.setdefault('xtol', 1e-16)  # 1e-16
     kwargs.setdefault('ftol', 1e-16)
     kwargs.setdefault('gtol', 1e-16)
@@ -255,7 +259,7 @@ def modelfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
 #    kwargs.pop('epsfcn')
     kwargs.setdefault('debug', 0)
 #    kwargs.setdefault('debug', 1)
-    return fit_mpfit(x, y, ey, XX, func, fkwargs, **kwargs)
+    return kwargs
 
 def _clean_mpfit_kwargs(kwargs):
     mwargs = {}
@@ -316,56 +320,24 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
         print('oops')
     # end if
 
-    scale_by_data = kwargs.setdefault('scale_problem',True)
+    scale_by_data = kwargs.setdefault('scale_problem', True)
     if scale_by_data:
-#        xo = _np.nanmin(x)
-#        xs = _np.nanmax(x)-_np.nanmin(x)
-#        yo = _np.nanmin(y)
-#        ys = _np.nanmax(y)-_np.nanmin(y)
-#        info.scalings(_np.copy(x), _np.copy(y))
         x, y, vy = info.scaledat(_np.copy(x), _np.copy(y), _np.power(_np.copy(ey), 2.0))
         ey = _np.sqrt(vy)
 
         # Scale the initial guess and the bounds as well
         p0 = info.scaleaf(p0)
-        LB = info.scaleaf(LB)
-        UB = info.scaleaf(UB)
-#    # end if
+#        LB = info.scaleaf(LB)
+#        UB = info.scaleaf(UB)
+    # end if
 
     # ============================================= #
 
-    autoderivative = kwargs.setdefault('autoderivative', 1)
-    def mymodel(p, fjac=None, x=None, y=None, err=None, nargout=1):
-        # Parameter values are passed in "p"
-        # If fjac==None then partial derivatives should not be
-        # computed.  It will always be None if MPFIT is called with default
-        # flag.
+    def calc_chi2(model, p, x, y, err):
         if use_perpendicular_distance:    #perp_distance
             xmp = _np.linspace(x.min()-1e-3, x.max()+1e-3, num=201)
 #            ymp, _ = info.update_minimal(xmp, p)
             ymp, _, _ = func(xmp, p, **fkwargs)
-#        model, gvec = info.update_minimal(x, p)
-        model, gvec, temp = func(x, p, **fkwargs)
-#        model = _ut.interp_irregularities(model, corezero=False)
-#        temp.dprofdx = _ut.interp_irregularities(temp.dprofdx, corezero=True)
-#        gvec = _ut.interp_irregularities(gvec, corezero=False)
-#        temp.dgdx = _ut.interp_irregularities(temp.dgdx, corezero=True)
-        if nargout>1:
-            return model, gvec, temp
-
-        # Non-negative status value means MPFIT should continue, negative means
-        # stop the calculation.
-        status = 0
-        if _np.isnan(p).any():
-            print('NaN in model parameters!')
-            status = -2
-        elif _np.isnan(p).all():
-            print('All the model parameters are NaNs!')
-            status = -3
-        # end if
-        if use_perpendicular_distance:    #perp_distance
-#            xmp = _np.linspace(x.min()-1e-3, x.max()+1e-3, num=201)
-#            ymp, _, _ = func(xmp, p, **fkwargs)
             npts = len(x)
             residual = _np.zeros((npts,), dtype=_np.float64)
             for ii in range(npts):
@@ -379,6 +351,31 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
             # vertical distance
             residual = (y-model)/err
         # end if
+        return residual
+
+    autoderivative = kwargs.setdefault('autoderivative', 0)
+    def mymodel(p, fjac=None, x=None, y=None, err=None, nargout=1):
+        # Parameter values are passed in "p"
+        # If fjac==None then partial derivatives should not be
+        # computed.  It will always be None if MPFIT is called with default
+        # flag.
+#        model, gvec = info.update_minimal(x, p)
+        model, gvec, temp = func(x, p, **fkwargs)
+        if nargout>1:
+            return model, gvec, temp
+
+        # Non-negative status value means MPFIT should continue, negative means
+        # stop the calculation.
+        status = 0
+        if _np.isnan(p).any():
+            print('NaN in model parameters!')
+            status = -2
+        elif _np.isnan(p).all():
+            print('All the model parameters are NaNs!')
+            status = -3
+        # end if
+        residual = calc_chi2(model, p, x, y, err)
+
 #        if _np.isnan(residual).any():
 #            raise Exception('Nan detected in chi2. Check model parameters and bounds \n %s'%(str(residual),))
 
@@ -386,7 +383,7 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
             fjac = gvec.copy().T   # use analytic jacobian  # transpose is from weird reshape in mpfit
 
             # analytic jacobian of the resiudal function
-#            fjac = -1.0*fjac
+#            fjac = -1.0*fjac  # result is 90 deg. out-of-phase if using this
             fjac = fjac/(_np.atleast_2d(err).T*_np.ones( (1,len(p)), dtype=fjac.dtype))
 #            if _np.isnan(fjac).any():
 #                raise Exception('Nan detected in jacobian. Check model parameters and bounds \n %s'%(str(fjac),))
@@ -480,10 +477,12 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     # end if
     info.errmsg = m.errmsg
     info.af = _np.copy(m.params)
-    out = mymodel(info.af, x=x, y=y, err=ey)
 
     # Final function evaluation
     info.update(af=info.af)
+    out = mymodel(info.af, x=x, y=y, err=ey)
+    residual = out['residual']
+#    residual = calc_chi2(info.prof, info.af, x, y, ey)
 
     # ====== Post-processing ====== #
 
@@ -491,7 +490,7 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     info.dof = len(x) - numfit # deg of freedom
 
     # scaled uncertainties in fitting parameters
-    info.chi2 = _np.sum(_np.power(out['residual'], 2.0))
+    info.chi2 = _np.sum(residual*residual)
     info.chi2_reduced = info.chi2/info.dof
 #    info.chi2_reduced = _np.sqrt(m.fnorm / info.dof)
     info.perror = m.perror * info.chi2_reduced
@@ -514,9 +513,6 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     # Calculate the hessian by finite differencing the analytic jacobian
 #    info.hessian(XX, aa=info.af, **kwargs)
 
-    # Actual fitting parameters
-    info.params = _np.copy(info.af)
-
     # calculate correlation matrix
     info.cormat = _np.copy(info.covmat) * 0.0
     for ii in range(numfit):
@@ -535,7 +531,23 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
         x, y, vy = info.unscaledat(af=info.af)
         XX = info.XX
         ey = _np.sqrt(vy)
+
+        if info._analytic_xscaling:
+            # Scaling model parameters to reproduce original data
+            info.af = info.unscaleaf(info.af)
+
+            # unscale the input covariance if there is one from a fitter
+#            if hasattr(self, 'covmat'):
+#                self.covmat = self.unscalecov(self.covmat)
+#            # end if
+
+            # Update with the unscaled parameters
+            info.update()
+        # end if
     # end if
+
+    # Actual fitting parameters
+    info.params = _np.copy(info.af)
 
     if plotit:
         _plt.figure()
@@ -547,6 +559,33 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
         _plt.ylim((_np.min((0, 0.8*_np.min(info.prof), 1.2*_np.min(info.prof))),
                    _np.max((   0.8*_np.max(info.prof), 1.2*_np.max(info.prof)))))
     # end if
+    return info
+
+def profilefit(x, y, ey, XX, func, fkwargs={}, **kwargs):
+    kwargs.setdefault('scale_problem', True)
+
+    info = func(None, None, **fkwargs)
+
+#        xo = _np.nanmin(x)
+#        xs = _np.nanmax(x)-_np.nanmin(x)
+#        yo = _np.nanmin(y)
+#        ys = _np.nanmax(y)-_np.nanmin(y)
+#        info.scalings(_np.copy(x), _np.copy(y))
+    # x- and y- data are going to be scaled, but some models cannot be analytically
+    # scaled, so here we check for successful x-scaling
+#    xslope = 1.5
+    if info._analytic_xscaling:
+        xslope = 1.0
+    # end if
+#    XX /= xslope
+#    x /= xslope
+    info = modelfit(x, y, ey, XX, func, fkwargs, **kwargs)
+
+    info.XX *= xslope
+    info.x *= xslope
+    info.dprofdx /= xslope
+#    info.d2profdx2 /= xslope*xslope
+    info.vardprofdx /= xslope*xslope
     return info
 
 # ========================================================================== #
@@ -990,19 +1029,7 @@ class fitNL_base(Struct):
     def properror(self, xvec=None, gvec=None):  # (x-positions, gvec = dqparabda)
         if gvec is None: gvec = self.gvec.copy()  # endif
         if xvec is None: xvec = self.xx.copy()    # endif
-
-#        self.mfit = self.func(self.af, xvec)
         self.vfit = _ut.properror(xvec, covmat=self.covmat, fjac=gvec)
-
-#        sh = _np.shape(xvec)
-#        nx = len(xvec)
-#
-#        self.vfit = _np.zeros(_np.shape(xvec), dtype=_np.float64)
-#        for ii in range(nx):
-#            # Required to propagate error from model
-#            self.vfit[ii] = _np.dot(_np.atleast_2d(gvec[:,ii]), _np.dot(self.covmat, gvec[:,ii]))
-#        # endfor
-#        self.vfit = _np.reshape(self.vfit, sh)
         return self.vfit
 
     # ========================== #
@@ -1011,37 +1038,14 @@ class fitNL_base(Struct):
 # ======================================================================== #
 # ======================================================================== #
 
-#def MinMaxScaler(ydat, ymin, ymax, forward=True):
-#    if forward:
-#        return (ydat-ymin)/(ymax-ymin)
-#    else:
-#        return (ymax-ymin)*ydat+ymin
-#    # end if
-## end def
 
 class fitNL(fitNL_base):
 
-#    def __init__(self, xdat, ydat, vary=None, af0=[], func=None, options={}, **kwargs):
     def __init__(self, xdat, ydat, vary=None, af0=[], func=None, **kwargs):
         """
         Initialize the class for future calculations.  You have to call the
         obj.run_calc() method to actually get a result
         """
-        # Update the run options with any extra input values or overwrites
-#        solver_options.update(kwargs)
-#        self.__dict__.update(**kwargs)
-#        if not __mpfitonpath__:
-#            if self.lsqmethod == 1:
-#               self.lmfit = self.__use_least_squares
-#            elif self.lsqmethod == 2:
-#               self.lmfit = self.__use_leastsq
-#            elif self.lsqmethod == 3:
-#                self.lmfit = self.__use_curvefit
-#            # end if
-#        else:
-#            self.lmfit = LMFIT
-#        # end if
-#        super(fitNL, self).__init__(xdat=xdat, ydat=ydat, vary=vary, af0=af0, func=func, options=solver_options)
         kwargs = super(fitNL, self).__init__(xdat=xdat, ydat=ydat, vary=vary, af0=af0, func=func, **kwargs)
         self.__dict__.update(**kwargs)
         self.lmfit = self.__use_mpfit  # alias the fitter
@@ -1049,26 +1053,8 @@ class fitNL(fitNL_base):
 
     def run(self):
         if not hasattr(self, 'solver_options'):  self.solver_options = {}  # end if
-#        self.solver_options.setdefault('xtol', 1e-14) # 1e-14
-#        self.solver_options.setdefault('ftol', 1e-14) # 1e-14
-#        self.solver_options.setdefault('gtol', 1e-14) # 1e-14
-#        self.solver_options.setdefault('damp', 0)   # a number above which residuals are damped with hyperbolic tangent
-#        self.solver_options.setdefault('maxiter', 600)  # 600
-#        self.solver_options.setdefault('factor', 100)  # 100
-        self.solver_options.setdefault('nprint', 10)
-#        self.solver_options.setdefault('iterfunct', 'default')
-#        self.solver_options.setdefault('iterkw', {})
-#        self.solver_options.setdefault('nocovar', 0)
-#        self.solver_options.setdefault('rescale', 0)
-#        self.solver_options.setdefault('quiet', 0)
-#        self.solver_options.setdefault('diag', None)
-#        self.solver_options.setdefault('epsfcn', max((_np.nanmean(_np.diff(self.xdat.copy())),1e-2))) #5e-4) #1e-3
-#        self.solver_options.setdefault('debug', 0)
-#        # default to finite differencing in mpfit for jacobian
-#        self.solver_options.setdefault('autoderivative', 1)
-        self.solver_options.setdefault('autoderivative', 1)
+        self.solver_options = _default_mpfit_kwargs(**self.solver_options)
         super(fitNL, self).run(**self.solver_options)
-#        self.__use_mpfit(**self.solver_options)
         return self.af, self.covmat
 
         # ========================================== #
@@ -1080,10 +1066,7 @@ class fitNL(fitNL_base):
     def __use_mpfit(self, **kwargs):
         """
         """
-#        lsqfitmethod = kwargs.get("lsqfitmethod", 'lm')
-#        self.af, chi2, resid, jac = \
-#            mpfit(self.calc_chi2, self.af, bounds=(self.LB, self.UB),
-#                          method=lsqfitmethod)
+
         def model_ud(p, fjac=None, x=None, y=None, err=None):
             # Parameter values are passed in "p"
             # If FJAC!=None then partial derivatives must be comptuer.
@@ -1096,6 +1079,7 @@ class fitNL(fitNL_base):
             status = 0
             self.gvec = self.fjac(p, x)
             pderiv = self.gvec.T  # pderiv[xx, pp]
+            pderiv /= _np.atleast_2d(err).T*_np.ones( (1,len(p)), dtype=fjac.dtype)
             return {'status':status, 'residual':chi2, 'jacobian':pderiv}
 
         def model_ad(p, fjac=None, x=None, y=None, err=None):
@@ -1281,7 +1265,8 @@ def test_fit(func=_ms.model_qparab, **fkwargs):
     else:
         numpts = 21
         xdat = _np.linspace(-0.05, 1.25, numpts)
-        XX = _np.linspace( -1.0, 1.3, 99)
+#        XX = _np.linspace( -1.0, 1.3, 99)
+        XX = _np.linspace( 0.0, 1.3, 99)
 #        XX = _np.linspace( 1e-6, 1.0, 99)
     # end if
 
@@ -1289,6 +1274,12 @@ def test_fit(func=_ms.model_qparab, **fkwargs):
     yxx, _, temp = func(XX=XX, **fkwargs)
     aa =temp.af
     ydat, _, _, _ = temp.update(xdat)
+
+#    if (yxx<0.0).any():
+#        offset = yxx.min()
+#        ydat -= offset
+#        yxx -= offset
+#    # end if
     kwargs = temp.dict_from_class()
     kwargs.pop('XX')
     kwargs.pop('af')
@@ -1310,7 +1301,7 @@ def test_fit(func=_ms.model_qparab, **fkwargs):
 
     # ====================== #
 
-    ydat = ydat + 0.1*_np.mean(ydat)*_np.random.normal(0.0, 1.0, len(ydat))
+    ydat = ydat + 0.1*_np.nanmean(ydat)*_np.random.normal(0.0, 1.0, len(ydat))
     info2 = modelfit(xdat, ydat, yerr, XX, func, fkwargs, **kwargs)
 
     _plt.figure()
@@ -1367,6 +1358,78 @@ def test_fit(func=_ms.model_qparab, **fkwargs):
 #    print(ydat)
 # end
 
+def test_profile_fit(func=_ms.model_qparab, **fkwargs):
+    numpts = 21
+    xdat = _np.linspace(0.01, 1.25, numpts)
+    XX = _np.linspace( 0.0, 1.3, 99)
+
+    # Model to fit
+    yxx, _, temp = func(XX=XX, **fkwargs)
+    aa =temp.af
+    ydat, _, _, _ = temp.update(xdat)
+
+    kwargs = temp.dict_from_class()
+    kwargs.pop('XX')
+    kwargs.pop('af')
+
+    # Initial conditions for model
+    if 'shape' in fkwargs: fkwargs.pop('shape')
+    kwargs['af0'] = gen_random_init_conds(func, af0=aa, **fkwargs)
+
+    # ====================== #
+
+#    yerr = 0.1*_np.mean(ydat)
+#    yerr = yerr*_np.ones_like(ydat)
+    yerr = 0.1*ydat
+
+    kwargs.setdefault('plotit', False)
+    info1 = profilefit(xdat, ydat, yerr, XX, func, fkwargs, **kwargs)
+#    assert _np.allclose(info1.params, aa)
+#    assert info.dof==len(xdat)-len(aa)
+
+    # ====================== #
+
+    ydat = ydat + 0.1*_np.nanmean(ydat)*_np.random.normal(0.0, 1.0, len(ydat))
+    info2 = profilefit(xdat, ydat, yerr, XX, func, fkwargs, **kwargs)
+
+    _plt.figure()
+    ax1 = _plt.subplot(3, 1, 1)
+    if numpts<50:
+        ax1.errorbar(xdat, ydat, yerr=yerr, fmt='kx')
+    else:
+        ax1.plot(xdat, ydat, 'k-')
+    ax1.plot(XX, yxx, 'k-', linewidth=1.0)
+    ax1.plot(XX, info1.prof, 'b-')
+    ax1.plot(XX, info1.prof-_np.sqrt(info1.varprof), 'b--')
+    ax1.plot(XX, info1.prof+_np.sqrt(info1.varprof), 'b--')
+    ax1.plot(XX, info2.prof, 'r-')
+    ax1.plot(XX, info2.prof-_np.sqrt(info2.varprof), 'r--')
+    ax1.plot(XX, info2.prof+_np.sqrt(info2.varprof), 'r--')
+
+    ax1.set_title(type(info1).__name__)
+    xlims = ax1.get_xlim()
+    ylims = ax1.get_ylim()
+    ax1.text(x=0.6*(xlims[1]-xlims[0])+xlims[0], y=0.6*(ylims[1]-ylims[0])+ylims[0],
+             s=r'\chi_\nu^2=%4.1f'%(info2.chi2_reduced,), fontsize=16)
+
+    ax2 = _plt.subplot(3, 1, 2, sharex=ax1)
+    if numpts<50:
+        ax2.plot(xdat, temp.dprofdx, 'kx')
+    else:
+        ax2.plot(xdat, temp.dprofdx, 'k-')
+    ax2.plot(XX, info1.dprofdx, 'b-')
+    ax2.plot(XX, info1.dprofdx-_np.sqrt(info1.vardprofdx), 'b--')
+    ax2.plot(XX, info1.dprofdx+_np.sqrt(info1.vardprofdx), 'b--')
+    ax2.plot(XX, info2.dprofdx, 'r-')
+    ax2.plot(XX, info2.dprofdx-_np.sqrt(info2.vardprofdx), 'r--')
+    ax2.plot(XX, info2.dprofdx+_np.sqrt(info2.vardprofdx), 'r--')
+
+    ax3 = _plt.subplot(3, 1, 3)
+    ax3.bar(left=_np.asarray(range(len(aa))), height=100.0*(1.0-info2.params/aa), width=1.0)
+    ax3.set_title('perc. diff.')
+    _plt.show()
+# end
+
 
 def test_fourier_fit(func=_ms.model_sines, **fkwargs):
     plotit = fkwargs.pop('plotit', True)
@@ -1406,7 +1469,7 @@ def test_fourier_fit(func=_ms.model_sines, **fkwargs):
     # Use the auto-power spectrum to select initial guessed for the model
     from FFT.fft_analysis import getNpeaks
     afps = getNpeaks(nfreqs, xdat, ytmp, ytmp, plotit=plotit, Navr=1, windowoverlap=0.0,
-                     detrend_style=1, windowfunction='box', fmin=0.5*fmod, minsep=0.3*fmod)
+                     detrend_style=1, windowfunction='box', fmin=0.5*fmod, minsep=0.4*fmod)
     aoffset = 0.0
     poffset = 2.0*_np.pi*fmod*xdat[_np.argmax(ytmp[:int(0.5*Fs/fmod)])]
 #    aoffset = 2.0*_np.nanmean(ytmp)
@@ -2204,7 +2267,6 @@ def doppler_test(scale_by_data=False, noshift=True, Fs=10.0e6, model_order=2, lo
 
 if __name__=="__main__":
 
-
 #    for ii in range(5):
 ##        out, ft = doppler_test(scale_by_data=False, logdata=False, Fs=10.0e6, fmax=1.0e6)
 ##        out, ft = doppler_test(scale_by_data=False, logdata=False, Fs=1.0, fmax=0.1)
@@ -2216,23 +2278,22 @@ if __name__=="__main__":
 #    ft = test_fitNL(False)
 #    ft = test_fitNL(True)  # issue with interpolation when x>1 and x<0?
 
-
-#    test_fit(_ms.model_line, scale_problem=True)  # scaling and shifting works
+    test_fit(_ms.model_line, scale_problem=True)  # scaling and shifting works
 
 #    test_fourier_fit(_ms.model_sines, nfreqs=1,  Fs=100e3, numpts=int(6.0*1e3/33.0), fmod=33.0)
-    test_fourier_fit(_ms.model_sines, nfreqs=1,  Fs=10e3, fmod=33.0)
-    test_fourier_fit(_ms.model_sines, nfreqs=3, Fs=10e3, fmod=33.0)
-    test_fourier_fit(_ms.model_sines, nfreqs=7, Fs=10e3, fmod=33.0, shape='square', duty=0.66667)
+#    test_fourier_fit(_ms.model_sines, nfreqs=1,  Fs=10e3, fmod=33.0)
+#    test_fourier_fit(_ms.model_sines, nfreqs=3, Fs=10e3, fmod=33.0)
+#    test_fourier_fit(_ms.model_sines, nfreqs=7, Fs=10e3, fmod=33.0, shape='square', duty=0.66667)
     # =====  #
-##    test_fourier_fit(_ms.model_fourier, nfreqs=3, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0)
-##    test_fourier_fit(_ms.model_fourier, nfreqs=14, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square')
-##    test_fourier_fit(_ms.model_fourier, nfreqs=6, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
-##    test_fourier_fit(_ms.model_fourier, nfreqs=10, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
-##    test_fourier_fit(_ms.model_fourier, nfreqs=14, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
-#    # =====  #
-#
-#    test_fit(_ms.model_poly, npoly=2)
-#    test_fit(_ms.model_poly, npoly=3)
+#    test_fourier_fit(_ms.model_fourier, nfreqs=3, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0)
+#    test_fourier_fit(_ms.model_fourier, nfreqs=14, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square')
+#    test_fourier_fit(_ms.model_fourier, nfreqs=6, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
+#    test_fourier_fit(_ms.model_fourier, nfreqs=10, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
+#    test_fourier_fit(_ms.model_fourier, nfreqs=14, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
+    # =====  #
+
+    test_fit(_ms.model_poly, npoly=2)
+    test_fit(_ms.model_poly, npoly=3)
 #    test_fit(_ms.model_poly, npoly=6)
 #    test_fit(_ms.model_ProdExp, npoly=2)
 #    test_fit(_ms.model_ProdExp, npoly=3)
@@ -2246,30 +2307,30 @@ if __name__=="__main__":
 #    test_fit(_ms.model_PowerLaw, npoly=6)   #
 #    test_fit(_ms.model_Exponential)
 #    test_fit(_ms.model_parabolic)
-
+#
 #    test_fit(_ms.model_gaussian, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
 #    test_fit(_ms._model_offsetgaussian, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
 #    test_fit(_ms.model_normal, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
-#    test_fit(_ms._model_offsetnormal, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
+#    test_fit(_ms.model_offsetnormal, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
 #    test_fit(_ms.model_loggaussian, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
 #    test_fit(_ms.model_lorentzian, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
 #    test_fit(_ms.model_pseudovoigt, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
 #    test_fit(_ms.model_loglorentzian, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
-##    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=0, tbnds=[-0.5,0.5], num=18750)
-##    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=1, tbnds=[-0.5,0.5], num=18750)
-##    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=2, tbnds=[-0.5,0.5], num=18750)
-##    test_fit(_ms.model_doppler, noshift=0, Fs=1.0, model_order=2, tbnds=[-0.5,0.5], num=18750)
-##    test_fit(_ms.model_doppler, logdata=True, noshift=1, Fs=1.0, model_order=0, tbnds=[-0.5,0.5], num=18750)
-##    test_fit(_ms.model_doppler, logdata=True, noshift=1, Fs=1.0, model_order=1, tbnds=[-0.5,0.5], num=18750)
-##    test_fit(_ms.model_doppler, logdata=True, noshift=1, Fs=1.0, model_order=2, tbnds=[-0.5,0.5], num=18750)
-##    test_fit(_ms.model_doppler, logdata=True, noshift=0, Fs=1.0, model_order=2, tbnds=[-0.5,0.5], num=18750)
+#    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=0, tbnds=[-0.5,0.5], num=18750)
+#    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=1, tbnds=[-0.5,0.5], num=18750)
+#    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=2, tbnds=[-0.5,0.5], num=18750)
+#    test_fit(_ms.model_doppler, noshift=0, Fs=1.0, model_order=2, tbnds=[-0.5,0.5], num=18750)
+#    test_fit(_ms.model_doppler, logdata=True, noshift=1, Fs=1.0, model_order=0, tbnds=[-0.5,0.5], num=18750)
+#    test_fit(_ms.model_doppler, logdata=True, noshift=1, Fs=1.0, model_order=1, tbnds=[-0.5,0.5], num=18750)
+#    test_fit(_ms.model_doppler, logdata=True, noshift=1, Fs=1.0, model_order=2, tbnds=[-0.5,0.5], num=18750)
+#    test_fit(_ms.model_doppler, logdata=True, noshift=0, Fs=1.0, model_order=2, tbnds=[-0.5,0.5], num=18750)
 #    test_fit(_ms._model_twopower)
 #    test_fit(_ms.model_twopower)
 #    test_fit(_ms.model_expedge)
-#    test_fit(_ms.model_qparab, nohollow=False) # broken
-#    test_fit(_ms.model_qparab, nohollow=True)
-#    test_fit(_ms.model_flattop)
-#    test_fit(_ms.model_massberg)
+    test_profile_fit(_ms.model_qparab, nohollow=False)
+    test_profile_fit(_ms.model_qparab, nohollow=True)
+    test_profile_fit(_ms.model_flattop)
+    test_profile_fit(_ms.model_massberg)
 #
 #    # need to be reformatted still (2 left!)
 ##    test_fit(_ms.model_Heaviside, npoly=3, rinits=[0.30, 0.35])
