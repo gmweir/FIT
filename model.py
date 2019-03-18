@@ -1362,12 +1362,12 @@ class ModelClass(FD):
             self.xoffset = _np.nanmin(xdat)
         if not hasattr(self, 'xslope'):
             self.xslope = _np.nanmax(xdat) - _np.nanmin(xdat)
-#            if self.xslope == 0.0:     self.xslope = 1.0   # end if
+            if self.xslope == 0.0:     self.xslope = 1.0   # end if
         if not hasattr(self, 'offset'):
             self.offset = _np.nanmin(ydat)
         if not hasattr(self, 'slope'):
             self.slope = _np.nanmax(ydat)-_np.nanmin(ydat)
-#            if self.slope == 0.0:     self.slope = 1.0   # end if
+            if self.slope == 0.0:     self.slope = 1.0   # end if
 
         tt, itt = _ut.translation_matrix([self.xoffset, self.offset])
         ss, iss = _ut.scale_matrix([self.xslope, self.slope])
@@ -1581,7 +1581,7 @@ class ModelClass(FD):
     ##        assert _ut.allclose(modnum.dgdx, modanal.dgdx, rtol=rtol, atol=atol, equal_nan=True)  # jacobian of the model derivative
 
 #            rtol, atol = (1e-3, 1e-4)
-            rtol, atol = (1e-5, _np.max((1e-8, _np.nanmax(1e-8*modanal.d2profdx2))))
+            rtol, atol = (1e-5, _np.max((1e-5, _np.nanmax(1e-5*modanal.d2profdx2))))
             aerr = _np.nanmax(modnum.d2profdx2 - modanal.d2profdx2)
             rerr = 1.0-_np.nanmax(modnum.d2profdx2/modanal.d2profdx2)
             assert _ut.allclose(modnum.d2profdx2, modanal.d2profdx2, rtol=rtol, atol=atol, equal_nan=True)  # model second derivative
