@@ -21,11 +21,11 @@ from pybaseutils import utils as _ut
 try:
     from FIT import model_spec as _ms
     from FIT import derivatives as _dd
-    from FIT.fitNL import fitNL, modelfit
+    from FIT.fitNL import fitNL, modelfit, profilefit
 except:
     from . import model_spec as _ms
     from . import derivatives as _dd
-    from .fitNL import fitNL, modelfit
+    from .fitNL import fitNL, modelfit, profilefit
 # end try
 
 
@@ -211,8 +211,8 @@ def weightedPolyfit(xvar, yvar, xo, vary=None, deg=1, nargout=2):
 #        return af, Vcov
 #    # endif
 
-    def _func(xvec, af, **fkwargs):
-        return _ms.model_poly(xvec, af, npoly=deg)
+#    def _func(xvec, af, **fkwargs):
+#        return _ms.model_poly(xvec, af, npoly=deg)
 
     if nargout != 0:
         xsl = (_np.nanmax(xvar)-_np.nanmin(xvar))
@@ -221,7 +221,8 @@ def weightedPolyfit(xvar, yvar, xo, vary=None, deg=1, nargout=2):
         xo = (xo.copy()-xof)/xsl
     # end if
 
-    fitter = modelfit(xvar, yvar, ey=_np.sqrt(vary), XX=xo, func=_func)
+#    fitter = modelfit(xvar, yvar, ey=_np.sqrt(vary), XX=xo, func=_func)
+    fitter = modelfit(xvar, yvar, ey=_np.sqrt(vary), XX=xo, func=_ms.model_poly, fkwargs={'deg':3})
 
     if nargout == 0:
         return fitter.params, fitter.covmat # fitter.perror
@@ -817,31 +818,31 @@ def spline_bs(xvar, yvar, vary, xf=None, func="spline", nmonti=300, deg=3, bbox=
 
 
 def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
-    scale_by_data = kwargs.get('scale_problem',True)
+    kwargs.setdefault('scale_problem',True)
     arescale = kwargs.get('arescale',1.0)
     agradrho = kwargs.get('agradrho', 1.0)
-    bootstrappit = kwargs.get('bootstrappit',False)
-    af0 = kwargs.get('af0', None)
-    LB = kwargs.get('LB', None)
-    UB = kwargs.get('UB', None)
+    kwargs.setdefault('bootstrappit', 30)
+#    af0 = kwargs.get('af0', None)
+#    LB = kwargs.get('LB', None)
+#    UB = kwargs.get('UB', None)
 
     if 1:
         modelfunc = kwargs.get('modelfunc', _ms.model_qparab);
     else:
-        modelfunc = kwargs.get('modelfunc', _ms.model_2power);
+        modelfunc = kwargs.get('modelfunc', _ms.model_slopetop);
     # end if
 
     # ==== #
 
-    def func(af, XX):
-        prof, _, _ = modelfunc(_np.abs(XX), af)
-        return prof
-#        return fitfunc(XX, af)
-
-    def fgvec(af, XX):
-        _, gvec, info = modelfunc(_np.abs(XX), af)
-        # _, gvec, info = returngvec(_np.abs(XX), af)
-        return gvec, info.dprofdx, info.dgdx
+#    def func(af, XX):
+#        prof, _, _ = modelfunc(_np.abs(XX), af)
+#        return prof
+##        return fitfunc(XX, af)
+#
+#    def fgvec(af, XX):
+#        _, gvec, info = modelfunc(_np.abs(XX), af)
+#        # _, gvec, info = returngvec(_np.abs(XX), af)
+#        return gvec, info.dprofdx, info.dgdx
 
 #    def derivfunc(af, XX):
 #        _, _, info = modelfunc(_np.abs(XX), af)
@@ -850,84 +851,89 @@ def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
 ##        return fitderivfunc(XX, af)
     # ==== #
 
-    info = modelfunc(XX=None)
-    if af0 is None:
-        af0 = info.af
-    if LB is None:
-        LB = info.Lbounds
-    if UB is None:
-        UB = info.Ubounds
-    # end if
+#    info = modelfunc(XX=None)
+#    if af0 is None:
+#        af0 = info.af
+#    if LB is None:
+#        LB = info.Lbounds
+#    if UB is None:
+#        UB = info.Ubounds
+#    # end if
 
     # constrain things to be within r/a of 1.0 here, then undo it later
     rdat /= arescale
 
-    if scale_by_data:
-        pdat, vdat, slope, offset = _ms.rescale_problem(pdat, vdat)
-#        af0[0] = 1.0
-#        af0[1] = 0.0
-    # end if
+#    if scale_by_data:
+#        pdat, vdat, slope, offset = _ms.rescale_problem(pdat, vdat)
+##        af0[0] = 1.0
+##        af0[1] = 0.0
+#    # end if
 
     isort = _np.argsort(_np.abs(rdat))
+    rdat = _np.abs(rdat)
     rdat = _ut.cylsym_odd(rdat[isort].copy())
     pdat = _ut.cylsym_even(pdat[isort].copy())
     vdat = _ut.cylsym_even(vdat[isort].copy())
 
-    options = dict()
-    options.setdefault('xtol', 1e-16) #
-    options.setdefault('ftol', 1e-16) #
-    options.setdefault('gtol', 1e-16) #
-    options.setdefault('nprint', 10) #
-    # Consider making epsfcn just 0.5 * nanmean(dx)... the max or min here doesn't make sense in most cases
-#    options.setdefault('epsfcn', None) # 5e-4
-    options.setdefault('epsfcn', max((_np.nanmean(_np.diff(rdat.copy())),1e-3))) # 5e-4
-#    options.pop('epsfcn') # 5e-4
-    options.setdefault('factor',100) # 100
-    options.setdefault('maxiter',1200)
-    NLfit = fitNL(rdat, pdat, vdat, af0, func, LB=LB, UB=UB, **options)
-    NLfit.run()
+    info = profilefit(rdat, pdat, _np.sqrt(vdat), rvec, modelfunc, fkwargs={}, **kwargs)
+#    options = dict()
+#    options.setdefault('xtol', 1e-16) #
+#    options.setdefault('ftol', 1e-16) #
+#    options.setdefault('gtol', 1e-16) #
+#    options.setdefault('nprint', 10) #
+#    # Consider making epsfcn just 0.5 * nanmean(dx)... the max or min here doesn't make sense in most cases
+##    options.setdefault('epsfcn', None) # 5e-4
+#    options.setdefault('epsfcn', max((_np.nanmean(_np.diff(rdat.copy())),1e-3))) # 5e-4
+##    options.pop('epsfcn') # 5e-4
+#    options.setdefault('factor',100) # 100
+#    options.setdefault('maxiter',1200)
+#    NLfit = fitNL(rdat, pdat, vdat, af0, func, LB=LB, UB=UB, **options)
+#    NLfit.run()
 
-    if bootstrappit:
-        NLfit.gvecfunc = fgvec
-        NLfit.bootstrapper(xvec=_np.abs(rvec), weightit=False)
-
-#        prof = NLfit.mfit
-#        varp = NLfit.vfit
-#        varp = varp.copy()
+#    if bootstrappit:
+#        NLfit.gvecfunc = fgvec
+#        NLfit.bootstrapper(xvec=_np.abs(rvec), weightit=False)
 #
-#        dprofdx = NLfit.dprofdx.copy()
-#        vardprofdx = NLfit.vdprofdx.copy()
-#    else:
-#        prof, gvec, info = modelfunc(_np.abs(rvec), NLfit.af)
-#        varp = NLfit.properror(_np.abs(rvec), gvec)
-#        varp = varp.copy()
-#
-#        dprofdx = info.dprofdx.copy()
-#        vardprofdx = NLfit.properror(_np.abs(rvec), info.dgdx)
-    # end if
-    prof, gvec, info = modelfunc(_np.abs(rvec), NLfit.af)
-    varp = NLfit.properror(_np.abs(rvec), gvec)
+##        prof = NLfit.mfit
+##        varp = NLfit.vfit
+##        varp = varp.copy()
+##
+##        dprofdx = NLfit.dprofdx.copy()
+##        vardprofdx = NLfit.vdprofdx.copy()
+##    else:
+##        prof, gvec, info = modelfunc(_np.abs(rvec), NLfit.af)
+##        varp = NLfit.properror(_np.abs(rvec), gvec)
+##        varp = varp.copy()
+##
+##        dprofdx = info.dprofdx.copy()
+##        vardprofdx = NLfit.properror(_np.abs(rvec), info.dgdx)
+#    # end if
+#    prof, gvec, info = modelfunc(_np.abs(rvec), NLfit.af)
+#    varp = NLfit.properror(_np.abs(rvec), gvec)
 #    varp = _np.abs(varp)
-    varp = varp.copy()
+    prof = info.prof.copy()
+    varp = info.varprof.copy()
 
     dprofdx = info.dprofdx.copy()
-    vardprofdx = NLfit.properror(_np.abs(rvec), info.dgdx)
+    vardprofdx = info.vardprofdx.copy()
+#    vardprofdx = NLfit.properror(_np.abs(rvec), info.dgdx)
 #    vardprofdx = _np.abs(vardprofdx)
-    af = NLfit.af.copy()
+#    af = NLfit.af.copy()
+    af = info.af.copy()
 
-    if scale_by_data:
-        # slope = _np.nanmax(pdat)-_np.nanmin(pdat)
-        # offset = _np.nanmin(pdat)
-
-        info.prof = _np.copy(prof)
-        info.varp = _np.copy(varp)
-        info.dprofdx = _np.copy(dprofdx)
-        info.vardprofdx = _np.copy(vardprofdx)
-        info.af = _np.copy(af)
-        info.slope = slope
-        info.offset = offset
-        prof, varp, dprofdx, vardprofdx, af = _ms.rescale_problem(info=info, nargout=5)
-    # end if
+#    if scale_by_data:
+#        # slope = _np.nanmax(pdat)-_np.nanmin(pdat)
+#        # offset = _np.nanmin(pdat)
+#
+#        info.prof = _np.copy(prof)
+#        info.varp = _np.copy(varp)
+#        info.dprofdx = _np.copy(dprofdx)
+#        info.vardprofdx = _np.copy(vardprofdx)
+#        info.af = _np.copy(af)
+#        info.slope = slope
+#        info.offset = offset
+#        prof, varp, dprofdx, vardprofdx, af = _ms.rescale_problem(info=info, nargout=5)
+#    # end if
     dlnpdrho = dprofdx / prof
     vardlnpdrho = (dlnpdrho)**2.0 * ( vardprofdx/(dprofdx**2.0) + varp/(prof**2.0)  )
 
@@ -987,7 +993,7 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
     agradrho = kwargs.get('agradrho',1.0)
     returnaf = kwargs.get('returnaf',False)
     arescale = kwargs.get('arescale', 1.0)
-    bootstrappit = kwargs.get('bootstrappit',False)
+    bootstrappit = kwargs.setdefault('bootstrappit',30)
     plotlims = kwargs.get('plotlims', None)
     fitin = kwargs.get('fitin', None)
     af0 = kwargs.get('af0', None)
@@ -1148,7 +1154,7 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
     agradrho = kwargs.get('agradrho', 1.00)
     returnaf = kwargs.get('returnaf',False)
     arescale = kwargs.get('arescale', 1.0)
-    bootstrappit = kwargs.get('bootstrappit',False)
+    bootstrappit = kwargs.setdefault('bootstrappit',30)
     plotlims = kwargs.get('plotlims', None)
     fitin = kwargs.get('fitin', None)
     af0 = kwargs.get('af0', None)
