@@ -214,12 +214,12 @@ def weightedPolyfit(xvar, yvar, xo, vary=None, deg=1, nargout=2):
 #    def _func(xvec, af, **fkwargs):
 #        return _ms.model_poly(xvec, af, npoly=deg)
 
-    if nargout != 0:
-        xsl = (_np.nanmax(xvar)-_np.nanmin(xvar))
-        xof = _np.nanmin(xvar)
-        xvar = (xvar.copy()-xof)/xsl
-        xo = (xo.copy()-xof)/xsl
-    # end if
+#    if nargout != 0:
+#        xsl = (_np.nanmax(xvar)-_np.nanmin(xvar))
+#        xof = _np.nanmin(xvar)
+#        xvar = (xvar.copy()-xof)/xsl
+#        xo = (xo.copy()-xof)/xsl
+#    # end if
 
 #    fitter = modelfit(xvar, yvar, ey=_np.sqrt(vary), XX=xo, func=_func)
     fitter = modelfit(xvar, yvar, ey=_np.sqrt(vary), XX=xo, func=_ms.model_poly, fkwargs={'deg':3})
@@ -231,8 +231,8 @@ def weightedPolyfit(xvar, yvar, xo, vary=None, deg=1, nargout=2):
     elif nargout == 2:
         return fitter.prof, fitter.varprof
     elif nargout == 4:
-        fitter.dprofdx /= xsl
-        fitter.vardprofdx /= (xsl)**2.0
+#        fitter.dprofdx /= xsl
+#        fitter.vardprofdx /= (xsl)**2.0
         return fitter.prof, fitter.varprof, fitter.dprofdx, fitter.vardprofdx
 # end def weightedPolyfit
 
@@ -312,191 +312,6 @@ def savitzky_golay(y, window_size, order, deriv=0):
     y = _np.concatenate((firstvals, y, lastvals))
     return _np.convolve( m, y, mode='valid')
 
-
-"""Detect peaks in data based on their amplitude and other features."""
-def detect_peaks(x, mph=None, mpd=1, threshold=0, edge='rising',
-                 kpsh=False, valley=False, show=False, ax=None):
-
-    """Detect peaks in data based on their amplitude and other features.
-
-    Parameters
-    ----------
-    x : 1D array_like
-        data.
-    mph : {None, number}, optional (default = None)
-        detect peaks that are greater than minimum peak height (if parameter
-        `valley` is False) or peaks that are smaller than maximum peak height
-         (if parameter `valley` is True).
-    mpd : positive integer, optional (default = 1)
-        detect peaks that are at least separated by minimum peak distance (in
-        number of data).
-    threshold : positive number, optional (default = 0)
-        detect peaks (valleys) that are greater (smaller) than `threshold`
-        in relation to their immediate neighbors.
-    edge : {None, 'rising', 'falling', 'both'}, optional (default = 'rising')
-        for a flat peak, keep only the rising edge ('rising'), only the
-        falling edge ('falling'), both edges ('both'), or don't detect a
-        flat peak (None).
-    kpsh : bool, optional (default = False)
-        keep peaks with same height even if they are closer than `mpd`.
-    valley : bool, optional (default = False)
-        if True (1), detect valleys (local minima) instead of peaks.
-    show : bool, optional (default = False)
-        if True (1), plot data in matplotlib figure.
-    ax : a matplotlib.axes.Axes instance, optional (default = None).
-
-    Returns
-    -------
-    ind : 1D array_like
-        indeces of the peaks in `x`.
-
-    Notes
-    -----
-    The detection of valleys instead of peaks is performed internally by simply
-    negating the data: `ind_valleys = detect_peaks(-x)`
-
-    The function can handle NaN's
-
-    See this IPython Notebook [1]_.
-
-    References
-    ----------
-    .. [1] http://nbviewer.ipython.org/github/demotu/BMC/blob/master/notebooks/DetectPeaks.ipynb
-
-    __author__ = "Marcos Duarte, https://github.com/demotu/BMC"
-    __version__ = "1.0.5"
-    __license__ = "MIT"
-
-    Examples
-    --------
-    >>> from detect_peaks import detect_peaks
-    >>> x = _np.random.randn(100)
-    >>> x[60:81] = _np.nan
-    >>> # detect all peaks and plot data
-    >>> ind = detect_peaks(x, show=True)
-    >>> print(ind)
-
-    >>> x = _np.sin(2*_np.pi*5*_np.linspace(0, 1, 200)) + _np.random.randn(200)/5
-    >>> # set minimum peak height = 0 and minimum peak distance = 20
-    >>> detect_peaks(x, mph=0, mpd=20, show=True)
-
-    >>> x = [0, 1, 0, 2, 0, 3, 0, 2, 0, 1, 0]
-    >>> # set minimum peak distance = 2
-    >>> detect_peaks(x, mpd=2, show=True)
-
-    >>> x = _np.sin(2*_np.pi*5*_np.linspace(0, 1, 200)) + _np.random.randn(200)/5
-    >>> # detection of valleys instead of peaks
-    >>> detect_peaks(x, mph=-1.2, mpd=20, valley=True, show=True)
-
-    >>> x = [0, 1, 1, 0, 1, 1, 0]
-    >>> # detect both edges
-    >>> detect_peaks(x, edge='both', show=True)
-
-    >>> x = [-2, 1, -2, 2, 1, 1, 3, 0]
-    >>> # set threshold = 2
-    >>> detect_peaks(x, threshold = 2, show=True)
-
-    Version history
-    ---------------
-    '1.0.5':
-        The sign of `mph` is inverted if parameter `valley` is True
-
-    """
-
-    x = _np.atleast_1d(x).astype('float64')
-    if x.size < 3:
-        return _np.array([], dtype=int)
-    if valley:
-        x = -x
-        if mph is not None:
-            mph = -mph
-    # find indices of all peaks
-    dx = x[1:] - x[:-1]
-    # handle NaN's
-    indnan = _np.where(_np.isnan(x))[0]
-    if indnan.size:
-        x[indnan] = _np.inf
-        dx[_np.where(_np.isnan(dx))[0]] = _np.inf
-    ine, ire, ife = _np.array([[], [], []], dtype=int)
-    if not edge:
-        ine = _np.where((_np.hstack((dx, 0)) < 0) & (_np.hstack((0, dx)) > 0))[0]
-    else:
-        if edge.lower() in ['rising', 'both']:
-            ire = _np.where((_np.hstack((dx, 0)) <= 0) & (_np.hstack((0, dx)) > 0))[0]
-        if edge.lower() in ['falling', 'both']:
-            ife = _np.where((_np.hstack((dx, 0)) < 0) & (_np.hstack((0, dx)) >= 0))[0]
-    ind = _np.unique(_np.hstack((ine, ire, ife)))
-    # handle NaN's
-    if ind.size and indnan.size:
-        # NaN's and values close to NaN's cannot be peaks
-        ind = ind[_np.in1d(ind, _np.unique(_np.hstack((indnan, indnan-1, indnan+1))), invert=True)]
-    # first and last values of x cannot be peaks
-    if ind.size and ind[0] == 0:
-        ind = ind[1:]
-    if ind.size and ind[-1] == x.size-1:
-        ind = ind[:-1]
-    # remove peaks < minimum peak height
-    if ind.size and mph is not None:
-        ind = ind[x[ind] >= mph]
-    # remove peaks - neighbors < threshold
-    if ind.size and threshold > 0:
-        dx = _np.min(_np.vstack([x[ind]-x[ind-1], x[ind]-x[ind+1]]), axis=0)
-        ind = _np.delete(ind, _np.where(dx < threshold)[0])
-    # detect small peaks closer than minimum peak distance
-    if ind.size and mpd > 1:
-        ind = ind[_np.argsort(x[ind])][::-1]  # sort ind by peak height
-        idel = _np.zeros(ind.size, dtype=bool)
-        for i in range(ind.size):
-            if not idel[i]:
-                # keep peaks with the same height if kpsh is True
-                idel = idel | (ind >= ind[i] - mpd) & (ind <= ind[i] + mpd) \
-                    & (x[ind[i]] > x[ind] if kpsh else True)
-                idel[i] = 0  # Keep current peak
-        # remove the small peaks and sort back the indices by their occurrence
-        ind = _np.sort(ind[~idel])
-
-    if show:
-        if indnan.size:
-            x[indnan] = _np.nan
-        if valley:
-            x = -x
-            if mph is not None:
-                mph = -mph
-        _plot_peakdetect(x, mph, mpd, threshold, edge, valley, ax, ind)
-
-    return ind
-
-
-def _plot_peakdetect(x, mph, mpd, threshold, edge, valley, ax, ind):
-    """Plot results of the detect_peaks function, see its help."""
-    try:
-        import matplotlib.pyplot as plt
-    except ImportError:
-        print('matplotlib is not available.')
-    else:
-        if ax is None:
-            _, ax = plt.subplots(1, 1, figsize=(8, 4))
-
-        ax.plot(x, 'b', lw=1)
-        if ind.size:
-            label = 'valley' if valley else 'peak'
-            label = label + 's' if ind.size > 1 else label
-            ax.plot(ind, x[ind], '+', mfc=None, mec='r', mew=2, ms=8,
-                    label='%d %s' % (ind.size, label))
-            ax.legend(loc='best', framealpha=.5, numpoints=1)
-        ax.set_xlim(-.02*x.size, x.size*1.02-1)
-        ymin, ymax = x[_np.isfinite(x)].min(), x[_np.isfinite(x)].max()
-        yrange = ymax - ymin if ymax > ymin else 1
-        ax.set_ylim(ymin - 0.1*yrange, ymax + 0.1*yrange)
-        ax.set_xlabel('Data #', fontsize=14)
-        ax.set_ylabel('Amplitude', fontsize=14)
-        mode = 'Valley detection' if valley else 'Peak detection'
-        ax.set_title("%s (mph=%s, mpd=%d, threshold=%s, edge='%s')"
-                     % (mode, str(mph), mpd, str(threshold), edge))
-        # plt.grid()
-        plt.show()
-# end def plot_peakdetect
-
 # ========================================================================== #
 
 # =============================== #
@@ -537,7 +352,7 @@ def expdecay_fit(tt,sig_in,param):
     return results.reshape(-1,3)
 
 
-def gaussian_peak_width(tt,sig_in,param):
+def gaussian_peak_width(tt, sig_in, param, **flags):
     """
      param contains intitial guesses for fitting gaussians,
      (Amplitude, x value, sigma):
@@ -548,6 +363,7 @@ def gaussian_peak_width(tt,sig_in,param):
      Define a function that returns the magnitude of stuff under a gaussian
      peak (with support for multiple peaks)
     """
+
     fit = lambda param, xx: _np.sum([_ms.gaussian(xx, param[ii*3], param[ii*3+1],
                                               param[ii*3+2])
                                     for ii in _np.arange(len(param)/3)], axis=0)
@@ -562,7 +378,7 @@ def gaussian_peak_width(tt,sig_in,param):
 
     # Least squares fit the gaussian peaks: "args" gives the arguments to the
     # err function defined above
-    results, value = leastsq(err, param, args=(tt, sig_in))
+    results, value = leastsq(err, param, args=(tt, sig_in), **flags)
 
     for res in results.reshape(-1,3):
         print('Peak detected at: amplitude, position, sigma %f '%(res))
@@ -570,6 +386,140 @@ def gaussian_peak_width(tt,sig_in,param):
 
     return results.reshape(-1,3)
 
+# ======================================================================== #
+
+
+def fit_leastsq(p0, xdat, ydat, func, **kwargs):
+    """
+    [pfit, pcov] = fit_leastsq(p0, xdat, ydat, func)
+
+    Least squares fit of input data to an input function using scipy's
+    "leastsq" function.
+
+    Inputs:
+        p0 - initial guess at fitting parameters
+        xdat,ydat - Input data to be fit
+        func - Handle to an external fitting function, y = func(p,x)
+
+    Outputs:
+        pfit - Least squares solution for fitting paramters
+        pcov - Estimate of the covariance in the fitting parameters
+                (scaled by residuals)
+    """
+
+    def errf(*args):
+        p,x,y=(args[:-2],args[-2],args[-1])
+        return func(x, _np.asarray(p)) - y
+    # end def errf
+    # errf = lambda p, x, y: func(p,x) - y
+
+    pfit, pcov, infodict, errmsg, success = \
+        leastsq(errf, p0, args=(xdat, ydat), full_output=1,
+                epsfcn=0.0001, **kwargs)
+
+    # end if
+
+    if (len(ydat) > len(p0)) and pcov is not None:
+        pcov = pcov * ((errf(pfit, xdat, ydat)**2).sum()
+                       / (len(ydat)-len(p0)))
+    else:
+        pcov = _np.inf
+    # endif
+
+    return pfit, pcov
+
+    """
+    The below uncertainty is not a real uncertainty.  It assumes that there
+    is no covariance in the fitting parameters.
+    perr = []
+    for ii in range(len(pfit)):
+        try:
+            #This assumes uncorrelated uncertainties (no covariance)
+            perr.append(_np.absolute(pcov[ii][ii])**0.5)
+        except:
+            perr.append(0.00)
+        # end try
+    # end for
+    return pfit, _np.array(perr)
+
+    perr - Estimated uncertainty in fitting parameters
+                (scaled by residuals)
+    """
+# end def fit_leastsq
+
+# ======================================================================== #
+
+
+def fit_mcleastsq(p0, xdat, ydat, func, yerr_systematic=0.0, nmonti=300):
+    """
+    function [pfit,perr] = fit_mcleastsq(p0, xdat, ydat, func, yerr_systematic, nmonti)
+
+    This is a Monte Carlo wrapper around scipy's leastsq function that is
+    meant to propagate systematic uncertainty from input data into the
+    fitting parameters nonlinearly.
+
+    Inputs:
+        p0 - initial guess at fitting parameters
+        xdat,ydat - Input data to be fit
+        func - Handle to an external fitting function, y = func(p,x)
+        yerr_systematic - systematic uncertainty in ydat (optional input)
+
+    Outputs:
+        pfit - Least squares solution for fitting paramters
+        perr - Estimate of the uncertainty in the fitting parameters
+                (scaled by residuals)
+
+    """
+    def errf(*args):
+        p,x,y=(args[:-2],args[-2],args[-1])
+        return func(x, _np.asarray(p)) - y
+    # end def errf
+    # errf = lambda p, x, y: func(x, p) - y
+
+    # Fit first time
+    pfit, perr = leastsq(errf, p0, args=(xdat, ydat), full_output=0)
+
+    # Get the stdev of the residuals
+    residuals = errf(pfit, xdat, ydat)
+    sigma_res = _np.std(residuals)
+
+    # Get an estimate of the uncertainty in the fitting parameters (including
+    # systematics)
+    sigma_err_total = _np.sqrt(sigma_res**2 + yerr_systematic**2)
+
+    # several hundred random data sets are generated and fitted
+    ps = []
+    niterate = len(ydat)
+    niterate *= nmonti
+    cc = -1
+    for ii in range(niterate):
+        yy = ydat.copy()
+        cc += 1
+        if cc >= len(ydat):
+            cc = 0
+        # end if
+        _np.random.seed()
+        yy[cc] += _np.random.normal(0., sigma_err_total, 1)
+#        yy = ydat + _np.random.normal(0., sigma_err_total, len(ydat))
+
+        mcfit, mccov = leastsq(errf, p0, args=(xdat, yy), full_output=0)
+
+        ps.append(mcfit)
+    #end for
+
+    # You can choose the confidence interval that you want for your
+    # parameter estimates:
+    # 1sigma gets approximately the same as methods above
+    # 1sigma corresponds to 68.3% confidence interval
+    # 2sigma corresponds to 95.44% confidence interval
+    ps = _np.array(ps)
+    mean_pfit = _np.mean(ps, 0)
+
+    Nsigma = 1.0
+    err_pfit = Nsigma * _np.std(ps, 0)
+
+    return mean_pfit, err_pfit
+# end fit_mcleastsq
 
 # ======================================================================== #
 
@@ -634,7 +584,64 @@ def qparab_lsfit(xdata, ydata, vary=None, xx=None,
 #    return af, vaf
 # end def qparab_lsfit
 
+def fit_curvefit(p0, xdat, ydat, func, yerr=None, **kwargs):
+    """
+    [pfit, pcov] = fit_curvefit(p0, xdat, ydat, func, yerr)
 
+    Least squares fit of input data to an input function using scipy's
+    "curvefit" method.
+
+    Inputs:
+        p0 - initial guess at fitting parameters
+        xdat,ydat - Input data to be fit
+        func - Handle to an external fitting function, y = func(p,x)
+        yerr - uncertainty in ydat (optional input)
+
+    Outputs:
+        pfit - Least squares solution for fitting paramters
+        pcov - Estimate of the covariance in the fitting parameters
+                (scaled by residuals)
+    """
+
+    method = kwargs.pop('lsqmethod','lm')
+    epsfcn = kwargs.pop('epsfcn', None) #0.0001)
+    bounds = kwargs.pop('bounds', None)
+    if (_scipyversion >= 0.17) and (yerr is not None):
+        pfit, pcov = curve_fit(func, xdat, ydat, p0=p0, sigma=yerr,
+                               absolute_sigma = True, method=method,
+                               epsfcn=epsfcn, bounds=bounds)
+    else:
+        pfit, pcov = curve_fit(func, xdat, ydat, p0=p0, sigma=yerr, **kwargs)
+
+        if (len(ydat) > len(p0)) and (pcov is not None):
+            pcov = pcov *(((func(pfit, xdat, ydat)-ydat)**2).sum()
+                           / (len(ydat)-len(p0)))
+        else:
+            pcov = _np.inf
+        # endif
+    # endif
+
+    return pfit, pcov
+    """
+    The below uncertainty is not a real uncertainty.  It assumes that there
+    is no covariance in the fitting parameters.
+    perr = []
+    for ii in range(len(pfit)):
+        try:
+            #This assumes uncorrelated uncertainties (no covariance)
+            perr.append(_np.absolute(pcov[ii][ii])**0.5)
+        except:
+            perr.append(0.00)
+        # end try
+    # end for
+    return pfit, _np.array(perr)
+
+    perr - Estimated uncertainty in fitting parameters
+                (scaled by residuals)
+    """
+# end def fit_curvefit
+
+# ======================================================================== #
 # ======================================================================== #
 
 # =================================== #

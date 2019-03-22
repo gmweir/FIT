@@ -82,11 +82,13 @@ import matplotlib.pyplot as _plt
 #import pybaseutils as _pyut
 #from pybaseutils.Struct import Struct
 from pybaseutils import utils as _ut
+from pybaseutils.utils import log, exp, power, log1p
 #from pybaseutils.utils import properror, sech
 
 from FIT.model import ModelClass
 
 #from cmath import *
+
 
 # ========================================================================== #
 # ========================================================================== #
@@ -139,40 +141,6 @@ from FIT.model import ModelClass
 #        return NotImplementedError
 ## end def ModelExample
 
-
-# ========================================================================== #
-# ========================================================================== #
-
-def power(x, c, real=True):
-    if real:
-        return _np.power(_np.asarray(x, dtype=_np.complex128), c).real
-    else:
-        return _np.power(x, c)
-    # end if
-
-def log(x, real=True):
-    # fails for
-    if real:
-        return _np.log(_np.asarray(_np.abs(x), dtype=_np.complex128)).real
-    else:
-        return _np.log(_np.abs(x))
-    # end if
-
-def log1p(x, real=True):
-    # fails for
-    if real:
-        return _np.log1p(_np.asarray(x, dtype=_np.complex128)).real
-    else:
-        return _np.log1p(x)
-    # end if
-
-def exp(x, real=True):
-    # fails for
-    if real:
-        return _np.exp(_np.asarray(x, dtype=_np.complex128)).real
-    else:
-        return _np.exp(x)
-    # end if
 
 # ========================================================================== #
 # ========================================================================== #
@@ -482,7 +450,9 @@ class ModelSines(ModelClass):
             AA = _np.copy(self._af[1])
             self._af[0] = self._af[0] + AA*duty
             for ii in range(self.nfreqs):
-                nn = 2*(ii+1)-1
+                nn = ii+1
+                if duty == 0.5:
+                    nn = 2*nn - 1
                 self._af[3*ii + 1] = 2.0*AA*_np.sin(nn*_np.pi*duty)/(_np.pi*nn)  # amplitudes
                 self._af[3*ii + 2] = nn*self._af[2]  # i'th odd harm. of default
                 self._af[3*ii + 3] = -0.5*_np.pi  # phase of i'th harm. of default
@@ -2504,7 +2474,7 @@ class ModelPowerLaw(ModelClass):
     @staticmethod
     def _lnderiv(XX, aa, **kwargs):
         """
-         dfdx = dfcdx*(a(n+2)*e^a(n+1)x) +a(n+1)*f(x);
+         dfdx = dfcdx*( f(x)/fc ) + a(n+1)*f(x);
               = (dfcdx/fc)*f(x) + a(n+1)*f(x)
               =  (dln(fc)dx + a(n+1)) * f(x)
 
@@ -2751,7 +2721,7 @@ class ModelPowerLaw(ModelClass):
          y = yo + ys*an2 * exp(an1*x) * x^( a1*x^(n)+a2*x^(n-1)+...a(n) )
         ========>  Not possible with non-linearity
 
-        x-scaling:   x' = x/ys
+        x-scaling:   x' = x/xs
          y = ys*an2 * exp(an1*x/xs) * (x/xs)^( a1*(x/xs)^(n)+a2*(x/xs)^(n-1)+...a(n) )
          ln|y|  = an1*x/xs + ln|ys*an2|
                   + ln|(x/xs)^( a1*(x/xs)^(n)+a2*(x/xs)^(n-1)+...a(n) )|
@@ -2766,17 +2736,14 @@ class ModelPowerLaw(ModelClass):
         ============
 
          a(n+2) = ys* an2'
-         a(n+1) = an1'/xs
-         a(n) = an' - an1'*xo/xs
         """
         ain, aout = _np.copy(ain), _np.copy(ain)
         ys = kwargs.setdefault('ys', self.slope)
         yo = kwargs.setdefault('yo', self.offset)   # analysis:ignore
-        xs = kwargs.setdefault('xs', self.xslope)
+        xs = kwargs.setdefault('xs', self.xslope)   # analysis:ignore
         xo = kwargs.setdefault('xo', self.xoffset)  # analysis:ignore
 
-        aout[-1] *= ys
-        aout[:-2] /= xs
+        aout[-1] = ain[-1]*ys
 #        aout[:-3] = ModelPoly.unscaleaf(ain[:-3], xo=xo, xs=xs, ys=ys, yo=yo)
         return aout
 
@@ -2787,12 +2754,12 @@ class ModelPowerLaw(ModelClass):
         xs = kwargs.setdefault('xs', self.xslope)   # analysis:ignore
         xo = kwargs.setdefault('xo', self.xoffset)  # analysis:ignore
 
-        aout[-1] /= ys
-#        aout[:-2] *= xs
+        aout[-1] = ain[-1]/ys
         return aout
 
     def scalings(self, xdat, ydat, **kwargs):
         self.offset = 0.0
+        self.slope = 1.0
         self.xoffset = 0.0
         self.xslope = 1.0
         return super(ModelPowerLaw, self).scalings(xdat, ydat, **kwargs)
@@ -8857,7 +8824,7 @@ def randomize_initial_conditions(LB, UB, af0=None, varaf0=None, inf=10, modelinf
 #    else:
 #        return XX*ascl
 
-def rescale_problem(pdat=0, vdat=0, info=None, nargout=1):
+def rescale_problem(xdat=0, pdat=0, vdat=0, info=None, nargout=1):
     """
     When fitting this problem it is convenient to scale it to order 1:
         slope = _np.nanmax(pdat)-_np.nanmin(pdat)
@@ -8880,14 +8847,16 @@ def rescale_problem(pdat=0, vdat=0, info=None, nargout=1):
     if info is None:
         slope = _np.nanmax(pdat)-_np.nanmin(pdat)
         offset = _np.nanmin(pdat)
+        if slope == 0:    slope = 1.0   # end if
 
         pdat = (pdat.copy()-offset)/slope
         vdat = vdat.copy()/_np.abs(slope)**2.0
 
-        return pdat, vdat, slope, offset
-#        xslope = _np.nanmax(xdat)-_np.nanmin(xdat)
-#        xoffset = _np.nanmin(xdat)
-#        return pdat, vdat, slope, offset, xslope, xoffset
+#        return pdat, vdat, slope, offset
+        xslope = _np.nanmax(xdat)-_np.nanmin(xdat)
+        if xslope == 0:    xslope = 1.0   # end if
+        xoffset = _np.nanmin(xdat)
+        return pdat, vdat, slope, offset, xslope, xoffset
     elif info is not None:
         slope = info.slope
         offset = info.offset
@@ -8910,6 +8879,12 @@ def rescale_problem(pdat=0, vdat=0, info=None, nargout=1):
             info.pdat = info.pdat*slope+offset
             info.vdat = info.vdat * (slope**2.0)
         # end if
+        if hasattr(info,'xdat'):
+            info.xdat = info.xdat*xslope+xoffset
+#            info.vxdat = info.vxdat * (xslope**2.0)
+        # end if
+        if hasattr(info,'XX'):
+            info.XX = info.XX*xslope+xoffset
         if hasattr(info,'dprofdx'):
             info.dprofdx = slope*info.dprofdx
             info.vardprofdx = (slope**2.0)*info.vardprofdx
@@ -8917,20 +8892,15 @@ def rescale_problem(pdat=0, vdat=0, info=None, nargout=1):
             info.dprofdx /= xslope
             info.vardprofdx /= xslope*xslope
         # end if
-
         if hasattr(info,'prof'):
             info.prof = slope*info.prof+offset
             info.varprof = (slope**2.0)*info.varprof
         # end if
-
-#        info.af = info.unscaleaf(info.af, info.slope, info.offset, info.xslope)
-#        _, _, info = info.model(info.XX, info.af, **info.kwargs)
         if nargout == 1:
             return info
         else:
             return info.prof, info.varp, info.dprofdx, info.vardprofdx, info.af
     else:
- #        print('for a backward unscaling: you must provide the info Struct from the fit!')
         raise ValueError('for a backward unscaling: you must provide the info Struct from the fit!')
     # end if
 # end def rescale problem
@@ -9130,20 +9100,93 @@ def _derivative_inputcondition(xvar):
 # ========================================================================== #
 # ========================================================================== #
 
+#def huber(z, rho, cost_only):
+#    mask = z <= 1
+#    rho[0, mask] = z[mask]
+#    rho[0, ~mask] = 2 * z[~mask]**0.5 - 1
+#    if cost_only:
+#        return
+#    rho[1, mask] = 1
+#    rho[1, ~mask] = z[~mask]**-0.5
+#    rho[2, mask] = 0
+#    rho[2, ~mask] = -0.5 * z[~mask]**-1.5
+#
+#
+#def soft_l1(z, rho, cost_only):
+#    t = 1 + z
+#    rho[0] = 2 * (t**0.5 - 1)
+#    if cost_only:
+#        return
+#    rho[1] = t**-0.5
+#    rho[2] = -0.5 * t**-1.5
+#
+#
+#def cauchy(z, rho, cost_only):
+#    rho[0] = _np.log1p(z)
+#    if cost_only:
+#        return
+#    t = 1 + z
+#    rho[1] = 1 / t
+#    rho[2] = -1 / t**2
+#
+#
+#def arctan(z, rho, cost_only):
+#    rho[0] = _np.arctan(z)
+#    if cost_only:
+#        return
+#    t = 1.0 + z**2.0
+#    rho[1] = 1.0/t
+#    rho[2] = -2.0*z/t**2.0
+#
+#IMPLEMENTED_LOSSES = dict(linear=None, huber=huber, soft_l1=soft_l1,
+#                          cauchy=cauchy, arctan=arctan)
+#
+#def construct_loss_function(m, loss, f_scale):
+#    if loss == 'linear':
+#        return None
+#
+#    if not callable(loss):
+#        loss = IMPLEMENTED_LOSSES[loss]
+#        rho = _np.empty((3, m))
+#
+#        def loss_function(f, cost_only=False):
+#            z = (f / f_scale) ** 2
+#            loss(z, rho, cost_only=cost_only)
+#            if cost_only:
+#                return 0.5 * f_scale ** 2 * _np.sum(rho[0])
+#            rho[0] *= f_scale ** 2
+#            rho[2] /= f_scale ** 2
+#            return rho
+#    else:
+#        def loss_function(f, cost_only=False):
+#            z = (f / f_scale) ** 2
+#            rho = loss(z)
+#            if cost_only:
+#                return 0.5 * f_scale ** 2 * _np.sum(rho[0])
+#            rho[0] *= f_scale ** 2
+#            rho[2] /= f_scale ** 2
+#            return rho
+#
+#    return loss_function
 
 if __name__ == '__main__':
-    funcs = [ModelLine, ModelSines, ModelPoly, ModelProdExp, ModelEvenPoly,
-            ModelParabolic, ModelExpEdge, _ModelTwoPower, ModelTwoPower,
-            ModelGaussian, ModelOffsetGaussian, ModelNormal, ModelOffsetNormal,
-            ModelLogGaussian, ModelLorentzian, ModelPseudoVoigt, ModelDoppler,
-            ModelLogDoppler, ModelLogLorentzian, ModelQuasiParabolic, ModelPowerLaw,
-            ModelExponential, ModelExp, ModelFlattop, ModelSlopetop]
-    funcs = [ModelPoly]
-    for func in funcs:
-        tmp = func(None)
-        tmp.af = tmp._af
-        print(tmp.__str__())
-        print(tmp.__repr__())
+#    m = 3
+#    loss = arctan
+#    f_scale = 1.0
+#    loss_function = construct_loss_function(m, loss, f_scale)
+#    loss_function(2)
+#    funcs = [ModelLine, ModelSines, ModelPoly, ModelProdExp, ModelEvenPoly,
+#            ModelParabolic, ModelExpEdge, _ModelTwoPower, ModelTwoPower,
+#            ModelGaussian, ModelOffsetGaussian, ModelNormal, ModelOffsetNormal,
+#            ModelLogGaussian, ModelLorentzian, ModelPseudoVoigt, ModelDoppler,
+#            ModelLogDoppler, ModelLogLorentzian, ModelQuasiParabolic, ModelPowerLaw,
+#            ModelExponential, ModelExp, ModelFlattop, ModelSlopetop]
+#    funcs = [ModelPoly]
+#    for func in funcs:
+#        tmp = func(None)
+#        tmp.af = tmp._af
+#        print(tmp.__str__())
+#        print(tmp.__repr__())
 #    XX = _np.linspace(1e-3, 0.99, num=61)
 #    XX = _np.linspace(1e-3, 0.99, num=100)
 
@@ -9157,19 +9200,23 @@ if __name__ == '__main__':
 #
 #    mod = ModelSines().test_numerics(nfreqs=2, num=int((6.0/33.0-0.0)*5.0e2), start=-1.0/33.0, stop=6.0/33.0, fmod=33.0)   # checked
 #    mod = ModelSines().test_scaling(nfreqs=2, num=int((6.0/33.0-0.0)*5.0e2), start=-1.0/33.0, stop=6.0/33.0, fmod=33.0)   # checked
-
+##
 #    mod = ModelSines().test_numerics(nfreqs=5, num=int((6.0/33.0-0.0)*5.0e3), start=0.0, stop=6.0/33.0, fmod=33.0) # checked
 #    mod = ModelSines().test_scaling(nfreqs=5, num=int((6.0/33.0-0.0)*5.0e3), start=0.0, stop=6.0/33.0, fmod=33.0) # checked
 #
-#    mod = ModelSines().test_numerics(nfreqs=5, num=int((6.0/33.0-0.0)*5.0e3), start=0.0, stop=6.0/33.0,
-#                                     fmod=5.0, shape='square', duty=0.40, fmod=33.0) # checked
-#    mod = ModelSines().test_scaling(nfreqs=5, num=int((6.0/33.0-0.0)*5.0e3), start=0.0, stop=6.0/33.0,
-#                                     fmod=5.0, shape='square', duty=0.40, fmod=33.0) # checked
+#    mod = ModelSines().test_numerics(nfreqs=7, num=int((6.0/33.0)*5.0e3), start=-0.5*6.0/33.0, stop=6.0/33.0,
+#                                     shape='square', duty=0.50, fmod=5.0) # checked
+#    mod = ModelSines().test_scaling(nfreqs=7, num=int((6.0/33.0)*5.0e3), start=-0.5*6.0/33.0, stop=6.0/33.0,
+#                                     shape='square', duty=0.50, fmod=5.0) # checked
+#    mod = ModelSines().test_numerics(nfreqs=15, num=int((6.0/33.0)*5.0e3), start=-0.5*6.0/33.0, stop=6.0/33.0,
+#                                    shape='square', duty=0.67, fmod=5.0) # checked
+#    mod = ModelSines().test_scaling(nfreqs=15, num=int((6.0/33.0)*5.0e3), start=-0.5*6.0/33.0, stop=6.0/33.0,
+#                                    shape='square', duty=0.67, fmod=5.0) # checked
 #    mod = ModelFourier().test_numerics(num=int((6.0/33.0-0.0)*5.0e2), start=0.0, stop=6.0/33.0) # checked
 #    mod = ModelFourier.test_numerics(nfreqs=5, num=20*int((6.0/33.0-0.0)*5.0e2), start=0.0, stop=6.0/33.0,
 #                                     shape='square', duty=0.40, fmod=33.0)  # checked
 
-#    mod = ModelPoly.test_numerics(npoly=1) # checked
+    mod = ModelPoly.test_numerics(npoly=1) # checked
 #    mod = ModelPoly.test_numerics(npoly=2) # checked
 #    mod = ModelPoly.test_numerics(npoly=5)  # checked
 #    mod = ModelPoly.test_numerics(npoly=12)  # checked
@@ -9234,16 +9281,21 @@ if __name__ == '__main__':
 #    mod = _ModelTwoPower.test_numerics(start=0.1, stop=1.3)   # checked
 #    mod = _ModelTwoPower.test_scaling() # checked
 #    mod = ModelQuasiParabolic.test_numerics(start=0.1, stop=0.9)  # checked
-    mod = ModelQuasiParabolic.test_scaling()  # checked
-    mod = ModelQuasiParabolic.test_scaling(start=0.1, stop=0.9)  # checked
-    mod = ModelQuasiParabolic.test_scaling(start=0.1, stop=1.2)  # checked
+#    mod = ModelQuasiParabolic.test_scaling()  # checked
+#    mod = ModelQuasiParabolic.test_scaling(start=0.1, stop=0.9)  # checked
+#    mod = ModelQuasiParabolic.test_scaling(start=0.1, stop=1.2)  # checked
 
 #    mod = ModelPowerLaw.test_numerics(npoly=2, start=0.1, stop=0.9, num=100)
 #    mod = ModelPowerLaw.test_numerics(npoly=3, start=0.1, stop=0.9, num=100)
+#    mod = ModelPowerLaw.test_numerics(npoly=5, start=0.1, stop=0.9, num=100)
+#    mod = ModelPowerLaw.test_scaling(npoly=5, start=0.1, stop=0.9, num=10)
+#    mod = ModelPowerLaw.test_scaling(npoly=5, start=0.1, stop=1.1, num=10)
 #    mod = ModelPowerLaw.test_numerics(npoly=4, start=0.1, stop=0.9) # checked
 #    mod = ModelPowerLaw.test_numerics(npoly=8, start=0.1, stop=0.9) # checked
 #    mod = ModelExponential.test_numerics(start=0.1, stop=0.9) # checked
 #    mod = ModelExponential.test_numerics(start=0.1, stop=1.0) # checked
+#    mod = ModelExponential.test_scaling(start=0.1, stop=0.9) # checked
+#    mod = ModelExponential.test_scaling(start=0.1, stop=1.0) # checked
 #    mod = ModelFlattop.test_numerics(start=0.1, stop=1.0) # checked
 #    mod = ModelSlopetop.test_numerics(start=0.1, stop=1.0) # checked
 #    mod = ModelFlattop.test_scaling() # checked

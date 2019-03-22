@@ -1311,12 +1311,8 @@ class ModelClass(FD):
         self.gvec = self.jacobian(XX, aa=af, **kwargs)
         self.dprofdx = self.derivative(XX, aa=af, **kwargs)
         self.dgdx = self.derivative_jacobian(XX, aa=af, **kwargs)
-#        if hasattr(self, 'd2profdx2'):
-        if 1:
-            self.d2profdx2 = self.second_derivative(XX, aa=af, **kwargs)
-#        if hasattr(self, 'd2gdx2'):
-        if 1:
-            self.d2gdx2 = self.second_derivative_jacobian(XX, aa=af, **kwargs)
+        self.d2profdx2 = self.second_derivative(XX, aa=af, **kwargs)
+        self.d2gdx2 = self.second_derivative_jacobian(XX, aa=af, **kwargs)
 #        self.updatevar(**kwargs)
         return self.prof, self.gvec, self.dprofdx, self.dgdx
     # end def
