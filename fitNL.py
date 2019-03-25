@@ -1017,42 +1017,47 @@ def profilefit(x, y, ey, XX, func, fkwargs={}, **kwargs):
         (otherwise you need to vary c across the boundary)
     """
     bootstrapit = kwargs.pop('bootstrapit', 0)
-    kwargs.setdefault('perpchi2', True)
+    kwargs.setdefault('perpchi2', False)
     kwargs.setdefault('scale_problem', True)
 
     if bootstrapit:
         info = bootstrapprofilefit(x, y, ey, XX, func, fkwargs, nmonti=bootstrapit, **kwargs)
     else:
-        kwargs['scale_problem'] = False
         x, y, ey, XX = _np.copy(x), _np.copy(y), _np.copy(ey), _np.copy(XX)
 
-        info = func(None, None, **fkwargs)
+        scaled = False
+        if kwargs['scale_problem']:
+            slope = _np.nanmax(y)-_np.nanmin(y)   # maximum 1.0
+            offset = _np.nanmin(y)                # minimum 0.0
+            if slope == 0:    slope = 1.0   # end if
 
-    #        xo = _np.nanmin(x)
-    #        xs = _np.nanmax(x)-_np.nanmin(x)
-    #        yo = _np.nanmin(y)
-    #        ys = _np.nanmax(y)-_np.nanmin(y)
-    #        info.scalings(_np.copy(x), _np.copy(y))
-        # x- and y- data are going to be scaled, but some models cannot be analytically
-        # scaled, so here we check for successful x-scaling
-        xslope = _np.nanmax(x)-_np.nanmin(x)
-        if info._analytic_xscaling:
-            xslope = 1.0
+            xslope = 1.05*_np.nanmax((_np.nanmax(x), _np.nanmax(XX))) # shrink so maximum is less than 1.0
+            xoffset = -1e-4  # prevent 0 from being in problem
+            if xslope == 0:    xslope = 1.0   # end if
+
+            XX = (XX.copy()-xoffset)/xslope
+            x = (x.copy()-xoffset)/xslope
+            y = (y.copy()-offset)/slope
+            ey = ey.copy()/(slope)
+
+            scaled=True
+            kwargs['scale_problem'] = False
         # end if
-        XX /= xslope
-        x /= xslope
-        fkwargs.setdefault('offset', 0.0)
-        fkwargs.setdefault('slope', 1.0)
-        kwargs.setdefault('scale_problem', True)
 
-        kwargs['scale_problem'] = False
         info = modelfit(x, y, ey, XX, func, fkwargs, **kwargs)
 
-        info.XX *= xslope
-        info.xdat *= xslope
-        info.dprofdx /= xslope
-        info.d2profdx2 /= xslope*xslope
-        info.vardprofdx /= xslope*xslope
+        if scaled:
+            if hasattr(info, 'xdat'):            info.xdat = xslope*info.xdat+xoffset
+            if hasattr(info, 'pdat'):            info.pdat = slope*info.pdat+offset
+            if hasattr(info, 'vdat'):            info.vdat = info.vdat*(slope*slope)
+            info.XX = info.XX*xslope+xoffset
+            info.prof = slope*info.prof+offset
+            info.varprof = slope*slope*info.varprof
+            info.dprofdx *= (slope/xslope)
+            info.vardprofdx *= slope*slope/(xslope*xslope)
+            info.d2profdx2 *= slope*slope/(xslope*xslope)
+#            info.vard2profdx2 *= (slope*slope/(xslope*xslope))**2.0
+        # end if
     # end if
     return info
 
@@ -1082,28 +1087,12 @@ def bootstrapprofilefit(xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
     vfit = _np.zeros((niterate, nx), dtype=_np.float64) # end if
     vdprofdx = _np.zeros_like(vfit)
 
-    af = []
-    vaf = []
     nn = 0
     for mm in range(niterate):
         _np.random.seed()
         ydat = ysav.copy() + _np.sqrt(vsav)*_np.random.normal(0.0,1.0,_np.shape(ysav))
         vary = (ydat-ysav)**2
         vary = _np.where(_np.sqrt(vary)<1e-3*_np.nanmin(ydat), 1.0, vary)
-#            vary = vsav.copy()
-#            vary = vsav.copy()*_np.abs((ydat-ysav)/ysav)
-#            vary = vsav.copy()*(1 + _np.abs((ydat-ysav)/ysav))
-#            cc = 1+_np.floor((mm-1)/nmonti)
-#            if nmonti > 1:
-#                ydat[cc] = ysav[cc].copy()
-#                ydat[cc] += _np.sqrt(vsav[cc]) * _np.random.normal(0.0,1.0,_np.shape(vsav[cc]))
-#                vary[cc] = (ydat[cc]-ysav[cc])**2
-#                # _np.ones((1,nch), dtype=_np.float64)*
-#            # endif
-#            print(mm, niterate)
-#            res = self.run()
-#            af[mm, :], _ = res
-#            if verbose:
         if mm % 10 == 0:
             print('%i of %i'%(mm,niterate))
         # end if
@@ -1113,9 +1102,6 @@ def bootstrapprofilefit(xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
 
             if temp.chi2_reduced>10.0:
                 continue
-            af.append(temp.af)
-            vaf.append(temp.perror**2.0)
-
             mfit[nn, :] = _np.copy(temp.prof)
             vfit[nn, :] = _np.copy(temp.varprof)
             dprofdx[nn,:] = _np.copy(temp.dprofdx)
@@ -1126,8 +1112,6 @@ def bootstrapprofilefit(xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
             pass
         # end try
     # endfor
-    af = _np.vstack(tuple(af))
-    vaf = _np.vstack(tuple(vaf))
     mfit = mfit[:nn, :]
     vfit = vfit[:nn, :]
     dprofdx = dprofdx[:nn, :]
@@ -1144,42 +1128,20 @@ def bootstrapprofilefit(xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
 #    _plt.plot(XX, (mfit-_np.sqrt(vfit)).T, 'k--')
 
     if weightit:
-#    if 0:
-        # # weighted mean and covariance
-        # aw = 1.0/(1.0-chi2) # chi2 close to 1 is good, high numbers good in aweights
-        # # aw[_np.isnan(aw)*_np.isinf(aw)]
-        # Weighting by chi2
-
-        aw = 1.0/chi2_reduced
-#            aw = 1.0/_np.sqrt(chi2)
-
-#        mfit = _np.nansum( mfit * 1.0/_np.sqrt(vfit) ) / _np.nansum( 1.0/_np.sqrt(vfit) )
-#        vfit = _np.nanvar( mfit, axis=0)
-        # weight by chi2 or by individual variances?
-
-        # vfit, mfit = _ut.nanwvar(mfit.copy(), statvary=vfit, systvary=None, weights=1.0/_np.sqrt(vfit), dim=0, nargout=2)
-        # vfit, mfit = _ut.nanwvar(mfit.copy(), statvary=None, systvary=None, weights=1.0/_np.sqrt(vfit), dim=0, nargout=2)
         vfit, mfit = _ut.nanwvar(mfit.copy(), statvary=None, systvary=None, weights=1.0/vfit, dim=0, nargout=2)
         vdprofdx, dprofdx = _ut.nanwvar(dprofdx.copy(), statvary=None, systvary=None, weights=1.0/vdprofdx, dim=0, nargout=2)
-
-#        aw = aw.reshape((niterate,1))*_np.ones((1,nx),dtype=_np.float64)              # reshape the weights
-##        self.vfit, self.mfit = _ut.nanwvar(mfit.copy(), statvary=vfit, systvary=None, weights=aw, dim=0)
-#        vfit, mfit = _ut.nanwvar(mfit.copy(), statvary=None, systvary=None, weights=aw, dim=0)
-#        vdprofdx, dprofdx = _ut.nanwvar(dprofdx.copy(), statvary=None, systvary=None, weights=aw, dim=0)
     else:
-        vaf = _np.sum(_np.sqrt(vaf), axis=0)/nn + _np.var(af, axis=0)
-        af = _np.mean(af, axis=0)
-        mfit, vfit = _ut.combine_var(mfit, statvar=None, systvar=None, axis=0)
-        dprofdx, vdprofdx = _ut.combine_var(dprofdx, statvar=None, systvar=None, axis=0)
+        mfit, vfit = _ut.combine_var(mfit, statvar=vfit, systvar=None, axis=0)
+        dprofdx, vdprofdx = _ut.combine_var(dprofdx, statvar=vdprofdx, systvar=None, axis=0)
+#        mfit, vfit = _ut.combine_var(mfit, statvar=None, systvar=None, axis=0)
+#        dprofdx, vdprofdx = _ut.combine_var(dprofdx, statvar=None, systvar=None, axis=0)
     # end if
     info = temp
-    info.af = af
     info.update()
 
-    numfit = len(af)
+    numfit = len(temp.af)
     info.residuals = (ydat-_ut.interp(XX, mfit, ei=None, xo=xdat))/ey
     info.chi2_reduced = _np.sum(info.residuals*info.residuals)/(len(xdat)-numfit)
-#    info.chi2_reduced = 1.0/_np.mean(1.0/chi2_reduced)
     info.prof = mfit
     info.varprof = vfit
     info.dprofdx = dprofdx
@@ -1199,9 +1161,9 @@ def qparabfit(x, y, ey, XX, **kwargs):
     # subfunction kwargs
     nohol = kwargs.pop("nohollow", False)
 
-    # It is possible to scale and unscale the x-dimension in the qparab model,
-    # no x-shifting is available though
-#    scale_problem = kwargs.pop("scale_problem", True)
+    # fitter arguments
+    kwargs.setdefault("scale_problem", True)
+    kwargs.setdefault("bootstrapit", 300)
 
     # plotting kwargs
     onesided = kwargs.pop('onesided', True)
@@ -1229,36 +1191,39 @@ def qparabfit(x, y, ey, XX, **kwargs):
         ylbl2 = r'a/L$_{Te}$'
     # endif
 
-    def myqparab(x=None, af=None, **kwargs):
-        if 'XX' in kwargs: kwargs.pop('XX')
-        return _ms.model_qparab(x, af=af, **kwargs)
+    # ============================= #
 
-    info = myqparab(None) #, nohollow=nohollow)
-    af0 = info.af.copy()
-    af0[0] = y[_np.argmin(x)].copy()
-    kwargs.setdefault('af0',af0)
     xin = x.copy()
     yin = y.copy()
     eyin = ey.copy()
 
     xin = _np.abs(xin)
+    isort = _np.argsort(xin)
+    xin = xin[isort]
+    yin = yin[isort]
+    eyin = eyin[isort]
+
+    # force flat profile in the middle either by cylindrical symmetry or
+    # adding a ficticious point
+    if _np.min(xin) != 0:
+        xin = _np.insert(xin,0,0.0)
+        yin = _np.insert(yin,0,yin[0])
+        eyin = _np.insert(eyin,0,eyin[0])
+    # end if
+    # force the profile to go to zero somewhere in the edge if it doesn't already
+    if _np.nanmin(yin)>0.01*_np.nanmax(yin):
+        # First try linearly interpolating the last few points to 0
+        xedge, vedge = _ut.interp(yin[-3:], xin[-3:], ei=_np.sqrt(eyin[-3:]), xo=0.0)
+        if xedge < xin[-1]:
+            xedge = 1.05*_np.max((_np.nanmax(xin), 1.10))
+            vedge = eyin[-1]
+        xin = _np.insert(xin,-1, xedge)
+        yin = _np.insert(yin,-1, 0.0)
+        eyin = _np.insert(eyin,-1,vedge)
     isort = _np.argsort(_np.abs(xin))
     xin = xin[isort]
     yin = yin[isort]
     eyin = eyin[isort]
-#    if _np.min(xin) != 0:
-#        xin = _np.insert(xin,0,0.0)
-#        yin = _np.insert(yin,0,yin[0])
-#        eyin = _np.insert(eyin,0,eyin[0])
-#    # end if
-#    if 1:
-#        xin = _np.insert(xin,-1, 1.3)
-#        yin = _np.insert(yin,-1, 0.0)
-#        eyin = _np.insert(eyin,-1,eyin[-1])
-#    isort = _np.argsort(_np.abs(xin))
-#    xin = xin[isort]
-#    yin = yin[isort]
-#    eyin = eyin[isort]
 #
 #    if xin[0] != -1*xin[-1] and xin[1] != -1*xin[-2]:
 #        _, eyin = _ut.cylsym(xin, eyin)
@@ -1268,9 +1233,22 @@ def qparabfit(x, y, ey, XX, **kwargs):
 ##        eyin = _ut.cylsym_even(eyin)
 #    # end if
 
+    # ============================= #
+
+    def myqparab(x=None, af=None, **kwargs):
+        if 'XX' in kwargs: kwargs.pop('XX')
+        return _ms.model_qparab(x, af=af, **kwargs)
+
+    info = myqparab(None) #, nohollow=nohollow)
+    af0 = info.af.copy()
+    if not kwargs['scale_problem']:
+        af0[0] = y[_np.argmin(x)].copy()
+        af0[1] = 1e-18
+    kwargs.setdefault('af0',af0)
+
     # Call mpfit
 #    info = fit_mpfit(xin, yin, eyin, XX, myqparab, fkwargs={"nohollow":nohol}, **kwargs)
-    info = modelfit(xin, yin, eyin, XX, myqparab, fkwargs={"nohollow":nohol}, **kwargs)
+    info = profilefit(xin, yin, eyin, XX, myqparab, fkwargs={"nohollow":nohol}, **kwargs)
 
     # ================================= #
 
@@ -1731,50 +1709,35 @@ def test_qparab_fit(nohollow=False):
         aa[5] = 1.0
     # endif
 
-    xdat = _np.linspace(0.05, 0.93, 10)
-#    xdat = _np.linspace(0.01, 1.05, 60)
+#    xdat = _np.linspace(0.05, 0.93, 10)
+    xdat = _np.linspace(-1.15, 1.2, 20)
+    XX = _np.linspace( 0.0, 1.3, 101)
+
 #    _np.random.seed()
-#    xdat += 0.04*_np.random.normal(0.0, 1.0, len(xdat))
-    ydat, _, temp = _ms.model_qparab(xdat, aa, nohollow=nohollow)
+    xdat += 0.02*_np.random.normal(0.0, 1.0, len(xdat))
+
+    xoffset = -1e-4
+    xslope = 1.05*_np.max((_np.nanmax(_np.abs(xdat)), _np.nanmax(XX)))
+    ydat, _, temp = _ms.model_qparab((_np.abs(xdat).copy()-xoffset)/xslope, aa, nohollow=nohollow)
+    temp.dprofdx = temp.dprofdx/(xslope)
+
     yerr = 0.20*ydat
+    yxx, _, _ = _ms.model_qparab((XX.copy()-xoffset)/xslope, aa)
 
     # ============================================== #
 
     solver_options = {}  # end if
-#    solver_options.setdefault('xtol', 1e-14)
-#    solver_options.setdefault('ftol', 1e-14)
-#    solver_options.setdefault('gtol', 1e-14)
-#    solver_options.setdefault('damp', 0)
-#    solver_options.setdefault('maxiter', 1200)
-#    solver_options.setdefault('factor', 100)  # 100
-#    solver_options.setdefault('nprint', 10)
-#    solver_options.setdefault('iterfunct', 'default')
-#    solver_options.setdefault('iterkw', {})
-#    solver_options.setdefault('nocovar', 0)
-#    solver_options.setdefault('rescale', 0)
-#    solver_options.setdefault('autoderivative', 1)
-#    solver_options.setdefault('quiet', 0)
-#    solver_options.setdefault('diag', None)
-#    solver_options.setdefault('epsfcn', max((_np.nanmean(_np.diff(xdat.copy())),1e-2))) #5e-4) #1e-3
-# #    solver_options.pop('epsfcn')
-#    solver_options.setdefault('debug', 0)
-    # default to finite differencing in mpfit for jacobian
-    # solver_options.setdefault('autoderivative', 1)
 
     # ============================================== #
 
-
-    XX = _np.linspace( 0.0001, 0.999, 99)
-    yxx, _, _ = _ms.model_qparab(XX, aa)
-
-    info = qparabfit(xdat, ydat, yerr, XX, nohollow=nohollow, **solver_options)
-
+#    info = qparabfit(xdat, ydat, yerr, XX, nohollow=nohollow, **solver_options)
+#
 #    assert _np.allclose(info.params, aa)
 #    assert info.dof==len(xdat)-len(aa)
 
 #    _np.random.seed()
 #    ydat += yerr*_np.random.normal(0.0, 1.0, len(xdat))
-    ydat += 0.1*ydat*_np.random.normal(0.0, 1.0, len(xdat))
+#    ydat += 0.1*ydat*_np.random.normal(0.0, 1.0, len(xdat))
     info = qparabfit(xdat, ydat, yerr, XX, nohollow=nohollow, **solver_options)
 
     _plt.figure()
@@ -2262,70 +2225,70 @@ if __name__=="__main__":
 #        out, ft = doppler_test(scale_by_data=False, logdata=False, Fs=1.0, fmax=None)
 #    print(out)
 
-#    test_qparab_fit(nohollow=False)
+    test_qparab_fit(nohollow=False)
 #    test_qparab_fit(nohollow=True)
 #    ft = test_fitNL(False)
 #    ft = test_fitNL(True)  # issue with interpolation when x>1 and x<0?
 #
-    test_fit(_ms.model_line, scale_problem=True)  # scaling and shifting works
-
-    test_fourier_fit(_ms.model_sines, nfreqs=1,  Fs=100e3, numpts=int(6.0*1e3/33.0), fmod=33.0)
-    test_fourier_fit(_ms.model_sines, nfreqs=1,  Fs=10e3, fmod=33.0)
-    test_fourier_fit(_ms.model_sines, nfreqs=3, Fs=10e3, fmod=33.0)
-    test_fourier_fit(_ms.model_sines, nfreqs=7, Fs=10e3, fmod=33.0, shape='square', duty=0.66667)
-    # =====  #
-#    test_fourier_fit(_ms.model_fourier, nfreqs=3, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0)
-#    test_fourier_fit(_ms.model_fourier, nfreqs=14, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square')
-#    test_fourier_fit(_ms.model_fourier, nfreqs=6, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
-#    test_fourier_fit(_ms.model_fourier, nfreqs=10, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
-#    test_fourier_fit(_ms.model_fourier, nfreqs=14, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
-    # =====  #
-
-    test_fit(_ms.model_poly, npoly=2)
-    test_fit(_ms.model_poly, npoly=3)
-    test_fit(_ms.model_poly, npoly=6)
-    test_fit(_ms.model_ProdExp, npoly=2)
-    test_fit(_ms.model_ProdExp, npoly=3)
-    test_fit(_ms.model_ProdExp, npoly=4)
-    test_fit(_ms.model_evenpoly, npoly=2)
-    test_fit(_ms.model_evenpoly, npoly=3)
-    test_fit(_ms.model_evenpoly, npoly=6)
-    test_fit(_ms.model_evenpoly, npoly=10)
-    test_fit(_ms.model_PowerLaw, npoly=4)   #
-    test_fit(_ms.model_PowerLaw, npoly=5)   #
-    test_fit(_ms.model_PowerLaw, npoly=6)   #
-    test_fit(_ms.model_Exponential)
-    test_fit(_ms.model_parabolic)
-##
-##    test_profile_fit(_ms.model_evenpoly, npoly=2)
-##
-    test_fit(_ms.model_gaussian, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
-    test_fit(_ms._model_offsetgaussian, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
-    test_fit(_ms.model_normal, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
-    test_fit(_ms.model_offsetnormal, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
-    test_fit(_ms.model_loggaussian, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
-    test_fit(_ms.model_lorentzian, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
-    test_fit(_ms.model_pseudovoigt, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
-    test_fit(_ms.model_loglorentzian, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
-    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=0, tbnds=[-0.5,0.5], num=18750)
-    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=1, tbnds=[-0.5,0.5], num=18750)
-    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=2, tbnds=[-0.5,0.5], num=18750)
-    test_fit(_ms.model_doppler, noshift=0, Fs=1.0, model_order=2, tbnds=[-0.5,0.5], num=18750)
-    test_fit(_ms.model_doppler, logdata=True, noshift=1, Fs=1.0, model_order=0, tbnds=[-0.5,0.5], num=18750)
-    test_fit(_ms.model_doppler, logdata=True, noshift=1, Fs=1.0, model_order=1, tbnds=[-0.5,0.5], num=18750)
-    test_fit(_ms.model_doppler, logdata=True, noshift=1, Fs=1.0, model_order=2, tbnds=[-0.5,0.5], num=18750)
-    test_fit(_ms.model_doppler, logdata=True, noshift=0, Fs=1.0, model_order=2, tbnds=[-0.5,0.5], num=18750)
-    test_fit(_ms._model_twopower)
-    test_fit(_ms.model_twopower)
-    test_fit(_ms.model_expedge)
-    test_profile_fit(_ms.model_qparab, nohollow=False)
-    test_profile_fit(_ms.model_qparab, nohollow=True)
-    test_profile_fit(_ms.model_flattop)
-    test_profile_fit(_ms.model_slopetop)
-##
-    test_profile_fit(_ms.model_qparab, bootstrapit=30)
-    test_profile_fit(_ms.model_flattop, bootstrapit=30)
-    test_profile_fit(_ms.model_slopetop, bootstrapit=30)
+#    test_fit(_ms.model_line, scale_problem=True)  # scaling and shifting works
+#
+#    test_fourier_fit(_ms.model_sines, nfreqs=1,  Fs=100e3, numpts=int(6.0*1e3/33.0), fmod=33.0)
+#    test_fourier_fit(_ms.model_sines, nfreqs=1,  Fs=10e3, fmod=33.0)
+#    test_fourier_fit(_ms.model_sines, nfreqs=3, Fs=10e3, fmod=33.0)
+#    test_fourier_fit(_ms.model_sines, nfreqs=7, Fs=10e3, fmod=33.0, shape='square', duty=0.66667)
+#    # =====  #
+##    test_fourier_fit(_ms.model_fourier, nfreqs=3, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0)
+##    test_fourier_fit(_ms.model_fourier, nfreqs=14, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square')
+##    test_fourier_fit(_ms.model_fourier, nfreqs=6, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
+##    test_fourier_fit(_ms.model_fourier, nfreqs=10, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
+##    test_fourier_fit(_ms.model_fourier, nfreqs=14, Fs=10e3, numpts=int(6.0*2e3/33.0), fmod=33.0, shape='square', duty=0.66667)
+#    # =====  #
+#
+#    test_fit(_ms.model_poly, npoly=2)
+#    test_fit(_ms.model_poly, npoly=3)
+#    test_fit(_ms.model_poly, npoly=6)
+#    test_fit(_ms.model_ProdExp, npoly=2)
+#    test_fit(_ms.model_ProdExp, npoly=3)
+#    test_fit(_ms.model_ProdExp, npoly=4)
+#    test_fit(_ms.model_evenpoly, npoly=2)
+#    test_fit(_ms.model_evenpoly, npoly=3)
+#    test_fit(_ms.model_evenpoly, npoly=6)
+#    test_fit(_ms.model_evenpoly, npoly=10)
+#    test_fit(_ms.model_PowerLaw, npoly=4)   #
+#    test_fit(_ms.model_PowerLaw, npoly=5)   #
+#    test_fit(_ms.model_PowerLaw, npoly=6)   #
+#    test_fit(_ms.model_Exponential)
+#    test_fit(_ms.model_parabolic)
+###
+###    test_profile_fit(_ms.model_evenpoly, npoly=2)
+###
+#    test_fit(_ms.model_gaussian, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
+#    test_fit(_ms._model_offsetgaussian, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
+#    test_fit(_ms.model_normal, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
+#    test_fit(_ms.model_offsetnormal, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
+#    test_fit(_ms.model_loggaussian, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
+#    test_fit(_ms.model_lorentzian, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
+#    test_fit(_ms.model_pseudovoigt, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
+#    test_fit(_ms.model_loglorentzian, Fs=10e3, numpts=int(10e3*6*1.2/33.0))
+#    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=0, tbnds=[-0.5,0.5], num=18750)
+#    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=1, tbnds=[-0.5,0.5], num=18750)
+#    test_fit(_ms.model_doppler, noshift=1, Fs=1.0, model_order=2, tbnds=[-0.5,0.5], num=18750)
+#    test_fit(_ms.model_doppler, noshift=0, Fs=1.0, model_order=2, tbnds=[-0.5,0.5], num=18750)
+#    test_fit(_ms.model_doppler, logdata=True, noshift=1, Fs=1.0, model_order=0, tbnds=[-0.5,0.5], num=18750)
+#    test_fit(_ms.model_doppler, logdata=True, noshift=1, Fs=1.0, model_order=1, tbnds=[-0.5,0.5], num=18750)
+#    test_fit(_ms.model_doppler, logdata=True, noshift=1, Fs=1.0, model_order=2, tbnds=[-0.5,0.5], num=18750)
+#    test_fit(_ms.model_doppler, logdata=True, noshift=0, Fs=1.0, model_order=2, tbnds=[-0.5,0.5], num=18750)
+#    test_fit(_ms._model_twopower)
+#    test_fit(_ms.model_twopower)
+#    test_fit(_ms.model_expedge)
+#    test_profile_fit(_ms.model_qparab, nohollow=False)
+#    test_profile_fit(_ms.model_qparab, nohollow=True)
+#    test_profile_fit(_ms.model_flattop)
+#    test_profile_fit(_ms.model_slopetop)
+###
+#    test_profile_fit(_ms.model_qparab, bootstrapit=30)
+#    test_profile_fit(_ms.model_flattop, bootstrapit=30)
+#    test_profile_fit(_ms.model_slopetop, bootstrapit=30)
 
 #    # need to be reformatted still (2 left!)
 ##    test_fit(_ms.model_Heaviside, npoly=3, rinits=[0.30, 0.35])

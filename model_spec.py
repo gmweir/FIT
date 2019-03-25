@@ -8856,7 +8856,9 @@ def rescale_problem(xdat=0, pdat=0, vdat=0, info=None, nargout=1):
         xslope = _np.nanmax(xdat)-_np.nanmin(xdat)
         if xslope == 0:    xslope = 1.0   # end if
         xoffset = _np.nanmin(xdat)
-        return pdat, vdat, slope, offset, xslope, xoffset
+
+        xdat = (xdat.copy()-xoffset)/xslope
+        return xdat, pdat, vdat, slope, offset, xslope, xoffset
     elif info is not None:
         slope = info.slope
         offset = info.offset
