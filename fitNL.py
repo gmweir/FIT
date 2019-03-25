@@ -231,7 +231,9 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
         if "errx" in kwargs:
             errx = kwargs["errx"]
         elif use_perpendicular_distance:
-            errx = 1.0
+            errx = _np.ones_like(err)  # no weighting
+        else:
+            errx = _np.zeros_like(err)  # no perpendicular distance
         if use_perpendicular_distance or (errx !=0).any():    #perp_distance
             weights = _np.sqrt(err*err + temp.dprofdx*temp.dprofdx*(errx*errx))
 #            weights = _np.sqrt(err**2.0 + (errx*temp.dprofdx)**2.0)  # effective variance method
@@ -1152,7 +1154,7 @@ def bootstrapprofilefit(xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
         dprofdx = _np.nanmean(dprofdx, axis=0)
 
 #        mfit, vfit = _ut.combine_var(mfit, statvar=vfit, systvar=None, axis=0)
-#        dprofdx, vdprofdx = _ut.combine_var(dprofdx, statvar=vdprofdx, systvar=None, axis=0)
+#        dprofdx, vdprofdx = _ut.combine_var(dprofdx, stat♣var=vdprofdx, systvar=None, axis=0)
 #        mfit, vfit = _ut.combine_var(mfit, statvar=None, systvar=None, axis=0)
 #        dprofdx, vdprofdx = _ut.combine_var(dprofdx, statvar=None, systvar=None, axis=0)
     # end if
@@ -1182,10 +1184,12 @@ def qparabfit(x, y, ey, XX, **kwargs):
     nohol = kwargs.pop("nohollow", False)
 
     # fitter arguments
+    setedge = kwargs.setdefault('setedge', True)
+    setcore = kwargs.setdefault('setcore', True)
     kwargs.setdefault("scale_problem", True)
     kwargs.setdefault("bootstrapit", 300)
 #    kwargs.setdefault('perpchi2', True)
-    kwargs.setdefault('errx', 0.02)
+#    kwargs.setdefault('errx', 0.02)
 
     # plotting kwargs
     onesided = kwargs.pop('onesided', True)
@@ -1227,13 +1231,13 @@ def qparabfit(x, y, ey, XX, **kwargs):
 
     # force flat profile in the middle either by cylindrical symmetry or
     # adding a ficticious point
-    if _np.min(xin) != 0:
+    if (_np.min(xin) != 0) and setcore:
         xin = _np.insert(xin,0,0.0)
         yin = _np.insert(yin,0,yin[0])
         eyin = _np.insert(eyin,0,eyin[0])
     # end if
     # force the profile to go to zero somewhere in the edge if it doesn't already
-    if _np.nanmin(yin)>0.01*_np.nanmax(yin):
+    if (_np.nanmin(yin)>0.01*_np.nanmax(yin)) and setedge:
         # First try linearly interpolating the last few points to 0
         xedge, vedge = _ut.interp(yin[-3:], xin[-3:], ei=_np.sqrt(eyin[-3:]), xo=0.0)
         if (xedge < xin[-1]) or xedge>1.3:
