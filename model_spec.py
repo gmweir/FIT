@@ -6647,7 +6647,7 @@ class ModelTwoPower(ModelClass):
     """
 #    _af = _np.asarray([1.0, 0.0, 12.0, 3.0], dtype=_np.float64)
     _af = _np.asarray([1.0, 0.10, 12.0, 3.0], dtype=_np.float64)
-    _LB = _np.asarray([1e-18, 0.0, 1e-18, -20.0], dtype=_np.float64)
+    _LB = _np.asarray([1e-18, 1e-18, 1e-18, -20.0], dtype=_np.float64)
     _UB = _np.asarray([   20, 1.0,  20.0,  20.0], dtype=_np.float64)
     _fixed = _np.zeros( (4,), dtype=int)
     _analytic_xscaling = False
@@ -7278,7 +7278,7 @@ class ModelQuasiParabolic(ModelClass):
     """
     _af = _np.asarray([0.3, 0.05, 2.0, 0.7, -0.24, 0.30], dtype=_np.float64)
 #    _af = _np.asarray([1.0, 0.52, 2.0, 0.7, -0.24, 0.30], dtype=_np.float64)
-    _LB = _np.asarray([1e-18, 1e-18,  1e-18,-10,-1, 0], dtype=_np.float64)
+    _LB = _np.asarray([1e-18, 1e-18,  1e-18,-10,-1, 1e-18], dtype=_np.float64)
 #    _LB = _np.asarray([1e-18, -1.0,  1e-18,-10,-1, 0], dtype=_np.float64)
     _UB = _np.asarray([ 20.0, 1.0, 10, 10, 1, 1], dtype=_np.float64)
     _fixed = _np.zeros( (6,), dtype=int)

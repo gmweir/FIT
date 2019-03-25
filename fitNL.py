@@ -102,11 +102,11 @@ def modelfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     return fit_mpfit(x, y, ey, XX, func, fkwargs, **kwargs)
 
 def _default_mpfit_kwargs(**kwargs):
-    kwargs.setdefault('xtol', 1e-16)  # 1e-16
-    kwargs.setdefault('ftol', 1e-16)
-    kwargs.setdefault('gtol', 1e-16)
+    kwargs.setdefault('xtol', 1e-14)  # 1e-16
+    kwargs.setdefault('ftol', 1e-14)
+    kwargs.setdefault('gtol', 1e-14)
     kwargs.setdefault('damp', 0.0)
-    kwargs.setdefault('maxiter', 1600)
+    kwargs.setdefault('maxiter', 400)
 #    kwargs.setdefault('factor', 100)  # 100
     kwargs.setdefault('nprint', 10) # 100
 #    kwargs.setdefault('iterfunct', 'default')
@@ -230,9 +230,9 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
 
         if "errx" in kwargs:
             errx = kwargs["errx"]
-        else:
-            errx = 0.0
-        if use_perpendicular_distance:    #perp_distance
+        elif use_perpendicular_distance:
+            errx = 1.0
+        if use_perpendicular_distance or (errx !=0).any():    #perp_distance
             weights = _np.sqrt(err*err + temp.dprofdx*temp.dprofdx*(errx*errx))
 #            weights = _np.sqrt(err**2.0 + (errx*temp.dprofdx)**2.0)  # effective variance method
         else:
@@ -255,9 +255,9 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
             # analytic jacobian of the resiudal function
             p1s = _np.ones( (1,len(p)), dtype=fjac.dtype)
             fjac = -1.0*fjac/(_np.atleast_2d(weights).T*p1s)
-            if use_perpendicular_distance:
-                # The jacobian of the analytic residual is modified by the derivative in the weights
-                fjac = fjac - temp.dgdx.T*(_np.atleast_2d(residual*errx*errx*temp.dprofdx/(weights*weights)).T*p1s)
+#            if use_perpendicular_distance or (errx != 0).any():
+#                # The jacobian of the analytic residual is modified by the derivative in the weights
+#                fjac = fjac - temp.dgdx.T*(_np.atleast_2d(residual*errx*errx*temp.dprofdx/(weights*weights)).T*p1s)
 
             fjac = -1.0*fjac  # result is 90 deg. out-of-phase?
 #            if _np.isnan(fjac).any():
@@ -1018,7 +1018,13 @@ def profilefit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     """
     bootstrapit = kwargs.pop('bootstrapit', 0)
     kwargs.setdefault('perpchi2', False)
+    # kwargs.pop('errx')   # this prevents the effective variance from cominng into the problem
     kwargs.setdefault('scale_problem', True)
+
+    if 'ex' in kwargs:
+        ex = kwargs.pop('ex')
+        kwargs['errx'] = ex
+    # end if
 
     if bootstrapit:
         info = bootstrapprofilefit(x, y, ey, XX, func, fkwargs, nmonti=bootstrapit, **kwargs)
@@ -1037,6 +1043,9 @@ def profilefit(x, y, ey, XX, func, fkwargs={}, **kwargs):
 
             XX = (XX.copy()-xoffset)/xslope
             x = (x.copy()-xoffset)/xslope
+            if 'errx' in kwargs:
+                kwargs['errx'] = kwargs['errx']/xslope
+            # end if
             y = (y.copy()-offset)/slope
             ey = ey.copy()/(slope)
 
@@ -1050,6 +1059,7 @@ def profilefit(x, y, ey, XX, func, fkwargs={}, **kwargs):
             if hasattr(info, 'xdat'):            info.xdat = xslope*info.xdat+xoffset
             if hasattr(info, 'pdat'):            info.pdat = slope*info.pdat+offset
             if hasattr(info, 'vdat'):            info.vdat = info.vdat*(slope*slope)
+            if hasattr(info, 'vxdat'):           info.vxdat = info.vxdat*(xslope*xslope)
             info.XX = info.XX*xslope+xoffset
             info.prof = slope*info.prof+offset
             info.varprof = slope*slope*info.varprof
@@ -1091,6 +1101,8 @@ def bootstrapprofilefit(xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
     for mm in range(niterate):
         _np.random.seed()
         ydat = ysav.copy() + _np.sqrt(vsav)*_np.random.normal(0.0,1.0,_np.shape(ysav))
+        ydat[ydat<0] *= -1.0
+#        ydat[ydat<0] = 0.0
         vary = (ydat-ysav)**2
         vary = _np.where(_np.sqrt(vary)<1e-3*_np.nanmin(ydat), 1.0, vary)
         if mm % 10 == 0:
@@ -1127,12 +1139,20 @@ def bootstrapprofilefit(xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
 #    _plt.plot(XX, (mfit+_np.sqrt(vfit)).T, 'k--')
 #    _plt.plot(XX, (mfit-_np.sqrt(vfit)).T, 'k--')
 
-    if weightit:
+    if 0 and weightit:
         vfit, mfit = _ut.nanwvar(mfit.copy(), statvary=None, systvary=None, weights=1.0/vfit, dim=0, nargout=2)
         vdprofdx, dprofdx = _ut.nanwvar(dprofdx.copy(), statvary=None, systvary=None, weights=1.0/vdprofdx, dim=0, nargout=2)
     else:
-        mfit, vfit = _ut.combine_var(mfit, statvar=vfit, systvar=None, axis=0)
-        dprofdx, vdprofdx = _ut.combine_var(dprofdx, statvar=vdprofdx, systvar=None, axis=0)
+        vfit = _np.nanvar(mfit, axis=0)
+#        vfit += _np.nansum(vfit, axis=0)/(nn*nn)
+        mfit = _np.nanmean(mfit, axis=0)
+
+        vdprofdx = _np.nanvar(dprofdx, axis=0)
+#        vdprofdx += _np.nansum(vdprofdx, axis=0)/(nn*nn)
+        dprofdx = _np.nanmean(dprofdx, axis=0)
+
+#        mfit, vfit = _ut.combine_var(mfit, statvar=vfit, systvar=None, axis=0)
+#        dprofdx, vdprofdx = _ut.combine_var(dprofdx, statvar=vdprofdx, systvar=None, axis=0)
 #        mfit, vfit = _ut.combine_var(mfit, statvar=None, systvar=None, axis=0)
 #        dprofdx, vdprofdx = _ut.combine_var(dprofdx, statvar=None, systvar=None, axis=0)
     # end if
@@ -1164,6 +1184,8 @@ def qparabfit(x, y, ey, XX, **kwargs):
     # fitter arguments
     kwargs.setdefault("scale_problem", True)
     kwargs.setdefault("bootstrapit", 300)
+#    kwargs.setdefault('perpchi2', True)
+    kwargs.setdefault('errx', 0.02)
 
     # plotting kwargs
     onesided = kwargs.pop('onesided', True)
@@ -1214,7 +1236,7 @@ def qparabfit(x, y, ey, XX, **kwargs):
     if _np.nanmin(yin)>0.01*_np.nanmax(yin):
         # First try linearly interpolating the last few points to 0
         xedge, vedge = _ut.interp(yin[-3:], xin[-3:], ei=_np.sqrt(eyin[-3:]), xo=0.0)
-        if xedge < xin[-1]:
+        if (xedge < xin[-1]) or xedge>1.3:
             xedge = 1.05*_np.max((_np.nanmax(xin), 1.10))
             vedge = eyin[-1]
         xin = _np.insert(xin,-1, xedge)
@@ -1709,8 +1731,8 @@ def test_qparab_fit(nohollow=False):
         aa[5] = 1.0
     # endif
 
-#    xdat = _np.linspace(0.05, 0.93, 10)
-    xdat = _np.linspace(-1.15, 1.2, 20)
+    xdat = _np.linspace(-0.05, 1.05, 45)
+#    xdat = _np.linspace(-1.15, 1.2, 20)
     XX = _np.linspace( 0.0, 1.3, 101)
 
 #    _np.random.seed()
