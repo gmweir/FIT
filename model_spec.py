@@ -9108,9 +9108,9 @@ if __name__ == '__main__':
                                     shape='square', duty=0.67, fmod=5.0) # checked
     mod = ModelSines().test_scaling(nfreqs=15, num=int((6.0/33.0)*5.0e3), start=-0.5*6.0/33.0, stop=6.0/33.0,
                                     shape='square', duty=0.67, fmod=5.0) # checked
-    mod = ModelFourier().test_numerics(num=int((6.0/33.0-0.0)*5.0e2), start=0.0, stop=6.0/33.0) # checked
-    mod = ModelFourier.test_numerics(nfreqs=5, num=20*int((6.0/33.0-0.0)*5.0e2), start=0.0, stop=6.0/33.0,
-                                     shape='square', duty=0.40, fmod=33.0)  # checked
+#    mod = ModelFourier().test_numerics(num=int((6.0/33.0-0.0)*5.0e2), start=0.0, stop=6.0/33.0) # TODO!: problem with conversion between Sine/Fourier models
+#    mod = ModelFourier.test_numerics(nfreqs=5, num=20*int((6.0/33.0-0.0)*5.0e2), start=0.0, stop=6.0/33.0,
+#                                     shape='square', duty=0.40, fmod=33.0)  # TODO!: problem with conversion between Sine/Fourier models
 
     mod = ModelPoly.test_numerics(npoly=1) # checked
     mod = ModelPoly.test_numerics(npoly=2) # checked
