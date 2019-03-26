@@ -22,6 +22,20 @@ from pybaseutils import utils as _ut
 # ========================================================================== #
 # ========================================================================== #
 
+def divide(num, den):
+    if len(_np.atleast_1d(num))<len(_np.atleast_1d(den)):
+        num = num*_np.ones_like(den)
+    if len(_np.atleast_1d(den))<len(_np.atleast_1d(num)):
+        den = den*_np.ones_like(num)
+    if (den == 0).any():
+        if (num[den==0] == 0).all():
+            return _np.divide(num, den, out=_np.zeros_like(num), where=den!=0)
+        else:
+            taylor0 = num*( 2.0 - den + (1.0-den)**2.0 + (1.0-den)**3.0 + (1.0-den)**4.0 + (1.0-den)**5.0 + (1.0-den)**6.0)
+            return _np.divide(num, den, out=taylor0, where=den!=0)
+        # end if
+    return _np.divide(num, den)
+
 
 class FD(Struct):
     """
@@ -1565,21 +1579,21 @@ class ModelClass(FD):
     #        rtol, atol = (1e-5, 1e-8)
             rtol, atol = (1e-5, _np.max((1e-8, _np.nanmax(1e-8*modanal.prof))))
             aerr = _np.nanmax(modnum.prof - modanal.prof)
-            rerr = 1.0-_np.nanmax(modnum.prof/modanal.prof)
+            rerr = 1.0-_np.nanmax(divide(modnum.prof, modanal.prof))
             assert _ut.allclose(modnum.prof, modanal.prof, rtol=rtol, atol=atol, equal_nan=True)  # same functions, this has to be true
     ##        assert _ut.allclose(modnum.gvec, modanal.gvec, rtol=rtol, atol=atol, equal_nan=True)  # jacobian of model
 
 #            rtol, atol = (1e-4, 1e-5)
             rtol, atol = (1e-5, _np.max((1e-8, _np.nanmax(1e-8*modanal.dprofdx))))
             aerr = _np.nanmax(modnum.dprofdx - modanal.dprofdx)
-            rerr = 1.0-_np.nanmax(modnum.dprofdx/modanal.dprofdx)
+            rerr = 1.0-_np.nanmax(divide(modnum.dprofdx, modanal.dprofdx))
             assert _ut.allclose(modnum.dprofdx, modanal.dprofdx, rtol=rtol, atol=atol, equal_nan=True)  # derivative of model
     ##        assert _ut.allclose(modnum.dgdx, modanal.dgdx, rtol=rtol, atol=atol, equal_nan=True)  # jacobian of the model derivative
 
 #            rtol, atol = (1e-3, 1e-4)
             rtol, atol = (1e-5, _np.max((1e-5, _np.nanmax(1e-5*modanal.d2profdx2))))
             aerr = _np.nanmax(modnum.d2profdx2 - modanal.d2profdx2)
-            rerr = 1.0-_np.nanmax(modnum.d2profdx2/modanal.d2profdx2)
+            rerr = 1.0-_np.nanmax(divide(modnum.d2profdx2, modanal.d2profdx2))
             assert _ut.allclose(modnum.d2profdx2, modanal.d2profdx2, rtol=rtol, atol=atol, equal_nan=True)  # model second derivative
     ##        assert _ut.allclose(modnum.d2gdx2, modanal.d2gdx2, rtol=rtol, atol=atol, equal_nan=True)  # jacobian of the model second derivative
 
@@ -1588,19 +1602,19 @@ class ModelClass(FD):
 #                rtol, atol = (1e-5, 1e-8)
                 rtol, atol = (1e-5, _np.max((1e-8, _np.nanmax(1e-8*modanal.gvec[ii,:]))))  # mixed 2nd deriv implemented up to 4th order
                 aerr = _np.nanmax(modnum.gvec[ii,:] - modanal.gvec[ii,:])
-                rerr = 1.0-_np.nanmax(modnum.gvec[ii,:]/modanal.gvec[ii,:])
+                rerr = 1.0-_np.nanmax(divide(modnum.gvec[ii,:], modanal.gvec[ii,:]))
                 assert _ut.allclose(modnum.gvec[ii,:], modanal.gvec[ii,:], rtol=rtol, atol=atol, equal_nan=True)  # jacobian of model
 
 #                rtol, atol = (1e-4, 1e-3)
                 rtol, atol = (1e-4, _np.max((1e-3, _np.nanmax(1e-3*modanal.dgdx[ii,:]))))  # mixed 2nd deriv implemented up to 4th order
-                rerr = 1.0-_np.nanmax(modnum.dgdx[ii,:]/modanal.dgdx[ii,:])
+                rerr = 1.0-_np.nanmax(divide(modnum.dgdx[ii,:], modanal.dgdx[ii,:]))
                 aerr = 1.0-_np.nanmax(modnum.dgdx[ii,:] - modanal.dgdx[ii,:])
 #                _np.testing.assert_allclose(modnum.dgdx[ii,:], modanal.dgdx[ii,:], rtol=rtol)
                 assert _ut.allclose(modnum.dgdx[ii,:], modanal.dgdx[ii,:], rtol=rtol, atol=atol, equal_nan=True)  # jacobian of the model derivative
 
                 rtol, atol = (1e-3, _np.max((1e-3, _np.nanmax(1e-3*modanal.d2gdx2[ii,:])))) # mixed 3rd deriv. implemented only up to 2nd order
                 aerr = _np.nanmax(modnum.d2gdx2[ii,:] - modanal.d2gdx2[ii,:])
-                rerr = 1.0-_np.nanmax(modnum.d2gdx2[ii,:]/modanal.d2gdx2[ii,:])
+                rerr = 1.0-_np.nanmax(divide(modnum.d2gdx2[ii,:], modanal.d2gdx2[ii,:]))
                 assert _ut.allclose(modnum.d2gdx2[ii,:], modanal.d2gdx2[ii,:], rtol=rtol, atol=atol, equal_nan=True)  # jacobian of the model second derivative
         except:
             print('Numerical testing failed at parameter %i \n abs. err. level %e\n rel. err. level %e'%(ii, aerr, rerr))
@@ -1774,7 +1788,7 @@ class ModelClass(FD):
         rtol, atol = (1e-5, 1e-8)
         try:
             aerr = _np.nanmax(_np.abs(modscal.af - asave))
-            rerr = 1.0-_np.nanmax(_np.abs(modscal.af/asave))
+            rerr = 1.0-_np.nanmax(_np.abs(divide(modscal.af, asave)))
 #            assert (modscal.af == asave).all()
             assert _ut.allclose(modscal.af, asave, rtol=rtol, atol=atol, equal_nan=True)  # same functions, this has to be true
         except:
@@ -1788,7 +1802,7 @@ class ModelClass(FD):
         # end try:
         try:
             aerr = _np.nanmax(_np.abs(modanal.af - asave))
-            rerr = 1.0-_np.nanmax(_np.abs(modanal.af/asave))
+            rerr = 1.0-_np.nanmax(_np.abs(divide(modanal.af, asave)))
 #            assert (modanal.af == asave).all()
             assert _ut.allclose(modanal.af, asave, rtol=rtol, atol=atol, equal_nan=True)  # same functions, this has to be true
         except:
@@ -1806,26 +1820,26 @@ class ModelClass(FD):
             rtol, atol = (1e-5, 1e-8)
 #            rtol, atol = (1e-5, _np.max((1e-8, _np.nanmax(1e-8*modanal.prof))))
             aerr = _np.nanmax(modscal.prof - modanal.prof)
-            rerr = 1.0-_np.nanmax(modscal.prof/modanal.prof)
+            rerr = 1.0-_np.nanmax(divide(modscal.prof, modanal.prof))
             assert _ut.allclose(modscal.prof, modanal.prof, rtol=rtol, atol=atol, equal_nan=True)  # same functions, this has to be true
             aerr = _np.nanmax(sprof -aprof)
-            rerr = 1.0-_np.nanmax(sprof/aprof)
+            rerr = 1.0-_np.nanmax(divide(sprof, aprof))
             assert _ut.allclose(sprof, aprof, rtol=rtol, atol=atol, equal_nan=True)  # same functions, this has to be true
 
 #            rtol, atol = (1e-5, _np.max((1e-8, _np.nanmax(1e-8*modanal.dprofdx))))
             aerr = _np.nanmax(modscal.dprofdx - modanal.dprofdx)
-            rerr = 1.0-_np.nanmax(modscal.dprofdx/modanal.dprofdx)
+            rerr = 1.0-_np.nanmax(divide(modscal.dprofdx, modanal.dprofdx))
             assert _ut.allclose(modscal.dprofdx, modanal.dprofdx, rtol=rtol, atol=atol, equal_nan=True)  # derivative of model
             aerr = _np.nanmax(sdprofdx - adprofdx)
-            rerr = 1.0-_np.nanmax(sdprofdx/adprofdx)
+            rerr = 1.0-_np.nanmax(divide(sdprofdx, adprofdx))
             assert _ut.allclose(sdprofdx, adprofdx, rtol=rtol, atol=atol, equal_nan=True)  # derivative of model
 
 #            rtol, atol = (1e-5, _np.max((1e-8, _np.nanmax(1e-8*modanal.d2profdx2))))
             aerr = _np.nanmax(modscal.d2profdx2 - modanal.d2profdx2)
-            rerr = 1.0-_np.nanmax(modscal.d2profdx2/modanal.d2profdx2)
+            rerr = 1.0-_np.nanmax(divide(modscal.d2profdx2, modanal.d2profdx2))
             assert _ut.allclose(modscal.d2profdx2, modanal.d2profdx2, rtol=rtol, atol=atol, equal_nan=True)  # model second derivative
             aerr = _np.nanmax(sd2profdx2 - ad2profdx2)
-            rerr = 1.0-_np.nanmax(sd2profdx2/ad2profdx2)
+            rerr = 1.0-_np.nanmax(divide(sd2profdx2, ad2profdx2))
             assert _ut.allclose(sd2profdx2, ad2profdx2, rtol=rtol, atol=atol, equal_nan=True)  # model second derivative
 
         except:

@@ -61,7 +61,7 @@ def gen_random_init_conds(func, **fkwargs):
 #    varaf0 = fkwargs.pop('varaf0', None)
 
     # Call the wrapper function to get reasonable bounds
-    temp = func(XX=None, af=None, **fkwargs)
+    temp = func(XX=None, **fkwargs)
     LB = _np.copy(temp.Lbounds)
     UB = _np.copy(temp.Ubounds)
     fixed = _np.copy(temp.fixed)
@@ -77,7 +77,7 @@ def gen_random_init_conds(func, **fkwargs):
 #            if _np.isinf(UB[ii]):     UB[ii] =  10.0     # end if
 #            _np.random.seed()
 #            aa[ii] += 0.1*aa[ii]*_np.random.normal(0.0, 1.0, 1)
-            aa[ii] += 0.5*aa[ii]*_np.random.uniform(0.0, 1.0, 1)
+            aa[ii] += 0.5*aa[ii]*_np.random.uniform(low=-1.0, high=1.0, size=1)
 #            aa[ii] = _np.random.uniform(low=LB[ii], high=UB[ii], size=1)
             if aa[ii]<LB[ii]:                aa[ii] = LB[ii] + 0.5
             if aa[ii]>UB[ii]:                aa[ii] = UB[ii] - 0.5
@@ -102,11 +102,11 @@ def modelfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     return fit_mpfit(x, y, ey, XX, func, fkwargs, **kwargs)
 
 def _default_mpfit_kwargs(**kwargs):
-    kwargs.setdefault('xtol', 1e-14)  # 1e-16
-    kwargs.setdefault('ftol', 1e-14)
-    kwargs.setdefault('gtol', 1e-14)
-    kwargs.setdefault('damp', 0.0)
-    kwargs.setdefault('maxiter', 400)
+    kwargs.setdefault('xtol', 1e-16)  # 1e-16
+    kwargs.setdefault('ftol', 1e-16)
+    kwargs.setdefault('gtol', 1e-16)
+    kwargs.setdefault('damp', 0)
+    kwargs.setdefault('maxiter', 1600)
 #    kwargs.setdefault('factor', 100)  # 100
     kwargs.setdefault('nprint', 10) # 100
 #    kwargs.setdefault('iterfunct', 'default')
@@ -257,9 +257,9 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
             # analytic jacobian of the resiudal function
             p1s = _np.ones( (1,len(p)), dtype=fjac.dtype)
             fjac = -1.0*fjac/(_np.atleast_2d(weights).T*p1s)
-#            if use_perpendicular_distance or (errx != 0).any():
-#                # The jacobian of the analytic residual is modified by the derivative in the weights
-#                fjac = fjac - temp.dgdx.T*(_np.atleast_2d(residual*errx*errx*temp.dprofdx/(weights*weights)).T*p1s)
+            if use_perpendicular_distance or (errx != 0).any():
+                # The jacobian of the analytic residual is modified by the derivative in the weights
+                fjac = fjac - temp.dgdx.T*(_np.atleast_2d(residual*errx*errx*temp.dprofdx/(weights*weights)).T*p1s)
 
             fjac = -1.0*fjac  # result is 90 deg. out-of-phase?
 #            if _np.isnan(fjac).any():
@@ -292,16 +292,17 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     mpwargs = _clean_mpfit_kwargs(kwargs)
 #    m = LMFIT(mymodel, p0, parinfo=parinfo, residual_keywords=fa, **kwargs)
     if 'damp' in mpwargs and mpwargs['damp']:
+#        mpwargs['damp'] = 0.1*_np.max(y)/(ey[_np.argmax(y)])
         parinfo = getparinfo()
         m = LMFIT(mymodel, p0, parinfo=parinfo, residual_keywords=fa, **mpwargs)
         p0 = m.params
         mpwargs['damp'] = 0
-#    if use_perpendicular_distance:
-#        parinfo = getparinfo()
-#        m = LMFIT(mymodel, p0, parinfo=parinfo, residual_keywords=fa, **mpwargs)
-#        p0 = m.params
-#        use_perpendicular_distance = False
-#    # end if
+    if use_perpendicular_distance:
+        parinfo = getparinfo()
+        m = LMFIT(mymodel, p0, parinfo=parinfo, residual_keywords=fa, **mpwargs)
+        p0 = m.params
+        use_perpendicular_distance = False
+    # end if
     parinfo = getparinfo()
     m = LMFIT(mymodel, p0, parinfo=parinfo, residual_keywords=fa, **mpwargs)
     #  m - object
@@ -359,7 +360,7 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     info.dof = len(x) - numfit # deg of freedom
 
     # scaled uncertainties in fitting parameters
-    info.chi2 = _np.sum(residual*residual)
+    info.chi2 = _np.nansum(residual*residual)
     info.chi2_reduced = info.chi2/info.dof
 #    info.chi2_reduced = _np.sqrt(m.fnorm / info.dof)
     info.perror = m.perror * info.chi2_reduced
@@ -386,7 +387,7 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     info.cormat = _np.copy(info.covmat) * 0.0
     for ii in range(numfit):
         for jj in range(numfit):
-            info.cormat[ii,jj] = info.covmat[ii,jj]/_np.sqrt(info.covmat[ii,ii]*info.covmat[jj,jj]) # TODO!: invalid value encountered in double_scalars
+            info.cormat[ii,jj] = _ms.divide(info.covmat[ii,jj], _np.sqrt(info.covmat[ii,ii]*info.covmat[jj,jj]))
         # end for
     # end for
 
@@ -1021,54 +1022,62 @@ def profilefit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     bootstrapit = kwargs.pop('bootstrapit', 0)
     kwargs.setdefault('perpchi2', False)
     # kwargs.pop('errx')   # this prevents the effective variance from cominng into the problem
-    kwargs.setdefault('scale_problem', True)
+    kwargs.setdefault('scale_problem', False)
+    kwargs.setdefault("scalex", True)
+    kwargs.setdefault("scaley", False)
 
+    xt, yt, eyt, XXt = _np.copy(x), _np.copy(y), _np.copy(ey), _np.copy(XX)
     if 'ex' in kwargs:
-        ex = kwargs.pop('ex')
+        ex = _np.copy(kwargs.pop('ex'), 0.0)
         kwargs['errx'] = ex
     # end if
 
     if bootstrapit:
-        info = bootstrapprofilefit(x, y, ey, XX, func, fkwargs, nmonti=bootstrapit, **kwargs)
+        info = bootstrapprofilefit(xt, yt, eyt, XXt, func, fkwargs, nmonti=bootstrapit, **kwargs)
     else:
-        x, y, ey, XX = _np.copy(x), _np.copy(y), _np.copy(ey), _np.copy(XX)
 
-        scaled = False
-        if kwargs['scale_problem']:
-            slope = _np.nanmax(y)-_np.nanmin(y)   # maximum 1.0
-            offset = _np.nanmin(y)                # minimum 0.0
+        slope = 1.0
+        offset = 0.0
+        xslope = 1.0
+        xoffset = 0.0
+
+        if kwargs['scaley']:
+            slope = _np.nanmax(yt)-_np.nanmin(yt)   # maximum 1.0
+            offset = _np.nanmin(yt)                # minimum 0.0
+
             if slope == 0:    slope = 1.0   # end if
-
-            xslope = 1.05*_np.nanmax((_np.nanmax(x), _np.nanmax(XX))) # shrink so maximum is less than 1.0
+            yt = (yt.copy()-offset)/slope
+            eyt = eyt.copy()/(slope)
+        # end if
+        if kwargs['scalex']:
+            xslope = 1.05*_np.nanmax((_np.nanmax(xt), _np.nanmax(XXt))) # shrink so maximum is less than 1.0
             xoffset = -1e-4  # prevent 0 from being in problem
             if xslope == 0:    xslope = 1.0   # end if
 
-            XX = (XX.copy()-xoffset)/xslope
-            x = (x.copy()-xoffset)/xslope
+            XXt = (XXt.copy()-xoffset)/xslope
+            xt = (xt.copy()-xoffset)/xslope
             if 'errx' in kwargs:
-                kwargs['errx'] = kwargs['errx']/xslope
+                errx = _np.copy(kwargs['errx'])
+                errx = errx/xslope
             # end if
-            y = (y.copy()-offset)/slope
-            ey = ey.copy()/(slope)
-
-            scaled=True
-            kwargs['scale_problem'] = False
         # end if
 
-        info = modelfit(x, y, ey, XX, func, fkwargs, **kwargs)
+        if 'errx' in kwargs:
+            kwargs['errx'] = errx
+        info = modelfit(xt, yt, eyt, XXt, func, fkwargs, **kwargs)
 
-        if scaled:
-            if hasattr(info, 'xdat'):            info.xdat = xslope*info.xdat+xoffset
-            if hasattr(info, 'pdat'):            info.pdat = slope*info.pdat+offset
-            if hasattr(info, 'vdat'):            info.vdat = info.vdat*(slope*slope)
-            if hasattr(info, 'vxdat'):           info.vxdat = info.vxdat*(xslope*xslope)
-            info.XX = info.XX*xslope+xoffset
-            info.prof = slope*info.prof+offset
-            info.varprof = slope*slope*info.varprof
-            info.dprofdx *= (slope/xslope)
-            info.vardprofdx *= slope*slope/(xslope*xslope)
-            info.d2profdx2 *= slope*slope/(xslope*xslope)
-#            info.vard2profdx2 *= (slope*slope/(xslope*xslope))**2.0
+        if hasattr(info, 'xdat'):            info.xdat = xslope*info.xdat+xoffset
+        if hasattr(info, 'vxdat'):           info.vxdat = info.vxdat*(xslope*xslope)
+        if hasattr(info, 'pdat'):            info.pdat = slope*info.pdat+offset
+        if hasattr(info, 'vdat'):            info.vdat = info.vdat*(slope*slope)
+
+        info.XX = info.XX*xslope+xoffset
+        info.prof = slope*info.prof+offset
+        info.varprof = slope*slope*info.varprof
+        info.dprofdx *= (slope/xslope)
+        info.vardprofdx *= slope*slope/(xslope*xslope)
+        info.d2profdx2 *= slope*slope/(xslope*xslope)
+#        info.vard2profdx2 *= (slope*slope/(xslope*xslope))**2.0
         # end if
     # end if
     return info
@@ -1100,13 +1109,14 @@ def bootstrapprofilefit(xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
     vdprofdx = _np.zeros_like(vfit)
 
     nn = 0
+    _np.random.seed()
     for mm in range(niterate):
-        _np.random.seed()
         ydat = ysav.copy() + _np.sqrt(vsav)*_np.random.normal(0.0,1.0,_np.shape(ysav))
-        ydat[ydat<0] *= -1.0
-#        ydat[ydat<0] = 0.0
-        vary = (ydat-ysav)**2
+#        ydat[ydat<0] *= -1.0
+        ydat[ydat<0] = 0.0
+        vary = (ydat-ysav)*(ydat-ysav)
         vary = _np.where(_np.sqrt(vary)<1e-3*_np.nanmin(ydat), 1.0, vary)
+        vary = _np.where(vary==0, _np.nanmean(vary), vary)
         if mm % 10 == 0:
             print('%i of %i'%(mm,niterate))
         # end if
@@ -1114,8 +1124,10 @@ def bootstrapprofilefit(xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
 #        if 1:
             temp = profilefit(xdat, ydat, _np.sqrt(vary), XX, func, fkwargs, **kwargs)
 
+            print(r"%i: $\chi_%i^2$=%4.1f"%(mm, temp.dof, temp.chi2_reduced))
             if temp.chi2_reduced>10.0:
                 continue
+            kwargs['af0'] = temp.af.copy()
             mfit[nn, :] = _np.copy(temp.prof)
             vfit[nn, :] = _np.copy(temp.varprof)
             dprofdx[nn,:] = _np.copy(temp.dprofdx)
@@ -1136,8 +1148,8 @@ def bootstrapprofilefit(xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
     ydat = ysav
     vary = vsav
 
-#    _plt.figure()
-#    _plt.plot(XX, mfit.T, 'k-')
+    _plt.figure()
+    _plt.plot(XX, mfit.T, 'k--')
 #    _plt.plot(XX, (mfit+_np.sqrt(vfit)).T, 'k--')
 #    _plt.plot(XX, (mfit-_np.sqrt(vfit)).T, 'k--')
 
@@ -1146,11 +1158,11 @@ def bootstrapprofilefit(xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
         vdprofdx, dprofdx = _ut.nanwvar(dprofdx.copy(), statvary=None, systvary=None, weights=1.0/vdprofdx, dim=0, nargout=2)
     else:
         vfit = _np.nanvar(mfit, axis=0)
-#        vfit += _np.nansum(vfit, axis=0)/(nn*nn)
+        vfit += _np.nansum(vfit, axis=0)/(nn*nn)
         mfit = _np.nanmean(mfit, axis=0)
 
         vdprofdx = _np.nanvar(dprofdx, axis=0)
-#        vdprofdx += _np.nansum(vdprofdx, axis=0)/(nn*nn)
+        vdprofdx += _np.nansum(vdprofdx, axis=0)/(nn*nn)
         dprofdx = _np.nanmean(dprofdx, axis=0)
 
 #        mfit, vfit = _ut.combine_var(mfit, statvar=vfit, systvar=None, axis=0)
@@ -1162,7 +1174,7 @@ def bootstrapprofilefit(xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
     info.update()
 
     numfit = len(temp.af)
-    info.residuals = (ydat-_ut.interp(XX, mfit, ei=None, xo=xdat))/ey
+    info.residuals = (ydat-_ut.interp(XX, mfit, ei=None, xo=xdat))/_np.where(ey==0, 1.0, ey)
     info.chi2_reduced = _np.sum(info.residuals*info.residuals)/(len(xdat)-numfit)
     info.prof = mfit
     info.varprof = vfit
@@ -1184,12 +1196,15 @@ def qparabfit(x, y, ey, XX, **kwargs):
     nohol = kwargs.pop("nohollow", False)
 
     # fitter arguments
-    setedge = kwargs.setdefault('setedge', True)
-    setcore = kwargs.setdefault('setcore', True)
-    kwargs.setdefault("scale_problem", True)
+    setedge = kwargs.setdefault('setedge', False)
+    setcore = kwargs.setdefault('setcore', False)
+    kwargs.setdefault("scale_problem", False)
+    kwargs.setdefault("scalex", True)
+    kwargs.setdefault("scaley", False)
     kwargs.setdefault("bootstrapit", 300)
 #    kwargs.setdefault('perpchi2', True)
 #    kwargs.setdefault('errx', 0.02)
+    kwargs.setdefault('errx', 0)
 
     # plotting kwargs
     onesided = kwargs.pop('onesided', True)
@@ -1240,7 +1255,7 @@ def qparabfit(x, y, ey, XX, **kwargs):
     if (_np.nanmin(yin)>0.01*_np.nanmax(yin)) and setedge:
         # First try linearly interpolating the last few points to 0
         xedge, vedge = _ut.interp(yin[-3:], xin[-3:], ei=_np.sqrt(eyin[-3:]), xo=0.0)
-        if (xedge < xin[-1]) or xedge>1.3:
+        if (xedge < xin[-1]) or xedge>1.15:
             xedge = 1.05*_np.max((_np.nanmax(xin), 1.10))
             vedge = eyin[-1]
         xin = _np.insert(xin,-1, xedge)
@@ -1325,8 +1340,9 @@ def qparabfit(x, y, ey, XX, **kwargs):
         if ylims1 is None:   ylims1 = ax1.get_ylim()  # endif
         if ylims2 is None:
 #            ylims2 = ax2.get_ylim()
-            ylims2 = (_np.min(( 0, 1.2*_np.min(info.aoverL_fd))),
-                      _np.min((1.2*_np.max(info.aoverL_fd), _np.diff(ylims1)/(0.1*_np.diff(xlims)))))
+            ylims2 = (_np.min(( -1.0, 1.2*_np.min(info.aoverL_fd), 1.2*_np.min(info.aoverL))),
+                      _np.max((  1.0, 1.2*_np.max(info.aoverL_fd), 1.2*_np.max(info.aoverL))))
+#                      _np.min((1.2*_np.max(info.aoverL_fd), _np.diff(ylims1)/(0.1*_np.diff(xlims)))))
         # endif
         ax1.set_xlim(xlims)
         ax1.set_ylim(ylims1)
@@ -1734,10 +1750,11 @@ def test_qparab_fit(nohollow=False):
         aa[4] = 0.0
         aa[5] = 1.0
     # endif
+    aa = gen_random_init_conds(_ms.model_qparab, af=aa.copy())
 
-    xdat = _np.linspace(-0.05, 1.05, 45)
+    xdat = _np.linspace(-0.05, 1.15, 21)
 #    xdat = _np.linspace(-1.15, 1.2, 20)
-    XX = _np.linspace( 0.0, 1.3, 101)
+    XX = _np.linspace( 0.0, 1.05, 101)
 
 #    _np.random.seed()
     xdat += 0.02*_np.random.normal(0.0, 1.0, len(xdat))
@@ -1747,7 +1764,6 @@ def test_qparab_fit(nohollow=False):
     ydat, _, temp = _ms.model_qparab((_np.abs(xdat).copy()-xoffset)/xslope, aa, nohollow=nohollow)
     temp.dprofdx = temp.dprofdx/(xslope)
 
-    yerr = 0.20*ydat
     yxx, _, _ = _ms.model_qparab((XX.copy()-xoffset)/xslope, aa)
 
     # ============================================== #
@@ -1756,6 +1772,7 @@ def test_qparab_fit(nohollow=False):
 
     # ============================================== #
 
+#    yerr = 0.10*ydat
 #    info = qparabfit(xdat, ydat, yerr, XX, nohollow=nohollow, **solver_options)
 #
 #    assert _np.allclose(info.params, aa)
@@ -1763,7 +1780,8 @@ def test_qparab_fit(nohollow=False):
 
 #    _np.random.seed()
 #    ydat += yerr*_np.random.normal(0.0, 1.0, len(xdat))
-#    ydat += 0.1*ydat*_np.random.normal(0.0, 1.0, len(xdat))
+    ydat += 0.1*ydat*_np.random.normal(0.0, 1.0, len(xdat))
+    yerr = 0.05*ydat + 0.025*_np.nanmean(ydat)
     info = qparabfit(xdat, ydat, yerr, XX, nohollow=nohollow, **solver_options)
 
     _plt.figure()
@@ -1782,7 +1800,7 @@ def test_qparab_fit(nohollow=False):
     xlims = _plt.xlim()
     ax1.set_title('Quasiparabolic')
     ax1.text(x=0.6*(xlims[1]-xlims[0])+xlims[0], y=0.6*(ylims[1]-ylims[0])+ylims[0],
-             s=r'\chi_\nu^2=%4.1f'%(info.chi2_reduced,), fontsize=16)
+             s=r'$\chi_\nu^2$=%4.1f'%(info.chi2_reduced,), fontsize=16)
 
     _plt.subplot(3, 1, 2, sharex=ax1)
     _plt.plot(xdat, temp.dprofdx, 'bo')
@@ -1793,12 +1811,12 @@ def test_qparab_fit(nohollow=False):
                           info.dprofdx+_np.sqrt(info.vardprofdx),
                       interpolate=True, color='r', alpha=0.3)
 #    _plt.ylim((_np.min((0,1.2*_np.min(info.dprofdx))), 1.2*_np.max(info.dprofdx)))
-    _plt.ylim((_np.min(( 0, 1.2*_np.min(info.dprofdx))),
-               _np.min((1.2*_np.max(info.dprofdx), _np.diff(ylims)/(0.1*_np.diff(xlims))))))
+    _plt.ylim((_np.min(( -1.0, 1.2*_np.min(info.dprofdx))),
+               _np.max(( 1.0, 1.2*_np.max(info.dprofdx), _np.diff(ylims)/(0.1*_np.diff(xlims))))))
 
     _plt.subplot(3, 1, 3)
-    tst, _, _ = _ms.model_qparab(xdat, info.params)
-    _plt.bar(left=_np.asarray(range(len(aa))), height=aa-info.params, width=1.0)
+    tst, _, _ = _ms.model_qparab((_np.abs(xdat).copy()-xoffset)/xslope, info.params)
+    _plt.bar(left=_np.asarray(range(len(aa)))+0.5, height=aa-info.params, width=0.5)
     _plt.show()
 # end
 
