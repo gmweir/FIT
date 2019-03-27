@@ -156,7 +156,7 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     plotit = kwargs.pop('plotit', False)
 
     # default initial conditions come directly from the model functions
-    _, _, info = func(_np.copy(XX), af=None, **fkwargs)
+    _, _, info = func(_np.copy(XX), af=p0, **fkwargs)
     info.success = False
     if random_init:
         info.af = gen_random_init_conds(func, af0=info.af, **fkwargs)
@@ -542,6 +542,7 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
                 print(r"%i: $\chi_%i^2$=%4.1f"%(mm, info.dof, info.chi2_reduced))
 
             if nn < 3 and mm>10:    # if the initial guess is in a weird hole, relax the residual constraint
+                raise Exception('check your starting conditions')
                 chi2_limit = 2.0*chi2_limit
             if info.chi2_reduced>chi2_limit:
                 continue
@@ -604,12 +605,17 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
         aw = _np.ones_like(chi2_reduced)
     # end if
     aw = aw/_np.sum(aw)
+    Sw = _np.sum(aw)
+    S2w = _np.sum(aw*aw)
+    Sw2 = Sw*Sw
 
-    if method.lower().find('boot')>-1:
-        coeff = nn/(nn-1.0)
-    elif method.lower().find('jack')>-1:
-        coeff = (nn-1.0)/nn
-    # end if
+
+#    if method.lower().find('boot')>-1:
+#        coeff = nn/(nn-1.0)
+#    elif method.lower().find('jack')>-1:
+#        coeff = (nn-1.0)/nn
+#    # end if
+    coeff = Sw/(Sw2-S2w)
 
     # Covariance of the parameters
     covmat = _ut.cov( af, rowvar=False, fweights=None, aweights=aw)
@@ -617,21 +623,27 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
     # Parameter averaging
     afm = _np.ones((nn,1), dtype=af.dtype)*_np.atleast_2d(_np.nanmean(af, axis=0))
     awt = _np.atleast_2d(aw).T*_np.ones((1,numfit), dtype=aw.dtype)
-    vaf = (coeff*_np.nansum(awt*awt*(af-afm)*(af-afm), axis=0)
-            + _np.nansum(awt*awt*vaf, axis=0)   )  # adding in statistical/standard error from each fit
+#    vaf = (coeff*_np.nansum(awt*awt*(af-afm)*(af-afm), axis=0)
+#            + _np.nansum(awt*awt*vaf, axis=0)   )  # adding in statistical/standard error from each fit
+    vaf = (coeff*_np.nansum(awt*(af-afm)*(af-afm), axis=0)
+            + _np.nansum(awt*vaf, axis=0)   )  # adding in statistical/standard error from each fit
     af = _np.nansum( awt*af, axis=0)
 
     # Profile fit averaging
     aw = _np.atleast_2d(aw).T*_np.ones_like(mfit)
     mfm = _np.ones((nn,1), dtype=mfit.dtype)*_np.atleast_2d(_np.nanmean(mfit, axis=0))
-    vfit = (coeff*_np.nansum(aw*aw*(mfit-mfm)*(mfit-mfm), axis=0)
-            + _np.nansum(aw*aw*vfit, axis=0)   )  # adding in statistical/standard error from each fit
+#    vfit = (coeff*_np.nansum(aw*aw*(mfit-mfm)*(mfit-mfm), axis=0)
+#            + _np.nansum(aw*aw*vfit, axis=0)   )  # adding in statistical/standard error from each fit
+    vfit = (coeff*_np.nansum(aw*(mfit-mfm)*(mfit-mfm), axis=0)
+            + _np.nansum(aw*vfit, axis=0)   )  # adding in statistical/standard error from each fit
     mfit = _np.nansum( aw*mfit, axis=0)
 
     # Profile derivative averaging
     dpm = _np.ones((nn,1), dtype=dprofdx.dtype)*_np.atleast_2d(_np.nanmean(dprofdx, axis=0))
-    vdprofdx = (coeff*_np.nansum(aw*aw*(dprofdx-dpm)*(mfit-dpm), axis=0)
-            + _np.nansum(aw*aw*vdprofdx, axis=0)   )  # adding in statistical/standard error from each fit
+#    vdprofdx = (coeff*_np.nansum(aw*aw*(dprofdx-dpm)*(dprofdx-dpm), axis=0)
+#            + _np.nansum(aw*aw*vdprofdx, axis=0)   )  # adding in statistical/standard error from each fit
+    vdprofdx = (coeff*_np.nansum(aw*(dprofdx-dpm)*(dprofdx-dpm), axis=0)
+            + _np.nansum(aw*vdprofdx, axis=0)   )  # adding in statistical/standard error from each fit
     dprofdx = _np.nansum( aw*dprofdx, axis=0)
 
     # =========================== #
@@ -1353,7 +1365,7 @@ def qparabfit(x, y, ey, XX, **kwargs):
     kwargs.setdefault("resampleit", True) # use default in MC func: 15*nch
 #    kwargs.setdefault("resampleit", 10) # for testing
 #    kwargs.setdefault("resampleit", 300) # reasonable number
-#    kwargs.setdefault('perpchi2', True)
+    kwargs.setdefault('perpchi2', False)
 #    kwargs.setdefault('errx', 0.02)
     kwargs.setdefault('errx', 0)
 
@@ -2445,7 +2457,7 @@ if __name__=="__main__":
 #        out, ft = doppler_test(scale_by_data=False, logdata=False, Fs=1.0, fmax=None)
 #    print(out)
 
-    test_qparab_fit(nohollow=False, Method='Jackknife')
+#    test_qparab_fit(nohollow=False, Method='Jackknife')
     test_qparab_fit(nohollow=False, Method='Bootstrap')
 #    test_qparab_fit(nohollow=False)
 #    test_qparab_fit(nohollow=True, resampleit=0)
