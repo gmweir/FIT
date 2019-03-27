@@ -11,7 +11,10 @@ Created on Thu Mar 14 19:00:12 2019
 #     single python / numpy / scipy version.
 #  I would like to use scikit-learn, but it requires numpy and scipy > I have!
 
-class SimAnnealing(Struct):
+from pybaseutils import utils as _ut
+import matplotlib.pyplot as _plt
+
+class SimAnnealing(_ut.Struct):
 
     def cost_function(x):
         """ Cost of x = f(x)."""
@@ -68,19 +71,19 @@ class SimAnnealing(Struct):
         return state, cost_function(state), states, costs
 
     def see_annealing(states, costs):
-        plt.figure()
-        plt.suptitle("Evolution of states and costs of the simulated annealing")
-        plt.subplot(121)
-        plt.plot(states, 'r')
-        plt.title("States")
-        plt.subplot(122)
-        plt.plot(costs, 'b')
-        plt.title("Costs")
-        plt.show()
+        _plt.figure()
+        _plt.suptitle("Evolution of states and costs of the simulated annealing")
+        _plt.subplot(121)
+        _plt.plot(states, 'r')
+        _plt.title("States")
+        _plt.subplot(122)
+        _plt.plot(costs, 'b')
+        _plt.title("Costs")
+        _plt.show()
 
     def visualize_annealing(cost_function):
         state, c, states, costs = annealing(random_start, cost_function, random_neighbour, acceptance_probability, temperature, maxsteps=1000, debug=False)
-        see_annealing(states, costs)
+        SA.see_annealing(states, costs)
         return state, c
 # end def SimAnnealing
 

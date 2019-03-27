@@ -479,11 +479,12 @@ class ModelSines(ModelClass):
             for ii in range(self.nfreqs):
                 self._af[3*ii + 1] = self._af[1]/(ii+1)  # amplitudes
                 self._af[3*ii + 2] = self._af[2]*(ii+1)  # i'th harm. of default
-                self._af[3*ii + 3] = 0.5*_np.pi*_np.random.normal(0.0, 0.5, 1)  # phase of i'th harm. of default
-                if self._af[3*ii+3]<self._LB[3*ii+3]: self._af[3*ii+3] = self._LB[3*ii+3]+0.1
-                if self._af[3*ii+3]>self._UB[3*ii+3]: self._af[3*ii+3] = self._UB[3*ii+3]-0.1
+                self._af[3*ii + 3] = 0.5*_np.pi*_np.random.uniform(low=-1.0, high=1.0, size=1)  # phase of i'th harm. of default
+#                self._af[3*ii + 3] = 0.5*_np.pi*_np.random.normal(0.0, 0.5, 1)  # phase of i'th harm. of default
+                if self._af[3*ii+3]<self._LB[3*ii+3]: self._af[3*ii+3] = self._LB[3*ii+3]+1e-8
+                if self._af[3*ii+3]>self._UB[3*ii+3]: self._af[3*ii+3] = self._UB[3*ii+3]-1e-8
 #                self._af[3*ii + 3] = _np.random.choice([-0.5*_np.pi, 0.5*_np.pi])  # phase of i'th harm. of default
-                self._af[3*ii + 3] = 0.0
+#                self._af[3*ii + 3] = 0.0
             # end for
         # end if
 
@@ -1513,7 +1514,7 @@ class ModelPoly(ModelClass):
     _analytic_yscaling = True
     def __init__(self, XX, af=None, **kwargs):
         if af is not None:
-            npoly = _np.size(af)  # Number of fitting parameters
+            npoly = _np.size(af)-1  # Number of fitting parameters
         else:
             npoly = kwargs.setdefault('npoly', 4)
         self._af = _np.random.uniform(low=-5.0, high=5.0, size=npoly+1)
@@ -8122,6 +8123,138 @@ class ModelSlopetop(ModelClass):
 
 # ========================================================================== #
 # ========================================================================== #
+
+
+class ModelLogArb(ModelClass):
+    """
+    Calculate model / derivatives of the logarithm of an arbitrary model
+    """
+    _af = _np.asarray([1.0], dtype=_np.float64)
+    _LB = _np.asarray([0.0], dtype=_np.float64)
+    _UB = _np.asarray([_np.inf], dtype=_np.float64)
+    _fixed = _np.zeros( (1,), dtype=int)
+    def __init__(self, XX, af=None, **kwargs):
+        super(ModelLogArb, self).__init__(XX, af, **kwargs)
+    # end def __init__
+
+    @staticmethod
+    def _model(XX, aa, **kwargs):
+        func = kwargs.pop('func')
+        prof = func._model(XX, aa, **kwargs)
+        return log(prof)
+
+    @staticmethod
+    def _deriv(XX, aa, **kwargs):
+        """
+        f = ln|y(x)|
+        dfdx = dydx/y(x)
+        """
+        func = kwargs.pop('func')
+        prof = func._model(XX, aa, **kwargs)
+        dprofdx = func._deriv(XX, aa, **kwargs)
+        return divide(dprofdx, prof)
+
+    @staticmethod
+    def _partial(XX, aa, **kwargs):
+        """
+        f = ln|y(x)|
+        dfdx = dydx/y(x)
+
+        dfdai = dydai/y(x, aa)
+        """
+
+        func = kwargs.pop('func')
+        prof = func._model(XX, aa, **kwargs)
+        gmod = func._partial(XX, aa, **kwargs)
+
+        prof = _np.ones((gmod.shape[0],1), dtype=gmod.dtype)*_np.atleast_2d(prof)
+        return divide(gmod, prof)
+
+    @staticmethod
+    def _partial_deriv(XX, aa, **kwargs):
+        """
+        f = ln|y(x)|
+        dfdx = dydx/y(x)
+
+        dfdai = dydai/y(x, aa)
+
+        d2fdxdai = d2ydxda/y(x, aa) - dydx*dyda/y(x,a)**2
+        """
+
+        func = kwargs.pop('func')
+        prof = func._model(XX, aa, **kwargs)
+        dydx = func._deriv(XX, aa, **kwargs)
+        dyda = func._partial(XX, aa, **kwargs)
+        d2ydxda = func._partial_deriv(XX, aa, **kwargs)
+
+        prof = _np.ones((dyda.shape[0],1), dtype=dyda.dtype)*_np.atleast_2d(prof)
+        dydx = _np.ones((dyda.shape[0],1), dtype=dyda.dtype)*_np.atleast_2d(dydx)
+        return divide(d2ydxda, prof) - divide( dydx*dyda, power(prof, 2.0) )
+
+    @staticmethod
+    def _deriv2(XX, aa, **kwargs):
+        """
+        f = ln|y(x)|
+        dfdx = dydx/y(x)
+
+        dfdai = dydai/y(x, aa)
+        d2fdxdai = d2ydxda/y(x, aa) - dydx*dyda/y(x,a)**2
+
+        d2fdx2 = d2ydx2/y(x) - dydx*dydx/(y(x)**2.0)
+        """
+        func = kwargs.pop('func')
+        prof = func._model(XX, aa, **kwargs)
+        dydx = func._deriv(XX, aa, **kwargs)
+        d2ydx2 = func._deriv2(XX, aa, **kwargs)
+        return divide(d2ydx2, prof) - dydx*dydx/(prof*prof)
+
+    @staticmethod
+    def _partial_deriv2(XX, aa, **kwargs):
+        """
+        f = ln|y(x)|
+        dfdx = dydx/y(x)
+
+        dfdai = dydai/y(x, aa)
+        d2fdxdai = d2ydxda/y(x, aa) - dydx*dyda/y(x,a)**2
+
+        d2fdx2 = d2ydx2/y(x) - dydx*dydx/(y(x)**2.0)
+        """
+
+        func = kwargs.pop('func')
+        prof = func._model(XX, aa, **kwargs)
+        dydx = func._deriv(XX, aa, **kwargs)
+        dyda = func._partial(XX, aa, **kwargs)
+        d2ydxda = func._partial_deriv(XX, aa, **kwargs)
+
+        prof = _np.ones((dyda.shape[0],1), dtype=dyda.dtype)*_np.atleast_2d(prof)
+        dydx = _np.ones((dyda.shape[0],1), dtype=dyda.dtype)*_np.atleast_2d(dydx)
+        return divide(d2ydxda, prof) - divide( dydx*dyda, power(prof, 2.0) )
+
+
+    @staticmethod
+    def _hessian(XX, aa):
+        return NotImplementedError
+
+    # ====================================== #
+
+    def unscaleaf(self, ain):
+        return NotImplementedError
+
+    def scalings(self, xdat, ydat, **kwargs):
+        self.xoffset = 0.0
+        self.offset = 0.0
+        self.xslope = 1.0
+        self.slope = 1.0
+        return super(ModelLogArb, self).scalings(xdat, ydat, **kwargs)
+# end def ModelLogArb
+
+
+# ========================================================================== #
+# ========================================================================== #
+
+
+# ========================================================================== #
+# ========================================================================== #
 # These two haven't been checked yet!!! also need to add analytic jacobian
 # for the derivatives
 
@@ -9088,17 +9221,17 @@ if __name__ == '__main__':
 
     # Numerical testing for errors in models
     # Analytic testing for errors in forward/reverse scalings
-#    mod = ModelLine().test_numerics(num=10)   # checked
-#    mod = ModelLine().test_scaling(num=10)   # checked
-#
-#    mod = ModelSines().test_numerics(num=int((6.0/33.0-0.0)*5.0e2), start=-3.5/33.0, stop=6.0/33.0, fmod=33.0)   # checked
-#    mod = ModelSines().test_scaling(num=int((6.0/33.0-0.0)*5.0e2), start=-3.0/33.0, stop=6.0/33.0, fmod=33.0)   #
-#
-#    mod = ModelSines().test_numerics(nfreqs=2, num=int((6.0/33.0-0.0)*5.0e2), start=-1.0/33.0, stop=6.0/33.0, fmod=33.0)   # checked
-#    mod = ModelSines().test_scaling(nfreqs=2, num=int((6.0/33.0-0.0)*5.0e2), start=-1.0/33.0, stop=6.0/33.0, fmod=33.0)   # checked
-#
-#    mod = ModelSines().test_numerics(nfreqs=5, num=int((6.0/33.0-0.0)*5.0e3), start=0.0, stop=6.0/33.0, fmod=33.0) # checked
-#    mod = ModelSines().test_scaling(nfreqs=5, num=int((6.0/33.0-0.0)*5.0e3), start=0.0, stop=6.0/33.0, fmod=33.0) # checked
+    mod = ModelLine().test_numerics(num=10)   # checked
+    mod = ModelLine().test_scaling(num=10)   # checked
+
+    mod = ModelSines().test_numerics(num=int((6.0/33.0-0.0)*5.0e2), start=-3.5/33.0, stop=6.0/33.0, fmod=33.0)   # checked
+    mod = ModelSines().test_scaling(num=int((6.0/33.0-0.0)*5.0e2), start=-3.0/33.0, stop=6.0/33.0, fmod=33.0)   #
+
+    mod = ModelSines().test_numerics(nfreqs=2, num=int((6.0/33.0-0.0)*5.0e2), start=-1.0/33.0, stop=6.0/33.0, fmod=33.0)   # checked
+    mod = ModelSines().test_scaling(nfreqs=2, num=int((6.0/33.0-0.0)*5.0e2), start=-1.0/33.0, stop=6.0/33.0, fmod=33.0)   # checked
+
+    mod = ModelSines().test_numerics(nfreqs=5, num=int((6.0/33.0-0.0)*5.0e3), start=0.0, stop=6.0/33.0, fmod=33.0) # checked
+    mod = ModelSines().test_scaling(nfreqs=5, num=int((6.0/33.0-0.0)*5.0e3), start=0.0, stop=6.0/33.0, fmod=33.0) # checked
 #
 #    mod = ModelSines().test_numerics(nfreqs=7, num=int((6.0/33.0)*5.0e3), start=-0.5*6.0/33.0, stop=6.0/33.0,
 #                                     shape='square', duty=0.50, fmod=5.0) # checked
