@@ -63,8 +63,8 @@ def gen_random_init_conds(func, **fkwargs):
             if _np.isinf(UB[ii]):     UB[ii] =  10.0     # end if
 #            _np.random.seed()
 #            aa[ii] += 0.1*aa[ii]*_np.random.normal(0.0, 1.0, 1)
-#            aa[ii] += 0.5*aa[ii]*_np.random.uniform(low=-1.0, high=1.0, size=1)
-            aa[ii] = _np.random.uniform(low=LB[ii]+1e-5, high=UB[ii]-1e-5, size=1)
+            aa[ii] += 0.5*aa[ii]*_np.random.uniform(low=-1.0, high=1.0, size=1)
+#            aa[ii] = _np.random.uniform(low=LB[ii]+1e-5, high=UB[ii]-1e-5, size=1)
             if aa[ii]<LB[ii]:                aa[ii] = LB[ii] + 0.5
             if aa[ii]>UB[ii]:                aa[ii] = UB[ii] - 0.5
 
@@ -87,7 +87,7 @@ def _default_mpfit_kwargs(**kwargs):
     kwargs.setdefault('xtol', 1e-16)  # 1e-16
     kwargs.setdefault('ftol', 1e-16)
     kwargs.setdefault('gtol', 1e-16)
-    kwargs.setdefault('damp', 0)
+    kwargs.setdefault('damp', 0.0)
     kwargs.setdefault('maxiter', 300)
 #    kwargs.setdefault('factor', 100)  # 100
     kwargs.setdefault('nprint', 10) # 100
@@ -348,7 +348,8 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     # ====== Post-processing ====== #
 
     # degrees of freedom in fit
-    info.dof = len(x) - numfit  # deg of freedom
+    info.dof = _np.copy(m.dof)  # deg of freedom
+#    info.dof = len(x) - numfit  # deg of freedom
 #    info.dof = len(x) - numfit - 1.0 # deg of freedom
 
     # scaled uncertainties in fitting parameters
@@ -471,12 +472,12 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
     method = kwargs.setdefault('Method', 'Bootstrap')  # we use a Smooth bootstrap, or a "Wild-Bootstrap" with the normal distribution!
 #    method = kwargs.setdefault('Method', 'Jackknife')  #
 
-    weightit = kwargs.setdefault('weightit', True)
+    weightit = kwargs.setdefault('weightit', False)
     verbose = kwargs.setdefault('verbose', True)
     plotit = kwargs.pop('plotit', True)
 
     # save the input data that we wiggle around
-    vary = ey**2.0
+    vary = ey*ey
     xsav, ysav, vsav = xdat.copy(), ydat.copy(), vary.copy()
 
     # =============== #
@@ -512,14 +513,15 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
     vdprofdx = _np.zeros_like(vfit)
 
     nn = 0
-#    chi2_limit = 10.0
-    chi2_limit = 30.0
+    chi2_limit = 10.0
+#    chi2_limit = 30.0
     chi2_min = 1e18
     _np.random.seed()
     for mm in range(niterate):
         if method.lower().find('boot')>-1:
             ydat = ysav.copy() + _np.sqrt(vsav)*_np.random.normal(0.0,1.0,_np.shape(ysav))
-            vary = (ydat-ysav)**2
+            vary = (ydat-ysav)*(ydat-ysav)
+            vary = _np.where(vary==0, _np.nanmean(vary), vary)
         elif method.lower().find('jack')>-1:
             if nn>nmonti*nch-1:
                 break
@@ -541,9 +543,9 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
             if verbose:
                 print(r"%i: $\chi_%i^2$=%4.1f"%(mm, info.dof, info.chi2_reduced))
 
-            if nn < 3 and mm>10:    # if the initial guess is in a weird hole, relax the residual constraint
-                raise Exception('check your starting conditions')
-                chi2_limit = 2.0*chi2_limit
+#            if nn < 3 and mm>10:    # if the initial guess is in a weird hole, relax the residual constraint
+#                raise Exception('check your starting conditions')
+#                chi2_limit = 2.0*chi2_limit
             if info.chi2_reduced>chi2_limit:
                 continue
             if info.chi2_reduced<chi2_min:
@@ -608,13 +610,6 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
     Sw = _np.sum(aw)
     S2w = _np.sum(aw*aw)
     Sw2 = Sw*Sw
-
-
-#    if method.lower().find('boot')>-1:
-#        coeff = nn/(nn-1.0)
-#    elif method.lower().find('jack')>-1:
-#        coeff = (nn-1.0)/nn
-#    # end if
     coeff = Sw/(Sw2-S2w)
 
     # Covariance of the parameters
@@ -622,31 +617,61 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
 
     # Parameter averaging
     afm = _np.ones((nn,1), dtype=af.dtype)*_np.atleast_2d(_np.nanmean(af, axis=0))
+    mfm = _np.ones((nn,1), dtype=mfit.dtype)*_np.atleast_2d(_np.nanmean(mfit, axis=0))
+    dpm = _np.ones((nn,1), dtype=dprofdx.dtype)*_np.atleast_2d(_np.nanmean(dprofdx, axis=0))
+
+    # Generate temprorary wegihts the same size as the arrays to average
     awt = _np.atleast_2d(aw).T*_np.ones((1,numfit), dtype=aw.dtype)
-#    vaf = (coeff*_np.nansum(awt*awt*(af-afm)*(af-afm), axis=0)
-#            + _np.nansum(awt*awt*vaf, axis=0)   )  # adding in statistical/standard error from each fit
-    vaf = (coeff*_np.nansum(awt*(af-afm)*(af-afm), axis=0)
-            + _np.nansum(awt*vaf, axis=0)   )  # adding in statistical/standard error from each fit
+    aw = _np.atleast_2d(aw).T*_np.ones_like(mfit)
+
+    if method.lower().find('boot')>-1:
+#        coeff = nn/(nn-1.0)
+
+#        vaf = (coeff*_np.nansum(awt*awt*(af-afm)*(af-afm), axis=0)/Sw2
+#                + _np.nansum(awt*awt*vaf, axis=0)/S2w   )  # adding in statistical/standard error from each fit
+#
+#        vfit = (coeff*_np.nansum(aw*(mfit-mfm)*(mfit-mfm), axis=0)/Sw2
+#                + _np.nansum(aw*aw*vfit, axis=0)/S2w   )  # adding in statistical/standard error from each fit
+#
+#        vdprofdx = (coeff*_np.nansum(aw*(dprofdx-dpm)*(dprofdx-dpm), axis=0)/Sw2
+#                + _np.nansum(aw*aw*vdprofdx, axis=0)/S2w   )  # adding in statistical/standard error from each fit
+
+        vaf = (coeff*_np.nansum(awt*(af-afm)*(af-afm), axis=0)
+                + _np.nansum(awt*vaf, axis=0)/Sw   )  # adding in statistical/standard error from each fit
+#                + _np.nansum(awt*awt*vaf, axis=0)/S2w   )  # adding in statistical/standard error from each fit
+
+        vfit = (coeff*_np.nansum(aw*(mfit-mfm)*(mfit-mfm), axis=0)
+                + _np.nansum(aw*vfit, axis=0)/Sw   )  # adding in statistical/standard error from each fit
+#                + _np.nansum(aw*aw*vfit, axis=0)/S2w   )  # adding in statistical/standard error from each fit
+
+        vdprofdx = (coeff*_np.nansum(aw*(dprofdx-dpm)*(dprofdx-dpm), axis=0)
+                + _np.nansum(aw*vdprofdx, axis=0)/Sw   )  # adding in statistical/standard error from each fit
+#                + _np.nansum(aw*aw*vdprofdx, axis=0)/S2w   )  # adding in statistical/standard error from each fit
+    elif method.lower().find('jack')>-1:
+        coeff = (nn-1.0)/nn
+
+        vaf = (coeff*_np.nansum(awt*(af-afm)*(af-afm), axis=0)
+                + _np.nansum(awt*vaf, axis=0)/Sw   )  # adding in statistical/standard error from each fit
+#                + _np.nansum(awt*awt*vaf, axis=0)/S2w   )  # adding in statistical/standard error from each fit
+
+        vfit = (coeff*_np.nansum(aw*(mfit-mfm)*(mfit-mfm), axis=0)
+                + _np.nansum(aw*vfit, axis=0)/Sw   )  # adding in statistical/standard error from each fit
+#                + _np.nansum(aw*aw*vfit, axis=0)/S2w   )  # adding in statistical/standard error from each fit
+
+
+        vdprofdx = (coeff*_np.nansum(aw*(dprofdx-dpm)*(dprofdx-dpm), axis=0)
+                + _np.nansum(aw*vdprofdx, axis=0)/Sw   )  # adding in statistical/standard error from each fit
+#                + _np.nansum(aw*aw*vdprofdx, axis=0)/S2w   )  # adding in statistical/standard error from each fit
+    # end if
     af = _np.nansum( awt*af, axis=0)
 
     # Profile fit averaging
-    aw = _np.atleast_2d(aw).T*_np.ones_like(mfit)
-    mfm = _np.ones((nn,1), dtype=mfit.dtype)*_np.atleast_2d(_np.nanmean(mfit, axis=0))
-#    vfit = (coeff*_np.nansum(aw*aw*(mfit-mfm)*(mfit-mfm), axis=0)
-#            + _np.nansum(aw*aw*vfit, axis=0)   )  # adding in statistical/standard error from each fit
-    vfit = (coeff*_np.nansum(aw*(mfit-mfm)*(mfit-mfm), axis=0)
-            + _np.nansum(aw*vfit, axis=0)   )  # adding in statistical/standard error from each fit
     mfit = _np.nansum( aw*mfit, axis=0)
 
     # Profile derivative averaging
-    dpm = _np.ones((nn,1), dtype=dprofdx.dtype)*_np.atleast_2d(_np.nanmean(dprofdx, axis=0))
-#    vdprofdx = (coeff*_np.nansum(aw*aw*(dprofdx-dpm)*(dprofdx-dpm), axis=0)
-#            + _np.nansum(aw*aw*vdprofdx, axis=0)   )  # adding in statistical/standard error from each fit
-    vdprofdx = (coeff*_np.nansum(aw*(dprofdx-dpm)*(dprofdx-dpm), axis=0)
-            + _np.nansum(aw*vdprofdx, axis=0)   )  # adding in statistical/standard error from each fit
     dprofdx = _np.nansum( aw*dprofdx, axis=0)
 
-    # =========================== #
+    # ====================================================================== #
 
     info.af = af
     info.vaf = vaf
@@ -671,6 +696,8 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
             info.cormat[ii,jj] = _ms.divide(info.covmat[ii,jj], _np.sqrt(info.covmat[ii,ii]*info.covmat[jj,jj]))
         # end for
     # end for
+
+    # ====================================================================== #
 
     if plotit:
         _ax1.errorbar(xdat, ydat, yerr=ey, fmt='ro', color='r')
@@ -1364,10 +1391,10 @@ def qparabfit(x, y, ey, XX, **kwargs):
     kwargs.setdefault("scaley", False)
     kwargs.setdefault("resampleit", True) # use default in MC func: 15*nch
 #    kwargs.setdefault("resampleit", 10) # for testing
-#    kwargs.setdefault("resampleit", 300) # reasonable number
     kwargs.setdefault('perpchi2', False)
 #    kwargs.setdefault('errx', 0.02)
     kwargs.setdefault('errx', 0)
+    kwargs['damp'] = _np.where(10.0*_np.nanmean(y/ey), out=0, where=_np.isinf(_np.nanmean(y/ey)))
 
     # plotting kwargs
     onesided = kwargs.pop('onesided', True)
@@ -1447,7 +1474,7 @@ def qparabfit(x, y, ey, XX, **kwargs):
     af0 = info.af.copy()
     if not kwargs['scale_problem']:
         af0[0] = y[_np.argmin(_np.abs(x))].copy()
-        af0[1] = _np.max((0.02, y[_np.argmax(_np.abs(x))].copy()/af0[0]))
+        af0[1] = _np.min((_np.max((0.02, y[_np.argmax(_np.abs(x))].copy()/af0[0])), 0.99))
     kwargs.setdefault('af0',af0)
 
     # Call mpfit
@@ -1578,7 +1605,7 @@ def test_fit(func=_ms.model_qparab, **fkwargs):
 #    yerr = 0.1*ydat
     yerr = _np.where(0.1*ydat<yerr, yerr, 0.1*ydat)
 
-    kwargs['damp'] = 10.0*_np.nanmean(ydat/yerr)
+#    kwargs['damp'] = 10.0*_np.nanmean(ydat/yerr)
     kwargs.setdefault('plotit', False)
     info1 = modelfit(xdat, ydat, yerr, XX, func, fkwargs, **kwargs)
 #    assert _np.allclose(info1.params, aa)
@@ -1960,8 +1987,8 @@ def test_qparab_fit(**kwargs):
     # ============================================== #
     # ============================================== #
 
-#    yerr = 0.10*ydat
-#    info = qparabfit(xdat, ydat, yerr, XX, **kwargs)
+    yerr = 0.10*ydat
+    info = qparabfit(xdat, ydat, yerr, XX, **kwargs)
 #
 #    assert _np.allclose(info.params, aa)
 #    assert info.dof==len(xdat)-len(aa)
@@ -2457,7 +2484,7 @@ if __name__=="__main__":
 #        out, ft = doppler_test(scale_by_data=False, logdata=False, Fs=1.0, fmax=None)
 #    print(out)
 
-#    test_qparab_fit(nohollow=False, Method='Jackknife')
+    test_qparab_fit(nohollow=False, Method='Jackknife')
     test_qparab_fit(nohollow=False, Method='Bootstrap')
 #    test_qparab_fit(nohollow=False)
 #    test_qparab_fit(nohollow=True, resampleit=0)
