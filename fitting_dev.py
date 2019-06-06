@@ -1143,8 +1143,8 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
                                interpolate=True, color='b', alpha=0.3)
         ax3.set_xlim((plotlims[0],plotlims[1]))
 #        maxyy = min((_np.nanmax(1.05*(plotdlnnedrho+_np.sqrt(plotvardlnnedrho))),15))
-        maxyy = 10.0
-        ax3.set_ylim((0,maxyy))
+        maxyy = 12.0
+        ax3.set_ylim((-3,maxyy))
         _plt.tight_layout()
     # end if plotit
 
@@ -1285,8 +1285,8 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
                                interpolate=True, color='r', alpha=0.3)
         ax3.set_xlim((plotlims[0],plotlims[1]))
         maxyy = min((_np.nanmax(1.05*(plotdlnTedrho+_np.sqrt(plotvardlnTedrho))),15))
-        maxyy = 10
-        ax3.set_ylim((0,maxyy))
+        maxyy = 12
+        ax3.set_ylim((-3,maxyy))
         _plt.tight_layout()
     # end if plotit
 
