@@ -825,8 +825,8 @@ def spline_bs(xvar, yvar, vary, xf=None, func="spline", nmonti=300, deg=3, bbox=
 
 
 def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
-    kwargs.setdefault('scale_problem',True)
-    arescale = kwargs.get('arescale',1.0)
+    kwargs.setdefault('scale_problem',False)
+#    arescale = kwargs.get('arescale',1.0)
     agradrho = kwargs.get('agradrho', 1.0)
     kwargs.setdefault('bootstrappit', 30)
 #    af0 = kwargs.get('af0', None)
@@ -868,7 +868,7 @@ def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
 #    # end if
 
     # constrain things to be within r/a of 1.0 here, then undo it later
-    rdat /= arescale
+#    rdat /= arescale
 
 #    if scale_by_data:
 #        pdat, vdat, slope, offset = _ms.rescale_problem(pdat, vdat)
@@ -878,9 +878,12 @@ def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
 
     isort = _np.argsort(_np.abs(rdat))
     rdat = _np.abs(rdat)
-    rdat = _ut.cylsym_odd(rdat[isort].copy())
-    pdat = _ut.cylsym_even(pdat[isort].copy())
-    vdat = _ut.cylsym_even(vdat[isort].copy())
+    rdat = rdat[isort]
+    pdat = pdat[isort]
+    vdat = vdat[isort]
+#    rdat = _ut.cylsym_odd(rdat[isort].copy())
+#    pdat = _ut.cylsym_even(pdat[isort].copy())
+#    vdat = _ut.cylsym_even(vdat[isort].copy())
 
     info = profilefit(rdat, pdat, _np.sqrt(vdat), rvec, modelfunc, fkwargs={}, **kwargs)
 #    options = dict()
@@ -946,11 +949,11 @@ def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
 
     # ================== #
     # back to the grid where r/a can be greater than 1
-    rdat *= arescale  # this is done locally here. only plot limits changed in fit_TS*
-    rvec *= arescale
+#    rdat *= arescale  # this is done locally here. only plot limits changed in fit_TS*
+#    rvec *= arescale
 
-    dlnpdrho /= arescale       # This is a suspicious step
-    vardlnpdrho /= arescale**2.0
+#    dlnpdrho /= arescale       # This is a suspicious step
+#    vardlnpdrho /= arescale**2.0
 
 #    if _np.isnan(prof[0]):
 #        prof[0] = af[0].copy()
@@ -999,7 +1002,7 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
     plotit = kwargs.get('plotit', False)
     agradrho = kwargs.get('agradrho',1.0)
     returnaf = kwargs.get('returnaf',False)
-    arescale = kwargs.get('arescale', 1.0)
+#    arescale = kwargs.get('arescale', 1.0)
     bootstrappit = kwargs.setdefault('bootstrappit',30)
     plotlims = kwargs.get('plotlims', None)
     fitin = kwargs.get('fitin', None)
@@ -1033,7 +1036,8 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
     if fitin is None:
         nef, varnef, dlnnedrho, vardlnnedrho, af = fit_profile(
             roa.copy(), 1e-20*ne.copy(), 1e-40*varn.copy(), rvec,
-            arescale=arescale, bootstrappit=bootstrappit, af0=af0)
+            bootstrappit=bootstrappit, af0=af0)
+#            arescale=arescale, bootstrappit=bootstrappit, af0=af0)
 
         if rescale_by_linavg:
             rescale_by_linavg *= 1e-20
@@ -1068,10 +1072,10 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
     if plotlims is None:
         plotlims = [-0.05, 1.05]
     # end if
-    if arescale:
-        plotlims[0] *= arescale  # fat grid
-        plotlims[1] *= arescale
-    # end if
+#    if arescale:
+#        plotlims[0] *= arescale  # fat grid
+#        plotlims[1] *= arescale
+#    # end if
 
     # ================== #
 
@@ -1160,7 +1164,7 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
     plotit = kwargs.get('plotit', False)
     agradrho = kwargs.get('agradrho', 1.00)
     returnaf = kwargs.get('returnaf',False)
-    arescale = kwargs.get('arescale', 1.0)
+#    arescale = kwargs.get('arescale', 1.0)
     bootstrappit = kwargs.setdefault('bootstrappit',30)
     plotlims = kwargs.get('plotlims', None)
     fitin = kwargs.get('fitin', None)
@@ -1190,7 +1194,8 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
     if fitin is None:
         Tef, varTef, dlnTedrho, vardlnTedrho, af = fit_profile(
             roa.copy(), Te.copy(), varT.copy(), rvec,
-            arescale=arescale, bootstrappit=bootstrappit, af0=af0)
+            bootstrappit=bootstrappit, af0=af0)
+#            arescale=arescale, bootstrappit=bootstrappit, af0=af0)
     else:
         Tef = fitin['prof']
         varTef = fitin['varprof']
@@ -1206,10 +1211,10 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
     if plotlims is None:
         plotlims = [-0.05, 1.05]
     # end if
-    if arescale:
-        plotlims[0] *= arescale
-        plotlims[1] *= arescale
-    # end if
+#    if arescale:
+#        plotlims[0] *= arescale
+#        plotlims[1] *= arescale
+#    # end if
 
     # ================== #
 

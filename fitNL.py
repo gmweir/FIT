@@ -1394,7 +1394,9 @@ def qparabfit(x, y, ey, XX, **kwargs):
     kwargs.setdefault('perpchi2', False)
 #    kwargs.setdefault('errx', 0.02)
     kwargs.setdefault('errx', 0)
-    kwargs['damp'] = _np.where(10.0*_np.nanmean(y/ey), out=0, where=_np.isinf(_np.nanmean(y/ey)))
+#    kwargs['damp'] = 0 if _np.isinf(10.0*_np.nanmean(y/ey)) else 10.0*_np.nanmean(y/ey)
+#    kwargs['damp'] = _np.where(10.0*_np.nanmean(y/ey), out=0, where=_np.isinf(_np.nanmean(y/ey)))
+    kwargs['damp'] = _np.where(10.0*_np.nanmean(y/ey), 0, _np.isinf(_np.nanmean(y/ey)))
 
     # plotting kwargs
     onesided = kwargs.pop('onesided', True)
