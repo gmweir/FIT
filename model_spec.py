@@ -1517,9 +1517,11 @@ class ModelPoly(ModelClass):
             npoly = _np.size(af)-1  # Number of fitting parameters
         else:
             npoly = kwargs.setdefault('npoly', 4)
-        self._af = _np.random.uniform(low=-5.0, high=5.0, size=npoly+1)
-        self._LB = -_np.inf*_np.ones((npoly+1,), dtype=_np.float64)
-        self._UB = _np.inf*_np.ones((npoly+1,), dtype=_np.float64)
+        numfit = npoly+1
+        self._af = _np.random.uniform(low=-5.0, high=5.0, size=numfit)
+        self._af[-1] = 0.0
+        self._LB = -_np.inf*_np.ones((numfit,), dtype=_np.float64)
+        self._UB = _np.inf*_np.ones((numfit,), dtype=_np.float64)
         self._fixed = _np.zeros( _np.shape(self._LB), dtype=int)
         super(ModelPoly, self).__init__(XX, af, **kwargs)
     # end def __init__
@@ -2122,7 +2124,7 @@ class ModelEvenPoly(ModelClass):
     """
     --- Polynomial with only even powers ---
     Model - y ~ sum( af(ii)*XX^2*(numfit-ii))
-    af    - estimate of fitting parameters (npoly=4, numfit=3, poly= a0*x^4+a1*x^2+a3)
+    af    - estimate of fitting parameters (npoly=4, numfit=3, poly= a0*x^4+a1*x^2+a2)
     XX    - independent variable
 
     I do this by fitting a regular polynomial in sqrt(XX) space
@@ -2131,28 +2133,39 @@ class ModelEvenPoly(ModelClass):
     _analytic_yscaling = True
     def __init__(self, XX, af=None, **kwargs):
         if af is not None:
-            npoly = _np.size(af)  # Number of fitting parameters
+            npoly = 2*(_np.size(af)-1)  # Number of fitting parameters
         else:
-            npoly = kwargs.setdefault('npoly', 3)
-        self._af = _np.random.uniform(low=-5.0, high=5.0, size=npoly)
-        self._LB = -_np.inf*_np.ones((npoly,), dtype=_np.float64)
-        self._UB = _np.inf*_np.ones((npoly,), dtype=_np.float64)
+            npoly = kwargs.setdefault('npoly', 6)
+        npoly = npoly // 2
+        numfit = npoly+1
+        self.npoly = npoly
+        self._af = _np.random.uniform(low=-5.0, high=5.0, size=numfit)
+        self._af[-1] = 0.0
+        self._LB = -_np.inf*_np.ones((numfit,), dtype=_np.float64)
+        self._UB = _np.inf*_np.ones((numfit,), dtype=_np.float64)
         self._fixed = _np.zeros( _np.shape(self._LB), dtype=int)
         super(ModelEvenPoly, self).__init__(XX, af, **kwargs)
     # end def __init__
 
     def __str__(self):
         return "Model: f(x)= " + \
-            "".join("a%ix^%i +"%(ii,ii)for ii in range(2*self.npoly,2,-2)) +\
+            "".join("a%ix^%i +"%(ii, ii)for ii in range(self.npoly,0,-2)) +\
             " a%i"%(0,)
+#            "".join("a%ix^%i +"%(ii,ii)for ii in range(2*self.npoly,0,-2)) +\
+#            " a%i"%(0,)
 #        return "Model: f(x)= " + \
 #            "".join("%3.1fx^%i +"%(self.af[ii],2*(self.npoly-ii)) for ii in range(self.npoly-1)) +\
 #            " %3.1f"%(self.af[-1])
 
     def __repr__(self):
+        numfit = len(self.af)
         return "Even Polynomial Model(" + \
-            "".join("a%i=%3.1f, "%(int(2*(self.npoly-ii)), self.af[ii]) for ii in range(self.npoly-1, 1,-1)) + \
-            "a0=%3.1f)"%(self.af[-1],)
+            "".join("a%i=%3.1f, "%(self.npoly-2*ii, self.af[ii]) for ii in range(numfit-1)) + \
+            "a%i=%3.1f)"%(0, self.af[-1],)
+#            "".join("a%i=%3.1f, "%(int(2*(self.npoly-ii)), self.af[ii]) for ii in range(self.npoly)) + \
+#            "a%i=%3.1f)"%(0, self.af[-1],)
+#            "".join("a%i=%3.1f, "%(int(2*(self.npoly-ii)), self.af[ii]) for ii in range(self.npoly)) + \
+#            "a%i=%3.1f)"%(0, self.af[-1],)
 
     @staticmethod
     def _model(XX, aa, **kwargs):
@@ -9210,28 +9223,29 @@ if __name__ == '__main__':
 #            ModelLogGaussian, ModelLorentzian, ModelPseudoVoigt, ModelDoppler,
 #            ModelLogDoppler, ModelLogLorentzian, ModelQuasiParabolic, ModelPowerLaw,
 #            ModelExponential, ModelExp, ModelFlattop, ModelSlopetop]
-#    funcs = [ModelPoly]
-#    for func in funcs:
-#        tmp = func(None)
-#        tmp.af = tmp._af
-#        print(tmp.__str__())
-#        print(tmp.__repr__())
+    funcs = [ModelEvenPoly]
+    for func in funcs:
+        tmp = func(None)
+        tmp.af = tmp._af
+        print(tmp.__str__())
+        print(tmp.__repr__())
+        print(tmp.af)
 #    XX = _np.linspace(1e-3, 0.99, num=61)
 #    XX = _np.linspace(1e-3, 0.99, num=100)
 
     # Numerical testing for errors in models
     # Analytic testing for errors in forward/reverse scalings
-    mod = ModelLine().test_numerics(num=10)   # checked
-    mod = ModelLine().test_scaling(num=10)   # checked
-
-    mod = ModelSines().test_numerics(num=int((6.0/33.0-0.0)*5.0e2), start=-3.5/33.0, stop=6.0/33.0, fmod=33.0)   # checked
-    mod = ModelSines().test_scaling(num=int((6.0/33.0-0.0)*5.0e2), start=-3.0/33.0, stop=6.0/33.0, fmod=33.0)   #
-
-    mod = ModelSines().test_numerics(nfreqs=2, num=int((6.0/33.0-0.0)*5.0e2), start=-1.0/33.0, stop=6.0/33.0, fmod=33.0)   # checked
-    mod = ModelSines().test_scaling(nfreqs=2, num=int((6.0/33.0-0.0)*5.0e2), start=-1.0/33.0, stop=6.0/33.0, fmod=33.0)   # checked
-
-    mod = ModelSines().test_numerics(nfreqs=5, num=int((6.0/33.0-0.0)*5.0e3), start=0.0, stop=6.0/33.0, fmod=33.0) # checked
-    mod = ModelSines().test_scaling(nfreqs=5, num=int((6.0/33.0-0.0)*5.0e3), start=0.0, stop=6.0/33.0, fmod=33.0) # checked
+#    mod = ModelLine().test_numerics(num=10)   # checked
+#    mod = ModelLine().test_scaling(num=10)   # checked
+#
+#    mod = ModelSines().test_numerics(num=int((6.0/33.0-0.0)*5.0e2), start=-3.5/33.0, stop=6.0/33.0, fmod=33.0)   # checked
+#    mod = ModelSines().test_scaling(num=int((6.0/33.0-0.0)*5.0e2), start=-3.0/33.0, stop=6.0/33.0, fmod=33.0)   #
+#
+#    mod = ModelSines().test_numerics(nfreqs=2, num=int((6.0/33.0-0.0)*5.0e2), start=-1.0/33.0, stop=6.0/33.0, fmod=33.0)   # checked
+#    mod = ModelSines().test_scaling(nfreqs=2, num=int((6.0/33.0-0.0)*5.0e2), start=-1.0/33.0, stop=6.0/33.0, fmod=33.0)   # checked
+#
+#    mod = ModelSines().test_numerics(nfreqs=5, num=int((6.0/33.0-0.0)*5.0e3), start=0.0, stop=6.0/33.0, fmod=33.0) # checked
+#    mod = ModelSines().test_scaling(nfreqs=5, num=int((6.0/33.0-0.0)*5.0e3), start=0.0, stop=6.0/33.0, fmod=33.0) # checked
 #
 #    mod = ModelSines().test_numerics(nfreqs=7, num=int((6.0/33.0)*5.0e3), start=-0.5*6.0/33.0, stop=6.0/33.0,
 #                                     shape='square', duty=0.50, fmod=5.0) # checked
@@ -9267,11 +9281,13 @@ if __name__ == '__main__':
 #    mod = ModelEvenPoly.test_numerics(npoly=2) # checked
 #    mod = ModelEvenPoly.test_numerics(npoly=3) # checked
 #    mod = ModelEvenPoly.test_numerics(npoly=4) # checked
+#    mod = ModelEvenPoly.test_numerics(npoly=6) # checked
 #    mod = ModelEvenPoly.test_numerics(npoly=8) # checked
 #    mod = ModelEvenPoly.test_scaling(npoly=1) # checked
 #    mod = ModelEvenPoly.test_scaling(npoly=2) # checked
 #    mod = ModelEvenPoly.test_scaling(npoly=3) # checked
 #    mod = ModelEvenPoly.test_scaling(npoly=4) # checked
+#    mod = ModelEvenPoly.test_scaling(npoly=6) # checked
 #    mod = ModelEvenPoly.test_scaling(npoly=8) # checked
 #
 #    mod = ModelParabolic.test_numerics() # checked
@@ -9328,13 +9344,14 @@ if __name__ == '__main__':
 #    mod = ModelFlattop.test_numerics(start=0.1, stop=1.0) # checked
 #    mod = ModelSlopetop.test_numerics(start=0.1, stop=1.0) # checked
 #    mod = ModelFlattop.test_scaling() # checked
+#    mod = ModelFlattop.test_numerics() # checked
 #    mod = ModelSlopetop.test_scaling() # checked
 
-    mod = ModelExp.test_numerics(start=0.1, stop=0.9) # checked
-    mod = ModelExp.test_numerics(start=0.1, stop=1.0) # checked
-    mod = ModelExp.test_scaling(start=0.0, stop=1.0) # checked
-    mod = ModelExp.test_scaling(start=0.0, stop=0.9) # checked
-    mod = ModelExp.test_scaling(start=0.1, stop=1.0) # checked
+#    mod = ModelExp.test_numerics(start=0.1, stop=0.9) # checked
+#    mod = ModelExp.test_numerics(start=0.1, stop=1.0) # checked
+#    mod = ModelExp.test_scaling(start=0.0, stop=1.0) # checked
+#    mod = ModelExp.test_scaling(start=0.0, stop=0.9) # checked
+#    mod = ModelExp.test_scaling(start=0.1, stop=1.0) # checked
 
 #    Fs = 1.0
 #    XX = _np.linspace(-0.5, 0.5, num=int(1.5*10e-3*10.0e6/8))

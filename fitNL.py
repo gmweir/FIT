@@ -170,6 +170,11 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     if numfit != LB.shape[0]:
         if verbose:
             print('oops, The number of fitting parameters does not match the Lower/Upper bound input to mpfit')
+            print(info.__str__())
+            print(info.__repr__())
+            print('af is %s'%(', '.join(map(str,info.af,))))
+            print('LB is %s'%(', '.join(map(str,info.Lbounds,))))
+            print('UB is %s'%(', '.join(map(str,info.Ubounds,))))
             raise Exception('The number of fitting parameters does not match the Lower/Upper bound input to mpfit')
     # end if
 
@@ -469,8 +474,8 @@ def modelfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
 
 
 def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwargs):
-    method = kwargs.setdefault('Method', 'Bootstrap')  # we use a Smooth bootstrap, or a "Wild-Bootstrap" with the normal distribution!
-#    method = kwargs.setdefault('Method', 'Jackknife')  #
+#    method = kwargs.setdefault('Method', 'Bootstrap')  # we use a Smooth bootstrap, or a "Wild-Bootstrap" with the normal distribution!
+    method = kwargs.setdefault('Method', 'Jackknife')  #
 
     weightit = kwargs.setdefault('weightit', False)
     verbose = kwargs.setdefault('verbose', True)
@@ -495,9 +500,12 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
             niterate = nmonti
         elif nmonti==1:
             niterate = _np.min((10*nch, 100))
+#        chi2_limit = 10
+        chi2_limit = 1e18
     elif method.lower().find('jack')>-1:
         if nmonti == 1:
             nmonti = 30
+        chi2_limit = 1e18
         niterate = 2*nmonti*nch
     # endif
 
@@ -513,8 +521,10 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
     vdprofdx = _np.zeros_like(vfit)
 
     nn = 0
-    chi2_limit = 10.0
+#    chi2_limit = 10.0
+#    chi2_limit = 15.0
 #    chi2_limit = 30.0
+#    chi2_limit = 1e18
     chi2_min = 1e18
     _np.random.seed()
     for mm in range(niterate):
@@ -536,8 +546,8 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
             print('%i of %i'%(mm,niterate))
         # end if
 
-#        if 1:
-        try:
+        if 1:
+#        try:
             info = fitter(xdat, ydat, _np.sqrt(vary), XX, func, fkwargs, **kwargs)
 
             if verbose:
@@ -561,12 +571,16 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
             vdprofdx[nn,:] = _np.copy(info.vardprofdx)
             chi2_reduced[nn] = _np.copy(info.chi2_reduced)
             nn += 1
-        except:
-            pass
+#        except:
+#            pass
         # end try
     # end for
     if verbose and nn<niterate:
-        print('Warning: rejecting %i/%i runs for $\chi_/\nu^2$>%3.1f'%(niterate-nn, niterate, chi2_limit))
+        if method.lower().find('jack')>-1:
+            print('Warning: rejecting %i/%i runs for $\chi_/\nu^2$>%3.1f'%(nmonti*nch-1-nn, nmonti*nch-1, chi2_limit))
+        else:
+#            print('Warning: rejecting %i/%i runs for $\chi_/\nu^2$>%3.1f'%(nmonti*nch-1-nn, nmonti*nch-1, chi2_limit))
+            print('Warning: rejecting %i/%i runs for $\chi_/\nu^2$>%3.1f'%(niterate-nn, niterate, chi2_limit))
     af = af[:nn, :]
     vaf = vaf[:nn,:]
     covmat = covmat[:nn,:,:]
@@ -580,8 +594,14 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
     ydat = ysav
     vary = vsav
     if plotit:
-        hfig, _ax = _plt.subplots(numfit,1)
+        fixed = fkwargs.pop('fixed', _np.zeros(info.af.shape, dtype=int))
+        hfig, _ax = _plt.subplots(numfit-_np.sum(fixed),1)
+#        hfig, _ax = _plt.subplots(numfit,1)
         for ii in range(numfit):
+            if fixed[ii]:
+                continue
+            if len(af) == 0:
+                print('pause')
             _ax[ii].hist(af[:,ii], normed=True, bins=30, range=(af[:,ii].min()-1.0, af[:,ii].max()+1.0))
             _ax[ii].set_ylabel('P(a%i)'%(ii,))
             if ii == numfit-1:

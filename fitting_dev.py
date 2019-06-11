@@ -829,10 +829,12 @@ def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
 #    arescale = kwargs.get('arescale',1.0)
     agradrho = kwargs.get('agradrho', 1.0)
     kwargs.setdefault('bootstrappit', 30)
+    kwargs.setdefault('resampleit', kwargs['bootstrappit'])
 #    af0 = kwargs.get('af0', None)
 #    LB = kwargs.get('LB', None)
 #    UB = kwargs.get('UB', None)
 
+    fkwargs = kwargs.pop('fkwargs', {})
     if 1:
         modelfunc = kwargs.get('modelfunc', _ms.model_qparab);
     else:
@@ -885,7 +887,7 @@ def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
 #    pdat = _ut.cylsym_even(pdat[isort].copy())
 #    vdat = _ut.cylsym_even(vdat[isort].copy())
 
-    info = profilefit(rdat, pdat, _np.sqrt(vdat), rvec, modelfunc, fkwargs={}, **kwargs)
+    info = profilefit(rdat, pdat, _np.sqrt(vdat), rvec, modelfunc, fkwargs=fkwargs, **kwargs)
 #    options = dict()
 #    options.setdefault('xtol', 1e-16) #
 #    options.setdefault('ftol', 1e-16) #
@@ -1003,7 +1005,7 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
     agradrho = kwargs.get('agradrho',1.0)
     returnaf = kwargs.get('returnaf',False)
 #    arescale = kwargs.get('arescale', 1.0)
-    bootstrappit = kwargs.setdefault('bootstrappit',30)
+    bootstrappit = kwargs.setdefault('bootstrappit',50) # 30
     plotlims = kwargs.get('plotlims', None)
     fitin = kwargs.get('fitin', None)
     af0 = kwargs.get('af0', None)
@@ -1016,6 +1018,8 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
     QTBdat["roa"] = roa.copy()
     rmax = kwargs.get('rmax', 1.05)
     titl = kwargs.get('title', r'Density Profile Info')
+    modelfunc = kwargs.get('modelfunc', _ms.model_evenpoly)
+    fkwargs = kwargs.setdefault('fkwargs', {'npoly':6})
 
     # set the edge density if necessary, then switch back to the fat grid
     # where r/a<1.0 (mostly) ... also discard channels based on settings in
@@ -1036,7 +1040,7 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
     if fitin is None:
         nef, varnef, dlnnedrho, vardlnnedrho, af = fit_profile(
             roa.copy(), 1e-20*ne.copy(), 1e-40*varn.copy(), rvec,
-            bootstrappit=bootstrappit, af0=af0)
+            bootstrappit=bootstrappit, af0=af0, modelfunc=modelfunc, fkwargs=fkwargs)
 #            arescale=arescale, bootstrappit=bootstrappit, af0=af0)
 
         if rescale_by_linavg:
@@ -1165,13 +1169,15 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
     agradrho = kwargs.get('agradrho', 1.00)
     returnaf = kwargs.get('returnaf',False)
 #    arescale = kwargs.get('arescale', 1.0)
-    bootstrappit = kwargs.setdefault('bootstrappit',30)
+    bootstrappit = kwargs.setdefault('bootstrappit',50)
     plotlims = kwargs.get('plotlims', None)
     fitin = kwargs.get('fitin', None)
     af0 = kwargs.get('af0', None)
     maxyy = kwargs.get('maxylim', None)
     rmax = kwargs.get('rmax', 1.05)
     titl = kwargs.get('title', r'Temperature Profile Info')
+    modelfunc = kwargs.get('modelfunc', _ms.model_evenpoly)
+    fkwargs = kwargs.setdefault('fkwargs', {'npoly':6}) #, 'fixed':[0,0,0,1]})
 
     QTBdat = QTBdat.copy()
     rvec = _np.copy(rvec)
@@ -1194,7 +1200,7 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
     if fitin is None:
         Tef, varTef, dlnTedrho, vardlnTedrho, af = fit_profile(
             roa.copy(), Te.copy(), varT.copy(), rvec,
-            bootstrappit=bootstrappit, af0=af0)
+            bootstrappit=bootstrappit, af0=af0, modelfunc=modelfunc, fkwargs=fkwargs)
 #            arescale=arescale, bootstrappit=bootstrappit, af0=af0)
     else:
         Tef = fitin['prof']
@@ -1922,6 +1928,7 @@ if __name__=="__main__":
         aN = _np.asarray([af[ii]+0.50*af[ii]*_np.random.normal(0.0, 1.0, 1) for ii in range(len(af))],
                          dtype=_np.float64)
         aN[0] = _np.random.uniform(0.1, 1.2, 1)
+        aN = aN.flatten()
         QTBdat = {}
         QTBdat['roa'] = _np.linspace(0.05, 1.05, num=10)
         QTBdat['ne'], _, _ = model_qparab(QTBdat['roa'], aN)
@@ -1936,6 +1943,7 @@ if __name__=="__main__":
         aT[0] = _np.random.uniform(1.0, 9.0, 1)
 #        aT = _np.asarray([aT[ii]+0.05*aT[ii]*_np.random.normal(0.0, 1.0, 1) for ii in range(len(aT))],
 #                         dtype=_np.float64)
+        aT = aT.flatten()
         QTBdat['Te'], _, _ = model_qparab(QTBdat['roa'], aT)
         QTBdat['varTL'] = (0.1*QTBdat['Te'])**2.0
         QTBdat['varTH'] = (0.1*QTBdat['Te'])**2.0
@@ -1947,7 +1955,7 @@ if __name__=="__main__":
                                agradrho=1.20, returnaf=False, bootstrappit=False)
     # end if
 
-    test_linreg()
+#    test_linreg()
 #    test_derivatives()
 
 #    x = _np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10 ,11, 12, 13, 14, 15], dtype=float)
