@@ -1846,7 +1846,7 @@ def partial_prodexp(XX, aa):
 def partial_deriv_prodexp(XX, aa):
     return ModelProdExp._partial_deriv(XX, aa)
 
-def model_ProdExp(XX=None, af=None, **kwargs):
+def model_prodexp(XX=None, af=None, **kwargs):
     """
     --- Product of Exponentials ---
     Model - y ~ prod(af(ii)*XX^(polyorder-ii))
@@ -2397,7 +2397,7 @@ def partial_powerlaw(XX, aa):
 def partial_deriv_powerlaw(XX, aa):
     return ModelPowerLaw._partial_deriv(XX, aa)
 
-def model_PowerLaw(XX=None, af=None, **kwargs):
+def model_powerlaw(XX=None, af=None, **kwargs):
     return _model(ModelPowerLaw, XX, af, **kwargs)
 
 
@@ -2949,7 +2949,7 @@ def partial_exp(XX, aa):
 def partial_deriv_exp(XX, aa):
     return ModelExp._partial_deriv(XX, aa)
 
-def model_Exp(XX=None, af=None, **kwargs):
+def model_exp(XX=None, af=None, **kwargs):
     return _model(ModelExp, XX, af, **kwargs)
 
 # =========================================== #
@@ -3291,7 +3291,7 @@ def partial_expcutoff(XX, aa):
 def partial_deriv_expcutoff(XX, aa):
     return ModelExponential._partial_deriv(XX, aa)
 
-def model_Exponential(XX=None, af=None, **kwargs):
+def model_exponential(XX=None, af=None, **kwargs):
     return _model(ModelExponential, XX, af, **kwargs)
 
 # =========================================== #
@@ -8572,8 +8572,8 @@ def model_profile(af=None, XX=None, model_number=7, npoly=4, nargout=1, verbose=
 
     if model_number == 1:
         if verbose: print('Modeling with an order %i product of Exponentials'%(npoly,))  # endif
-        [prof, gvec, info] = model_ProdExp(XX, af, npoly=npoly)
-        info.func = model_ProdExp
+        [prof, gvec, info] = model_prodexp(XX, af, npoly=npoly)
+        info.func = model_prodexp
 
     elif model_number == 2:
         if verbose: print('Modeling with an order %i polynomial'%(npoly,))  # endif
@@ -8582,13 +8582,13 @@ def model_profile(af=None, XX=None, model_number=7, npoly=4, nargout=1, verbose=
 
     elif model_number == 3:
         if verbose: print('Modeling with an order %i power law'%(npoly,))  # endif
-        [prof, gvec, info] = model_PowerLaw(XX, af, npoly=npoly)
-        info.func = model_PowerLaw
+        [prof, gvec, info] = model_powerlaw(XX, af, npoly=npoly)
+        info.func = model_powerlaw
 
     elif model_number == 4:
         if verbose: print('Modeling with an exponential on order %i polynomial background'%(npoly,))  # endif
-        [prof, gvec, info] = model_Exponential(XX, af, npoly=npoly)
-        info.func = model_Exponential
+        [prof, gvec, info] = model_exponential(XX, af, npoly=npoly)
+        info.func = model_exponential
 
     elif model_number == 5:
         if verbose: print('Modeling with an order %i polynomial+Heaviside fn'%(npoly,))  # endif
@@ -8676,8 +8676,8 @@ def model_chieff(af=None, XX=None, model_number=1, npoly=4, nargout=1, verbose=F
 
     if model_number == 1:
         if verbose: print('Modeling with an order %i product of Exponentials'%(npoly,))  # endif
-        [chi_eff, gvec, info] = model_ProdExp(XX, af, npoly=npoly)
-        info.func = model_ProdExp
+        [chi_eff, gvec, info] = model_prodexp(XX, af, npoly=npoly)
+        info.func = model_prodexp
 
     elif model_number == 2:
         if verbose: print('Modeling with an order %i polynomial'%(npoly,))  # endif
@@ -8686,13 +8686,13 @@ def model_chieff(af=None, XX=None, model_number=1, npoly=4, nargout=1, verbose=F
 
     elif model_number == 3:
         if verbose: print('Modeling with an order %i power law'%(npoly,))  # endif
-        [chi_eff, gvec, info] = model_PowerLaw(XX, af, npoly=npoly)
-        info.func = model_PowerLaw
+        [chi_eff, gvec, info] = model_powerlaw(XX, af, npoly=npoly)
+        info.func = model_powerlaw
 
     elif model_number == 4:
         if verbose: print('Modeling with an exponential on order %i polynomial background'%(npoly,))  # endif
-        [chi_eff, gvec, info] = model_Exponential(XX, af, npoly=npoly)
-        info.func = model_Exponential
+        [chi_eff, gvec, info] = model_exponential(XX, af, npoly=npoly)
+        info.func = model_exponential
 
     elif model_number == 5:
         if verbose: print('Modeling with an order %i polynomial+Heaviside fn'%(npoly,))  # endif

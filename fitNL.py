@@ -125,6 +125,9 @@ def _clean_mpfit_kwargs(kwargs):
     if 'debug' in kwargs:       mwargs['debug'] = kwargs['debug']   # end if
     return mwargs
 
+# ========================================================================== #
+
+
 def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     kwargs = _default_mpfit_kwargs(**kwargs)
     verbose = kwargs.pop('verbose', True) or not kwargs['quiet']
@@ -437,7 +440,12 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
 # ============================================= #
 
 
-def modelfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
+def modelfit(x, y, ey, XX=None, func=None, fkwargs={}, **kwargs):
+    if XX is None:
+        XX = _np.copy(x)
+    if func is None:
+        print('You must specify the func keyword to modelfit')
+    # end if
     resampleit = kwargs.pop('resampleit', False)
     kwargs.setdefault('perpchi2', False)
     kwargs.setdefault('scale_problem', True)
