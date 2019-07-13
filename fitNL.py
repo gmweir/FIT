@@ -1226,7 +1226,7 @@ def profilefit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     """
     resampleit = kwargs.pop('resampleit', 0)
     kwargs.setdefault('perpchi2', False)
-    # kwargs.pop('errx')   # this prevents the effective variance from cominng into the problem
+    # kwargs.pop('errx')   # this prevents the effective variance from coming into the problem
     kwargs.setdefault('scale_problem', False)
     kwargs.setdefault("scalex", True)
     kwargs.setdefault("scaley", False)
@@ -1411,22 +1411,39 @@ def qparabfit(x, y, ey, XX, **kwargs):
     # subfunction kwargs
     nohol = kwargs.pop("nohollow", False)
 
-    # fitter arguments
-    setedge = kwargs.setdefault('setedge', False)
-    setcore = kwargs.setdefault('setcore', False)
+    # =================== fitter arguments ====================== #
+    setedge = kwargs.setdefault('setedge', False) # set the edge value of the profile
+    setcore = kwargs.setdefault('setcore', False) # set the core value of the profile
+
+    # scale_problem uses the model_spec scaling functions.
+    # This isn't generally applicable for profiles. Check the models.
     kwargs.setdefault("scale_problem", False)
+
+    # When using the "profilefit" function, we can empirically scale the
+    # x-data and y-data separately.
     kwargs.setdefault("scalex", True)
     kwargs.setdefault("scaley", False)
+
+    # resampleit diverts the function the monti-carlo style fitting functions
+    #    if False, then don't use monti-carlo error propagation
     kwargs.setdefault("resampleit", True) # use default in MC func: 15*nch
 #    kwargs.setdefault("resampleit", 10) # for testing
+
+    # perpchi2 uses the perpendicular distance from the data to the fit to
+    # estimate chi2 instead of the linear vertical distance
     kwargs.setdefault('perpchi2', False)
+
+    # errx is used to add uncertainty to the x-data during fitting
 #    kwargs.setdefault('errx', 0.02)
     kwargs.setdefault('errx', 0)
+
+    # mpfit keyword argument. Damping speeds up convergence and rejects outliers,
+    # but nullifies the error propagation accuracy
 #    kwargs['damp'] = 0 if _np.isinf(10.0*_np.nanmean(y/ey)) else 10.0*_np.nanmean(y/ey)
 #    kwargs['damp'] = _np.where(10.0*_np.nanmean(y/ey), out=0, where=_np.isinf(_np.nanmean(y/ey)))
     kwargs['damp'] = _np.where(10.0*_np.nanmean(y/ey), 0, _np.isinf(_np.nanmean(y/ey)))
 
-    # plotting kwargs
+    # =================== plotting arguments ====================== #
     onesided = kwargs.pop('onesided', True)
     plotit = kwargs.pop('plotit', False)
     xlbl = kwargs.pop('xlabel', r'$r/a$')
@@ -1436,15 +1453,15 @@ def qparabfit(x, y, ey, XX, **kwargs):
     clr = kwargs.pop('color', 'r')
     alph = kwargs.pop('alpha', 0.3)
     hfig = kwargs.pop('hfig', None)
-    agradrho = kwargs.pop('agradrho', 1.00)
     xlims = kwargs.pop('xlim', None)
     ylims1 = kwargs.pop('ylim1', None)
     ylims2 = kwargs.pop('ylim2', None)
     fs = kwargs.pop('fontsize', _plt.rcParams['font.size'])
     fn = kwargs.pop('fontname', _plt.rcParams['font.family'])
-
     fontdict = {'fontsize':fs, 'fontname':fn}
 
+    # if amin*<gradrho> is input, then use that for plotting. otherwise use 1.0
+    agradrho = kwargs.pop('agradrho', 1.00)
     if len(_np.atleast_1d(agradrho))==1:
         agradrho = agradrho * _np.ones_like(XX)
     # end if
@@ -1454,15 +1471,20 @@ def qparabfit(x, y, ey, XX, **kwargs):
 
     # ============================= #
 
+    # copy in the data so that the we don't alter the input numpy arrays
+    # (the numpy backend in C is pass by reference)
     xin = x.copy()
     yin = y.copy()
     eyin = ey.copy()
 
+    # Sort the data to be increasing in r/a
     xin = _np.abs(xin)
     isort = _np.argsort(xin)
     xin = xin[isort]
     yin = yin[isort]
     eyin = eyin[isort]
+
+    # ============================= #
 
     # force flat profile in the middle either by cylindrical symmetry or
     # adding a ficticious point
@@ -1471,6 +1493,9 @@ def qparabfit(x, y, ey, XX, **kwargs):
         yin = _np.insert(yin,0,yin[0])
         eyin = _np.insert(eyin,0,eyin[0])
     # end if
+
+    # ============================= #
+
     # force the profile to go to zero somewhere in the edge if it doesn't already
     if (_np.nanmin(yin)>0.01*_np.nanmax(yin)) and setedge:
         # First try linearly interpolating the last few points to 0
@@ -1481,6 +1506,9 @@ def qparabfit(x, y, ey, XX, **kwargs):
         xin = _np.insert(xin,-1, xedge)
         yin = _np.insert(yin,-1, 0.0)
         eyin = _np.insert(eyin,-1,vedge)
+    # end if
+
+    # Resort the data just in case we messed it up above.
     isort = _np.argsort(_np.abs(xin))
     xin = xin[isort]
     yin = yin[isort]
@@ -1496,10 +1524,13 @@ def qparabfit(x, y, ey, XX, **kwargs):
 
     # ============================= #
 
+    # Define the function to fit. based on our model_spec stuff.
     def myqparab(x=None, af=None, **kwargs):
         if 'XX' in kwargs: kwargs.pop('XX')
         return _ms.model_qparab(x, af=af, **kwargs)
 
+    # Get the default information from the fitting model by calling with None
+    # use these as initiail conditions for the fitter
     info = myqparab(None) #, nohollow=nohollow)
     af0 = info.af.copy()
     if not kwargs['scale_problem']:
@@ -1507,12 +1538,15 @@ def qparabfit(x, y, ey, XX, **kwargs):
         af0[1] = _np.min((_np.max((0.02, y[_np.argmax(_np.abs(x))].copy()/af0[0])), 0.99))
     kwargs.setdefault('af0',af0)
 
+    # ================================= #
+
     # Call mpfit
 #    info = fit_mpfit(xin, yin, eyin, XX, myqparab, fkwargs={"nohollow":nohol}, **kwargs)
     info = profilefit(xin, yin, eyin, XX, myqparab, fkwargs={"nohollow":nohol}, **kwargs)
 
     # ================================= #
 
+    # calculate some quantities of interest from the fits
     info.dlnprofdx = _ut.divide(info.dprofdx, info.prof)
     info.vardlnprofdx = info.dlnprofdx*info.dlnprofdx * (
               _ut.divide(info.varprof, info.prof*info.prof)
@@ -1522,12 +1556,16 @@ def qparabfit(x, y, ey, XX, **kwargs):
     info.var_aoverL = info.aoverL**2.0
     info.var_aoverL *= info.vardlnprofdx
 
-    agr = _ut.interp(XX, agradrho, ei=None, xo=x)
+    # Calculate the derivative of hte data and its uncertainty by finite-differencing
     dydx_fd, vardydx_fd = _dd.findiff1d(x.copy(), y.copy(), ey.copy()**2.0)
+
+    agr = _ut.interp(XX, agradrho, ei=None, xo=x)
     info.aoverL_fd = -1.0*agr*dydx_fd/y
     info.var_aoverL_fd = info.aoverL_fd**2.0
     info.var_aoverL_fd *= ( (ey/y)**2.0 + vardydx_fd/(dydx_fd**2.0))
 
+    # ================================= #
+    # plotting
     if plotit:
         if hfig is None:
             hfig = _plt.figure()
@@ -1990,9 +2028,19 @@ def test_fourier_fit(func=_ms.model_sines, **fkwargs):
 
 
 def test_qparab_fit(**kwargs):
+
+    # This is a function keyword argumetn that fixes one of the model
+    # parameters to prevent hollow profiles
     nohollow = kwargs.setdefault('nohollow', False)
+
+    # A plotting boolean for the test that gets pushed to the fitter
     kwargs.setdefault('plotit', True)
 
+    # ============================================== #
+    # ============================================== #
+
+    # Initial conditions for the fit to test.
+    # Generating random test data that fits a quasi-parabolic model
     aa= _np.asarray([0.30, 0.002, 2.0, 0.7, -0.24, 0.30], dtype=float)
     if nohollow:
         aa[4] = 0.0
@@ -2000,35 +2048,55 @@ def test_qparab_fit(**kwargs):
     # endif
     aa = gen_random_init_conds(_ms.model_qparab, af0=aa.copy(), **kwargs)
 
+    # Using realistic effective radius (r/a) positions for test data
     xdat = _np.linspace(-0.05, 1.15, 21)
 #    xdat = _np.linspace(-1.15, 1.2, 20)
-    XX = _np.linspace( 0.0, 1.05, 101)
 
+    # add some randomness to the data positions to test the fitter with
+    # non-uniformly spaced data
 #    _np.random.seed()
     xdat += 0.02*_np.random.normal(0.0, 1.0, len(xdat))
 
+    # The positions to report the fit and uncertainties in the profile / its derivative
+    XX = _np.linspace( 0.0, 1.05, 101)
+
+    # The quasi-parabolic fit is only defined on the domain 0<r/a<1, but we
+    # can generate the fit outside of this domain by scaling the input to that
+    # domain
     xoffset = -1e-4
     xslope = 1.05*_np.max((_np.nanmax(_np.abs(xdat)), _np.nanmax(XX)))
+
+    # temp is a temporary data structure that contains the model, and its
+    # fitting parameters, model bounds, and the array for fixing parameters "fixed"
     ydat, _, temp = _ms.model_qparab((_np.abs(xdat).copy()-xoffset)/xslope, aa, **kwargs)
     temp.dprofdx = temp.dprofdx/(xslope)
 
+    # The perfect fit with no noise added on the fitting domain
+    # the inputs of model_spec.model_**** are
+    #   (positions to report data, model parameters, model specific keyword arguments)
+    # the outputs of model_spec.model_**** are (data, jacobian, model structure)
     yxx, _, _ = _ms.model_qparab((XX.copy()-xoffset)/xslope, aa, **kwargs)
 
     # ============================================== #
     # ============================================== #
 
-    yerr = 0.10*ydat
+    yerr = 0.10*ydat   # use 10% relative uncertainty in the data
+
+    # Call the quasi-parabolic fitting function.with our "perfect" data
+    # inputs are independent variable, dependent variable, 'standard dev.' of dep. variable, ...
     info = qparabfit(xdat, ydat, yerr, XX, **kwargs)
 #
 #    assert _np.allclose(info.params, aa)
 #    assert info.dof==len(xdat)-len(aa)
 
+    # Call the quasi-parabolic fitting function with "noisy data"
 #    _np.random.seed()
 #    ydat += yerr*_np.random.normal(0.0, 1.0, len(xdat))
     ydat += 0.1*ydat*_np.random.normal(0.0, 1.0, len(xdat))
     yerr = 0.05*ydat + 0.05*_np.nanmean(ydat)
     info = qparabfit(xdat, ydat, yerr, XX, **kwargs)
 
+    # Plot the ouptuts and compare results
     _plt.figure()
     ax1 = _plt.subplot(3, 1, 1)
     _plt.errorbar(xdat, ydat, yerr=yerr, fmt='bo')
@@ -2514,8 +2582,8 @@ if __name__=="__main__":
 #        out, ft = doppler_test(scale_by_data=False, logdata=False, Fs=1.0, fmax=None)
 #    print(out)
 
-    test_qparab_fit(nohollow=False, Method='Jackknife')
-    test_qparab_fit(nohollow=False, Method='Bootstrap')
+#    test_qparab_fit(nohollow=False, Method='Jackknife')
+#    test_qparab_fit(nohollow=False, Method='Bootstrap')
 #    test_qparab_fit(nohollow=False)
 #    test_qparab_fit(nohollow=True, resampleit=0)
 #    ft = test_fitNL(False)
@@ -2577,7 +2645,7 @@ if __name__=="__main__":
 #    test_profile_fit(_ms.model_flattop)
 #    test_profile_fit(_ms.model_slopetop)
 ###
-#    test_profile_fit(_ms.model_qparab, resampleit=30)
+    test_profile_fit(_ms.model_qparab, resampleit=30)
 #    test_profile_fit(_ms.model_flattop, resampleit=30)
 #    test_profile_fit(_ms.model_slopetop, resampleit=30)
 
