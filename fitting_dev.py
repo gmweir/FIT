@@ -947,7 +947,8 @@ def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
 #        prof, varp, dprofdx, vardprofdx, af = _ms.rescale_problem(info=info, nargout=5)
 #    # end if
     dlnpdrho = dprofdx / prof
-    vardlnpdrho = (dlnpdrho)**2.0 * ( vardprofdx/(dprofdx**2.0) + varp/(prof**2.0)  )
+    vardlnpdrho = (prof**2.0)*vardprofdx + (dprofdx**2.0)*varp
+#    vardlnpdrho = (dlnpdrho)**2.0 * ( vardprofdx/(dprofdx**2.0) + varp/(prof**2.0)  )
 
     # ================== #
     # back to the grid where r/a can be greater than 1
