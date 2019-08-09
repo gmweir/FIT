@@ -1345,10 +1345,13 @@ def extrap_ECE(QMEdat, cls, rescale_amin=1.0, plotit=False):
 #    qme_xyz_origin = _np.asarray([6.4632, 0.6907, 0.35],dtype=float) # [6.5, 6.1, 0.35], in cyl .... nearly 0 deg toroidally: AEE41 is ~-45 deg
 #    qme_xyz_target = _np.asarray([5.52478, 0.506607, 0.0576283],dtype=float) # [-17,-5] in aim ang.
 #
-    sh = _np.shape(QMEdat['ece_roa'])
+    sh = _np.shape(QMEdat['ece_freq'])
 
     qme_xyz_origin = _np.asarray([-4.731, -4.572, 0.272],dtype=float)
     qme_xyz_target = _np.asarray([-4.092, -3.704, 0.150],dtype=float)
+
+    QMEdat['origin'] = qme_xyz_origin.copy()
+    QMEdat['target'] = qme_xyz_target.copy()
 
     #Connect the origin and target by 'nn' points ... returning the
     # cartesian position and length along the central ray of the ECE diagnostic
