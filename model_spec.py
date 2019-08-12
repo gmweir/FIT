@@ -1512,12 +1512,12 @@ class ModelPoly(ModelClass):
     """
     _analytic_xscaling = True
     _analytic_yscaling = True
-    def __init__(self, XX, af=None, **kwargs):
+    def __init__(self, XX=None, af=None, **kwargs):
         if af is not None:
-            npoly = _np.size(af)-1  # Number of fitting parameters
+            self.npoly = _np.size(af)-1  # Number of fitting parameters
         else:
-            npoly = kwargs.setdefault('npoly', 4)
-        numfit = npoly+1
+            self.npoly = kwargs.setdefault('npoly', 4)
+        numfit = self.npoly+1
         self._af = _np.random.uniform(low=-5.0, high=5.0, size=numfit)
         self._af[-1] = 0.0
         self._LB = -_np.inf*_np.ones((numfit,), dtype=_np.float64)
@@ -1830,6 +1830,443 @@ class ModelPoly(ModelClass):
 
     # ====================================== #
 # end def ModelPoly
+
+# ========================================================================== #
+# ========================================================================== #
+#
+#
+#def piecewise(XX, aa, **kwargs):
+#    return ModelPieceWise._model(XX, aa, **kwargs)
+#
+#def partial_piecewise(XX, aa, **kwargs):
+#    return ModelPieceWise._partial(XX, aa, **kwargs)
+#
+#def partial_deriv_piecewise(XX, aa, **kwargs):
+#    return ModelPieceWise._partial_deriv(XX, aa, **kwargs)
+#
+#def model_piecewise(XX=None, af=None, **kwargs):
+#    """
+#    --- PieceWise Function ---
+#    Model - y ~ prod(af(ii)*XX^(polyorder-ii))
+#    af    - estimate of fitting parameters
+#    XX    - independent variable
+#        npoly is overruled by the shape of af.  It is only used if af is None
+#
+#    """
+#    return _model(ModelPieceWise, XX, af, **kwargs)
+#
+## ================================== #
+#
+#class _binner(object):
+#    @staticmethod
+#    def _bin_nonuniform(x, y, **kwargs):
+#        weights = kwargs.setdefault('weights', _np.ones_like(y))
+#        method = kwargs.setdefault('method', 'total')
+#        quantity = kwargs.setdefault('quantity', 10)
+#        base = kwargs.setdefault('base', 10.0)
+#
+#        # pre-process
+#        method = method.lower()
+#
+#        bins = []
+#        if method.lower().find('log'):
+#            x = x.copy()
+##            binst = _np.logspace(x.min(), x.max(), num=quantity, endpoint=False, base=base)
+#            binst = _np.linspace(x.min(), x.max(), num=quantity, endpoint=False)
+#            binst = _np.power(base, binst)
+#
+#            bin_end = int(0)
+#            for ii in range(quantity-1):
+#                bin_start = bin_end
+#                bin_end = _np.where(_np.power(base, x).astype(x.dtype) >= binst[ii+1])[0][0]
+#                bins.append((bin_start, bin_end))
+#            # end for
+#            bins.append((bin_end, len(x)))
+#        elif method.find('tot')>-1 or method.find('sum')>-1 or method.find('int')>-1:
+#            y = y.copy()
+#            weights = weights.copy()
+#
+#            weights /= sum(weights)
+#
+#            y = _np.divide(y, weights, out=_np.ones_like(y), where=weights==0)
+#            y /= sum(y)
+#            ycum = _np.cumsum(y)
+#
+#            bin_end = int(0)
+#            for ii in range(quantity):
+#                bin_start = bin_end
+#                bin_end = _np.where(ycum>=float(ii)/float(quantity))[0][0]
+#                bins.append((bin_start, bin_end))
+#            # end for
+#        else:
+#            raise NotImplementedError
+#        # end if
+#        return bins
+#
+#    @staticmethod
+#    def _bin_uniform(lower_bound, width, quantity=2):
+#        """ create_bins returns an equal-width (distance) partitioning.
+#            It returns an ascending list of tuples, representing the intervals.
+#            A tuple bins[i], i.e. (bins[i][0], bins[i][1])  with i > 0
+#            and i < quantity, satisfies the following conditions:
+#                (1) bins[i][0] + width == bins[i][1]
+#                (2) bins[i-1][0] + width == bins[i][0] and
+#                    bins[i-1][1] + width == bins[i][1]
+#
+#        Inputs
+#            lower_bound - minimum bin start position
+#            width       - input width of each bin
+#            quantity    - number of bins
+#        """
+#        bins = []
+#        binend = int(lower_bound)
+#        for ii in range(quantity):
+#            binstart = binend
+#            binend = binstart+width
+#            bins.append((binstart, binend))
+##        for low in range(lower_bound, lower_bound + quantity*width + 1, width):
+##            bins.append((low, low+width))
+#        return bins
+#
+#    @staticmethod
+#    def _find_bin(value, bins):
+#        """ bins is a list of tuples, like [(0,20), (20, 40), (40, 60)],
+#            binning returns the smallest index i of bins so that
+#            bin[i][0] <= value < bin[i][1]
+#        """
+#
+#        for ii in range(len(bins)):
+#            if bins[ii][0] <= value < bins[ii][1]:
+#                return ii
+#        return -1
+#
+##    @staticmethod
+##    def _bin_data(x, y, bins=[1.,2.,3.,4.]):
+##        """
+##        """
+##        xmin=_np.min(x)
+##        xmax=_np.max(x)
+##
+##        bins_number=len(bins)-1
+##        xsm = _np.mean([bins[:-1], bins[1:]], axis=0)
+##        ysm = _np.zeros(bins_number)
+##
+##        # The following process is what actually bins the data using numpy
+##        for ii in range(bins_number):
+##            if i == bins_number - 1:
+##                sel = bins[ii] <= x
+##            else:
+##                sel = (bins[ii] <= x) & (x < bins[ii+1])
+##            ysm[ii] = np.percentile(y[sel], 90, interpolation='nearest')
+##
+##        return xsm, ysm
+## end class
+#
+#class ModelPieceWise(ModelClass):
+#    """
+#    Translates any smoothly varying model class into a piecewise varying model class
+#        The specifics depend on the specifics
+#
+#    Specific use:
+#    1) First bin the range (uniformly, by weight, or specified by user)
+#            return bin indices (0,1), (1,2), (2,3), ...
+#
+#    2) Fit the data within each subinterval using a ModelClass
+#            return xlocal, ymodel, yderiv,
+#
+#    TODO:
+#        test it thoroughly!
+#
+#    LATER:
+#        re-implement the update, update_minimal, prop_error methods allowing
+#        for discontinuous boundaries, different numbers of fitting parameters, etc.
+#
+#        implement rules for connections at subintervals (continuity, curvature, custom, etc.)
+#        (this allows us to implement splines (etc.) within our custom model fitter class
+#    """
+#    binfunc = _binner._bin_uniform
+#    _analytic_xscaling = False
+#    _analytic_yscaling = False
+#    analytic = True  # analytic derivatives, jacobian etc.
+##    analytic = False  # numerical derivatives, jacobian etc.
+#
+#    _default_model = ModelPoly
+#
+#    # Use a little bit different context
+#    # ... do this in the nonlinear fitting class where you can send a dictionary
+#    # with breakpoints and subintervals completly specified, then do the error propagation separately.
+#    def __init__(self, XX=None, af=None, **kwargs):
+#        af, kwargs = self._checkinputs(af, **kwargs)
+#        kwargs['binparents'] = kwargs.pop('Model')
+#        kwargs.setdefault('bins', None)
+#        self.parse_kwargs(XX, **kwargs)
+#
+#        self._af, self._LB, self._UB, self._fixed = [[] for _ in range(4)]
+#        self.af, self.Lbounds, self.Ubounds, self.fixed = [[] for _ in range(4)]
+#
+#        for ii in range(self.quantity):
+#            self.binparents[ii] = self.binparents[ii](XX=None, af=af[ii,...].flatten(), **self.kwargs)
+#
+#            self._af.append(self.binparents[ii]._af.copy())
+#            self._LB.append(self.binparents[ii]._LB.copy())
+#            self._UB.append(self.binparents[ii]._UB.copy())
+#            self._fixed.append(self.binparents[ii]._fixed.copy())
+#
+#            if af[ii] is not None:
+#                self.af.append(_np.copy(self.binparents[ii].af))
+#            else:
+#                self.af.append(_np.copy(self.binparents[ii]._af))
+#            # end if
+#        # end for
+#        self.LB, self.UB, self.fixed = self.defaults(**kwargs)
+#
+#        if XX is not None:
+#            self.update(XX=_np.copy(XX), af=_np.copy(self.af))
+#    # end def __init__
+#
+#    def __str__(self):
+#        msg = "%i bin Piecewise"%(self.quantity,)
+#        for ii in range(self.quantity):
+#            if self.af[ii] is not None:
+#                msg += '\n'+self.binparents[ii].__str__()
+#            # end if
+#        # end for
+#        return msg
+#
+#    def __repr__(self):
+#        msg = "Bin %i"%(self.quantity,)
+#        for ii in range(self.quantity):
+#            if self.af[ii] is not None:
+#                msg += '\n'+self.binparents[ii].__repr__()
+#            # end if
+#        # end for
+#        return msg
+#
+#
+#    def _checkinputs(self, af=None, **kwargs):
+#        """
+#        4 inputs alter 1 variable
+#        shape(af)[0] == parameters of each input model
+#        len(Models) == model to fit to each bin of data
+#        quantity == number of bins to create if bins is not input
+#        len(bins) == number of bins / models / etc
+#        """
+#        models = None if 'Model' not in kwargs else list(_np.atleast_1d(kwargs['Model']))
+##        af = None if af is None else _np.atleast_2d(af)
+#        bins = kwargs.setdefault('bins', None)
+#
+#        if bins is not None:
+#            self.quantity = len(kwargs['bins'])
+#        else:
+#            if af is None and models is None:
+#                self.quantity = kwargs.pop('quantity', 1)
+#            elif af is None:
+#                self.quantity = len(models)
+#            else:
+#                af = _np.atleast_2d(af)
+#                self.quantity = af.shape[0]
+#            # end if
+#        # endif
+#
+#        if models is None:
+#            models = [self._default_model]*self.quantity
+#            stacker = _np.hstack
+#        elif len(models) == 1:
+#            models = models*self.quantity
+#            stacker = _np.hstack
+#        else:
+#            stacker = None
+#        # end if
+#        kwargs.setdefault('stacker', stacker)
+#
+#        if af is None:
+#            af = [None]*self.quantity
+#        # end if
+#        af = _np.atleast_2d(af)
+#        kwargs['Model'] = models
+#        return af, kwargs
+#
+#    def parse_kwargs(self, XX, **kwargs):
+#        self.fkwargs = kwargs.setdefault('fkwargs', {})
+#        self.binfunc = kwargs.setdefault('binfunc', _binner._bin_uniform)
+#        self.kwargs = kwargs
+#        self.__dict__.update(kwargs)
+#
+#        # ==================================== #
+#        self.binmethod = 'custom'
+#        if self.bins is None and XX is not None:
+#            self.binmethod = kwargs.setdefault('binmethod', 'uniform')
+#            if self.binmethod.lower().find('uni')>-1:
+##                self.bins = self.binfunc(0, int(len(XX)/(self.quantity)), quantity=self.quantity)
+#                self.bins = self.binfunc(0, len(XX)/(self.quantity), quantity=self.quantity)
+#            # end if
+#         # end if
+#        # ==================================== #
+#        self.kwargs['binmethod'] = self.binmethod
+#        self.kwargs['binfunc'] = self.binfunc
+#        self.kwargs['bins'] = self.bins
+#        return self.bins, self.binfunc, self.binmethod, self.fkwargs
+#    # end def
+#
+#    # ============================================================== #
+#
+#    def update(self, XX, af, **kwargs):
+#        for ii in range(self.quantity):
+#            super(ModelPieceWise, self.binparents[ii]).update_minimal(XX, af[ii, ...], **kwargs)
+#        # end for
+#
+#    def update_minimal(self, XX, af, **kwargs):
+#        XX, af, kwargs = super(ModelPieceWise, self).parse_in(XX, af, **kwargs)
+#
+#        prof = []
+#        gvec = []
+#        ixx = _np.asarray(range(len(XX)), dtype=int)
+#        for ii in range(self.quantity):
+#            if ii == 0:
+#                ibin = _np.where((bins[ii][0]<=ixx)*(ixx<=bins[ii][1]))[0]
+#            else:
+#                ibin = _np.where((bins[ii][0]<ixx)*(ixx<=bins[ii][1]))[0]
+#            # end if
+#
+#            _prof, _gvec = super(ModelPieceWise, self.binparents[ii]).update_minimal(
+#                        XX[ibin], af[ii, ...], **kwargs)
+#            prof.append(_prof)
+#            gvec.append(_gvec)
+#        # end for
+#        # profile is no problem (1D all the time)
+#        prof = _np.hstack(tuple(prof))
+#
+#        # Now be clever in the way that you combine the profile and jacobian segments
+#        # if we put zeros into missing rows and then add zeros into the af vector,
+#        # then we also have to undo that addition at each subinterval function
+#
+#
+#
+#    def updatevar(self, **kwargs):
+#        if 'covmat' in kwargs:
+#            self.covmat = kwargs['covmat']
+#        if hasattr(self, 'covmat'):
+#            self.varprof = self.properror(self.XX, self.covmat, self.gvec)
+#            self.vardprofdx = self.properror(self.XX, self.covmat, self.dgdx)
+#        # end if
+#    # end def
+#
+#    @staticmethod
+#    def properror(XX, covmat, gvec):
+#        return _ut.properror(XX, covmat, gvec)
+#
+#    # ============================================================== #
+#
+#
+#    @staticmethod
+#    def _redirect_func(subfunc, stacker, bins, parents, *args, **kwargs):
+#        XX = args[0]
+#        aa = args[1]
+#        if len(args)>2:
+#            fargs = args[2:]
+#        else:
+#            fargs = tuple()
+#        # end if
+#
+#        ybin = []
+#        ixx = _np.asarray(range(len(XX)), dtype=int)
+#        for ii in range(len(bins)):
+#            if ii == 0:
+#                ibin = _np.where((bins[ii][0]<=ixx)*(ixx<=bins[ii][1]))[0]
+#            else:
+#                ibin = _np.where((bins[ii][0]<ixx)*(ixx<=bins[ii][1]))[0]
+#            # end if
+#
+#            method = getattr(parents[ii], subfunc)
+#            ybin.append(method(XX[ibin], aa[ii, ...], *fargs, **kwargs))
+#        # end for
+#
+#        if stacker is None:
+#            return tuple(ybin)
+#        else:
+#            return stacker(tuple(ybin))
+#    # end def
+#
+#    @staticmethod
+#    def _model(XX, aa, *args, **kwargs):
+#        kwargs = kwargs.copy()
+#        bins = kwargs.pop('bins')
+#        stacker = kwargs.pop('stacker')   # analysis:ignore
+#        binparents = kwargs.pop('binparents')
+#        return ModelPieceWise._redirect_func('_model', _np.hstack,
+#                bins, binparents, XX, aa, *args, **kwargs)
+#
+#    @staticmethod
+#    def _partial(XX, aa, *args, **kwargs):
+#        kwargs = kwargs.copy()
+#        bins = kwargs.pop('bins')
+#        stacker = kwargs.pop('stacker')
+#        binparents = kwargs.pop('binparents')
+#        return ModelPieceWise._redirect_func('_partial', stacker,
+#                bins, binparents, XX, aa, *args, **kwargs)
+#
+#    @staticmethod
+#    def _deriv(XX, aa, *args, **kwargs):
+#        kwargs = kwargs.copy()
+#        bins = kwargs.pop('bins')
+#        stacker = kwargs.pop('stacker')   # analysis:ignore
+#        binparents = kwargs.pop('binparents')
+#        return ModelPieceWise._redirect_func('_deriv', _np.hstack,
+#                bins, binparents, XX, aa, *args, **kwargs)
+#
+#    @staticmethod
+#    def _partial_deriv(XX, aa, *args, **kwargs):
+#        kwargs = kwargs.copy()
+#        bins = kwargs.pop('bins')
+#        stacker = kwargs.pop('stacker')
+#        binparents = kwargs.pop('binparents')
+#        return ModelPieceWise._redirect_func('_partial_deriv', stacker,
+#                bins, binparents, XX, aa, *args, **kwargs)
+#
+#    @staticmethod
+#    def _deriv2(XX, aa, *args, **kwargs):
+#        kwargs = kwargs.copy()
+#        bins = kwargs.pop('bins')
+#        stacker = kwargs.pop('stacker')  # analysis:ignore
+#        binparents = kwargs.pop('binparents')
+#        return ModelPieceWise._redirect_func('_deriv2', _np.hstack,
+#                bins, binparents, XX, aa, *args, **kwargs)
+#
+#    @staticmethod
+#    def _partial_deriv2(XX, aa, *args, **kwargs):
+#        kwargs = kwargs.copy()
+#        bins = kwargs.pop('bins')
+#        stacker = kwargs.pop('stacker')
+#        binparents = kwargs.pop('binparents')
+#        return ModelPieceWise._redirect_func('_partial_deriv2', stacker,
+#                bins, binparents, XX, aa, *args, **kwargs)
+#
+#    def unscaleaf(self, ain, *args, **kwargs):
+#        ain = _np.copy(ain)
+#        yss = kwargs.setdefault('ys', self.slopes)
+#        yos = kwargs.setdefault('yo', self.offsets)
+#        xss = kwargs.setdefault('xs', self.xslopes)
+#        xos = kwargs.setdefault('xo', self.xoffsets)
+#
+#        aout = []
+#        for ii in range(len(self.bins)):
+#            aout.append(self.binparents[ii].unscaleaf(ain[ii, ...], ys=yss[ii], yo=yos[ii], xs=xss[ii], xo=xos[ii], **kwargs))
+#        # end for
+#        return _np.vstack(tuple(aout))
+#
+#    def scaleaf(self, ain, *args, **kwargs):
+#        ain = _np.copy(ain)
+#        yss = kwargs.setdefault('ys', self.slopes)
+#        yos = kwargs.setdefault('yo', self.offsets)
+#        xss = kwargs.setdefault('xs', self.xslopes)
+#        xos = kwargs.setdefault('xo', self.xoffsets)
+#
+#        aout = []
+#        for ii in range(len(self.bins)):
+#            aout.append(self.binparents[ii].scaleaf(ain[ii, ...], ys=yss[ii], yo=yos[ii], xs=xss[ii], xo=xos[ii], **kwargs))
+#        # end for
+#        return _np.vstack(tuple(aout))
+## end class
 
 # ========================================================================== #
 # ========================================================================== #
@@ -9223,7 +9660,8 @@ if __name__ == '__main__':
 #            ModelLogGaussian, ModelLorentzian, ModelPseudoVoigt, ModelDoppler,
 #            ModelLogDoppler, ModelLogLorentzian, ModelQuasiParabolic, ModelPowerLaw,
 #            ModelExponential, ModelExp, ModelFlattop, ModelSlopetop]
-    funcs = [ModelEvenPoly]
+    funcs = [ModelPieceWise]
+    funcs = [ModelLine, ModelPoly]
     for func in funcs:
         tmp = func(None)
         tmp.af = tmp._af
@@ -9233,13 +9671,15 @@ if __name__ == '__main__':
 #    XX = _np.linspace(1e-3, 0.99, num=61)
 #    XX = _np.linspace(1e-3, 0.99, num=100)
 
+    mod = ModelPieceWise().test_numerics(num=int(20), start=0.1, stop=2.0, Model=ModelLine, af=_np.asarray([[3, 5],[2, 3]]))
+
     # Numerical testing for errors in models
     # Analytic testing for errors in forward/reverse scalings
 #    mod = ModelLine().test_numerics(num=10)   # checked
 #    mod = ModelLine().test_scaling(num=10)   # checked
 #
-    mod = ModelSines().test_numerics(num=int((6.0/33.0-0.0)*5.0e2), start=-3.5/33.0, stop=6.0/33.0, fmod=33.0)   # checked
-    mod = ModelSines().test_scaling(num=int((6.0/33.0-0.0)*5.0e2), start=-3.0/33.0, stop=6.0/33.0, fmod=33.0)   #
+#    mod = ModelSines().test_numerics(num=int((6.0/33.0-0.0)*5.0e2), start=-3.5/33.0, stop=6.0/33.0, fmod=33.0)   # checked
+#    mod = ModelSines().test_scaling(num=int((6.0/33.0-0.0)*5.0e2), start=-3.0/33.0, stop=6.0/33.0, fmod=33.0)   #
 #
 #    mod = ModelSines().test_numerics(nfreqs=2, num=int((6.0/33.0-0.0)*5.0e2), start=-1.0/33.0, stop=6.0/33.0, fmod=33.0)   # checked
 #    mod = ModelSines().test_scaling(nfreqs=2, num=int((6.0/33.0-0.0)*5.0e2), start=-1.0/33.0, stop=6.0/33.0, fmod=33.0)   # checked
