@@ -99,13 +99,20 @@ class FD(Struct):
 
 #            dmax = _np.max((tst.max()/0.2, 5.0))
 #            dmax = _np.max((_np.max(_np.abs(aa))/0.2, dmax))   # maximum derivative, arbitraily say 10/0.2
-            hh = _ut.cbrt(6.0*self.machine_epsilon/dmax)
+
+            if dmax == 0 or _np.isinf(dmax):
+                hh = 0.01
+            else:
+                hh = _np.divide(6.0*self.machine_epsilon, dmax, out=_np.atleast_1d(1e-6), where=(dmax==0))
+                hh = _ut.cbrt(hh)
+            # end if
 
             if deriv_order == 2:
                 hh = _np.power(hh, 0.5)
             elif deriv_order == 3:
                 hh = _np.power(hh, 1.0/3.0)
             # end if
+
             kwargs.setdefault('hh', hh)
         # end if
         return hh, kwargs
@@ -1488,6 +1495,7 @@ class ModelClass(FD):
 
         # call the analytic version and the numerical derivative version
         modanal = cls(XX, **kwargs)
+        kwargs.pop('af')
         modnum = cls(XX, modanal.af, analytic=False, **kwargs)
 #        na = len(modanal.af)
 
