@@ -998,6 +998,7 @@ def fit_profile(rdat, pdat, vdat, rvec, **kwargs):
 
 
 def fit_TSneprofile(QTBdat, rvec, **kwargs):
+    species = kwargs.setdefault('species', 'e')
     edge = kwargs.get('set_edge',None)
     iuse_ts = kwargs.get('iuse_ts', _np.ones( QTBdat["roa"].shape, dtype=bool))
     loggradient = kwargs.get('loggradient', True)
@@ -1005,13 +1006,15 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
     plotit = kwargs.get('plotit', False)
     agradrho = kwargs.get('agradrho',1.0)
     returnaf = kwargs.get('returnaf',False)
-#    arescale = kwargs.get('arescale', 1.0)
+
+
     bootstrappit = kwargs.setdefault('bootstrappit',50) # 30
     plotlims = kwargs.get('plotlims', None)
     fitin = kwargs.get('fitin', None)
     af0 = kwargs.get('af0', None)
-    rescale_by_linavg = kwargs.get('rescale_by_linavg',False)
     maxyy = kwargs.get('maxylim', None)
+
+
     QTBdat = QTBdat.copy()
     nkey = 'roa' if 'roan' not in QTBdat else 'roan'
     rvec = _np.copy(rvec)
@@ -1026,8 +1029,8 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
     # where r/a<1.0 (mostly) ... also discard channels based on settings in
     # clean_fitdict - used several places
     QTBdat = build_TSfitdict(QTBin=QTBdat, set_edge=edge,
-                iuse_ts=iuse_ts*(~_np.isinf(roa))*(~_np.isnan(roa))*(QTBdat["ne"]>1e10))
-    QTBdat, _ = clean_fitdict(QTBdat, iuse=None, rmax=rmax)
+                iuse_ts=iuse_ts*(~_np.isinf(roa))*(~_np.isnan(roa))*(QTBdat["ne"]>1e10), species=species)
+    QTBdat, _ = clean_fitdict(QTBdat, iuse=None, rmax=rmax, species=species)
     roa = _np.copy(QTBdat["roa"])  # fat grid!
     ne = _np.copy(QTBdat['ne'])    # [part/m3]
     varNL = _np.copy(QTBdat['varNL'])
@@ -1043,19 +1046,6 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
             roa.copy(), 1e-20*ne.copy(), 1e-40*varn.copy(), rvec,
             bootstrappit=bootstrappit, af0=af0, modelfunc=modelfunc, fkwargs=fkwargs)
 #            arescale=arescale, bootstrappit=bootstrappit, af0=af0)
-
-        if rescale_by_linavg:
-            rescale_by_linavg *= 1e-20
-            iuse = ~(_np.isinf(nef) + _np.isnan(nef))
-            nfdl, vnfdl, _, _ = _ut.trapz_var(rvec[iuse], nef[iuse], vary=varnef[iuse])
-            nfdl /= _np.abs(_np.max(rvec)-_np.min(rvec))
-            vnfdl /= _np.abs(_np.max(rvec)-_np.min(rvec))**2.0
-
-            nef *= rescale_by_linavg/nfdl  # [1e20*part/m3]
-            varnef *= (rescale_by_linavg/nfdl)**2.0
-
-            af[0] *= rescale_by_linavg/af[0]   # [1e20*part/m3]
-        # end if
     else:
         nef = 1e-20*fitin['prof']  # [1e20*part/m3]
         varnef = 1e-40*fitin['varprof']
@@ -1162,6 +1152,7 @@ def fit_TSneprofile(QTBdat, rvec, **kwargs):
 
 
 def fit_TSteprofile(QTBdat, rvec, **kwargs):
+    species = kwargs.pop('species', 'e')
     edge = kwargs.get('set_edge',None)
     iuse_ts = kwargs.get('iuse_ts', _np.ones( QTBdat["roa"].shape, dtype=bool))
     loggradient = kwargs.get('loggradient', True)
@@ -1186,10 +1177,10 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
     # set the edge Temperature if necessary, then switch back to the fat grid
     # where r/a<1.0 (mostly) ... also discard channels based on settings in
     # clean_fitdict - used several places
-    QTBdat = build_TSfitdict(QTBin=QTBdat, set_edge=edge, iuse_ts=iuse_ts)
-    QTBdat, _ = clean_fitdict(QTBdat, iuse=None, rmax=rmax)
+    QTBdat = build_TSfitdict(QTBin=QTBdat, set_edge=edge, iuse_ts=iuse_ts, species=species)
+    QTBdat, _ = clean_fitdict(QTBdat, iuse=None, rmax=rmax, species=species)
     roa = _np.copy(QTBdat['roa'])
-    Te = _np.copy(QTBdat['Te'])
+    Te = _np.copy(QTBdat['T%s'%(species,)])
     varTL = _np.copy(QTBdat['varTL'])
     varTH = _np.copy(QTBdat['varTH'])
     if 'varRL' in QTBdat:
@@ -1244,8 +1235,8 @@ def fit_TSteprofile(QTBdat, rvec, **kwargs):
         ax3.grid()
 
         ax1.set_title(titl)
-        ax1.set_ylabel(r'T$_e$ in KeV')
-        ax3.set_ylabel(r'$a/L_\mathrm{Te}$')
+        ax1.set_ylabel(r'T$_%s$ in KeV'%(species,))
+        ax3.set_ylabel(r'$a/L_\mathrm{T%s}$'%(species,))
         ax3.set_xlabel(r'$r/a$')
 
         if 'varRL' in QTBdat:
@@ -1500,7 +1491,7 @@ def add_sysTSerr(QTBin, sysTSerr=0.20, nargout=6):
         return QTBout
     return Te, TeL, TeH, ne, neL, neH
 
-def build_TSfitdict(QTBin, set_edge=None, iuse_ts=None, rescale_amin=1.0):
+def build_TSfitdict(QTBin, set_edge=None, iuse_ts=None, rescale_amin=1.0, species='e'):
     if iuse_ts is not None:
         iuse_ts = _np.ones(_np.shape(QTBin['roa']), dtype=bool)
     # end if
@@ -1511,14 +1502,14 @@ def build_TSfitdict(QTBin, set_edge=None, iuse_ts=None, rescale_amin=1.0):
         dictdat['varRH'] =  _np.hstack((QTBin['varRH'].copy(), _np.nanmean(QTBin['varRH'].copy())))
     # end if
     dictdat['roa'] =  QTBin['roa'].copy()  # on the r/a > 1.0 grid
-    dictdat['Te'] =   QTBin["Te"].copy()   # []
-    dictdat['ne'] =  QTBin["ne"].copy()    # [part/m3]
+    dictdat['T%s'%(species,)] =   QTBin["T%s"%(species,)].copy()   # []
+    dictdat['n%s'%(species,)] =  QTBin["n%s"%(species,)].copy()    # [part/m3]
 
-    if "TeL" in dictdat:
-        dictdat['varTL'] = QTBin["TeL"].copy()**2.0
-        dictdat['varTH'] = QTBin["TeH"].copy()**2.0
-        dictdat['varNL'] = QTBin["neL"].copy()**2.0
-        dictdat['varNH'] = QTBin["neH"].copy()**2.0
+    if "T%sL"%(species,) in dictdat:
+        dictdat['varTL'] = QTBin["T%sL"%(species,)].copy()**2.0
+        dictdat['varTH'] = QTBin["T%sH"%(species,)].copy()**2.0
+        dictdat['varNL'] = QTBin["n%sL"%(species,)].copy()**2.0
+        dictdat['varNH'] = QTBin["n%sH"%(species,)].copy()**2.0
     else:
         dictdat['varTL'] = QTBin["varTL"].copy()
         dictdat['varTH'] = QTBin["varTH"].copy()
@@ -1531,18 +1522,18 @@ def build_TSfitdict(QTBin, set_edge=None, iuse_ts=None, rescale_amin=1.0):
         Tedge = set_edge[2]
 
         dictdat['roa'] =  _np.hstack((dictdat['roa'], max(redge,0.1+_np.max(dictdat['roa']))))
-        dictdat['Te'] =  _np.hstack((dictdat['Te'], Tedge)) # Te
-        dictdat['ne'] =  _np.hstack((dictdat['ne'], nedge)) # ne
+        dictdat['T%s'%(species,)] =  _np.hstack((dictdat['T%s'%(species,)], Tedge)) # Te
+        dictdat['n%s'%(species,)] =  _np.hstack((dictdat['n%s'%(species,)], nedge)) # ne
 
-        dictdat['varTL'] = _np.hstack((dictdat['varTL'], _np.nanmean(QTBin["TeL"].copy())**2.0))
-        dictdat['varTH'] = _np.hstack((dictdat['varTH'], _np.nanmean(QTBin["TeH"].copy())**2.0))
-        dictdat['varNL'] = _np.hstack((dictdat['varNL'], _np.nanmean(QTBin["neL"].copy())**2.0))
-        dictdat['varNH'] = _np.hstack((dictdat['varNH'], _np.nanmean(QTBin["neH"].copy())**2.0))
+        dictdat['varTL'] = _np.hstack((dictdat['varTL'], _np.nanmean(QTBin["T%sL"%(species,)].copy())**2.0))
+        dictdat['varTH'] = _np.hstack((dictdat['varTH'], _np.nanmean(QTBin["T%sH"%(species,)].copy())**2.0))
+        dictdat['varNL'] = _np.hstack((dictdat['varNL'], _np.nanmean(QTBin["n%sL"%(species,)].copy())**2.0))
+        dictdat['varNH'] = _np.hstack((dictdat['varNH'], _np.nanmean(QTBin["n%sH"%(species,)].copy())**2.0))
 
-#        dictdat['TeL'] = _np.sqrt(dictdat["varTL"])
-#        dictdat['TeH'] = _np.sqrt(dictdat["varTH"])
-#        dictdat['neL'] = _np.sqrt(dictdat["varNL"])
-#        dictdat['neH'] = _np.sqrt(dictdat["varNH"])
+#        dictdat['T%sL'%(species,)] = _np.sqrt(dictdat["varTL"])
+#        dictdat['T%sH'%(species,)] = _np.sqrt(dictdat["varTH"])
+#        dictdat['n%sL'%(species,)] = _np.sqrt(dictdat["varNL"])
+#        dictdat['n%sH'%(species,)] = _np.sqrt(dictdat["varNH"])
 
         iuse_ts = _np.hstack((iuse_ts,True))
     else:
@@ -1551,7 +1542,7 @@ def build_TSfitdict(QTBin, set_edge=None, iuse_ts=None, rescale_amin=1.0):
     dictdat['roa'] /= rescale_amin # back to the fat grid (most points r/a<1.0)
     dictdat['roan'] = dictdat['roa'].copy()
 
-    dictdat, iuse = clean_fitdict(dictdat, iuse=iuse_ts, rmax=9.0, Tmin=0.5*Tedge, Tmax=9.0)
+    dictdat, iuse = clean_fitdict(dictdat, iuse=iuse_ts, rmax=9.0, Tmin=0.5*Tedge, Tmax=9.0, species=species)
     return dictdat
 
 def concat_Tdat(dictdat, newdat=None):
@@ -1591,15 +1582,17 @@ def concat_Tdat(dictdat, newdat=None):
     return dictdat
 
 def sort_fitdict(dictdat):
+    if 'Ti' in dictdat:     species='i'
+    else:                   species='e'
     isort = _np.argsort(_np.abs(dictdat['roa']).squeeze())
     dictdat['roa'] = _np.abs(dictdat['roa'][isort])
-    dictdat['Te'] = dictdat['Te'][isort]
+    dictdat['T%s'(species,)] = dictdat['T%s'(species,)][isort]
     if 'varTL' in dictdat:
         dictdat['varTL'] = dictdat['varTL'][isort]
         dictdat['varTH'] = dictdat['varTH'][isort]
     else:
-        dictdat['TeL'] = dictdat['TeL'][isort]
-        dictdat['TeH'] = dictdat['TeH'][isort]
+        dictdat['T%sL'(species,)] = dictdat['T%sL'(species,)][isort]
+        dictdat['T%sH'(species,)] = dictdat['T%sH'(species,)][isort]
     # end if
     if 'varRL' in dictdat:
         dictdat['varRL'] = dictdat['varRL'][isort]
@@ -1607,51 +1600,52 @@ def sort_fitdict(dictdat):
     # end if
     return dictdat
 
-def clean_fitdict(dictdat, iuse=None, rmax=9.0, Tmin=0.0, Tmax=9.0):
+def clean_fitdict(dictdat, iuse=None, rmax=9.0, Tmin=0.0, Tmax=9.0, species='e'):
     if iuse is None:
         iuse = _np.ones(_np.shape(dictdat['roa']), dtype=bool)
     # end if
-    iuse = iuse*(~_np.isinf(dictdat['roa']))*(~_np.isnan(dictdat['roa']))*(dictdat['Te']>Tmin)*(_np.abs(dictdat['roa'])<rmax)*(_np.abs(dictdat['Te'])<Tmax)*(dictdat['roa']!=0.0)
+    iuse = iuse*(~_np.isinf(dictdat['roa']))*(~_np.isnan(dictdat['roa']))*(dictdat['T%s'%(species,)]>Tmin
+        )*(_np.abs(dictdat['roa'])<rmax)*(_np.abs(dictdat['T%s'%(species,)])<Tmax)*(dictdat['roa']!=0.0)
     dictdat['roa'] = dictdat['roa'][iuse]
-    dictdat['Te'] = dictdat['Te'][iuse]
-    if "TeL" in dictdat:
-        dictdat['TeL'] = dictdat['TeL'][iuse]
-        dictdat['TeH'] = dictdat['TeH'][iuse]
+    dictdat['T%s'%(species,)] = dictdat['T%s'%(species,)][iuse]
+    if "T%sL"%(species,) in dictdat:
+        dictdat['T%sL'%(species,)] = dictdat['T%sL'%(species,)][iuse]
+        dictdat['T%sH'%(species,)] = dictdat['T%sH'%(species,)][iuse]
 
-#        dictdat['varTL'] = dictdat['TeL']**2.0
-#        dictdat['varTH'] = dictdat['TeH']**2.0
+#        dictdat['varTL'] = dictdat['T%sL'%(species,)]**2.0
+#        dictdat['varTH'] = dictdat['T%sH'%(species,)]**2.0
     else:
         dictdat['varTL'] = dictdat['varTL'][iuse]
         dictdat['varTH'] = dictdat['varTH'][iuse]
 
-#        dictdat['TeL'] = _np.sqrt(dictdat['varTL'])
-#        dictdat['TeH'] = _np.sqrt(dictdat['varTH'])
+#        dictdat['T%sL'%(species,)] = _np.sqrt(dictdat['varTL'])
+#        dictdat['T%sH'%(species,)] = _np.sqrt(dictdat['varTH'])
     # end if
 
     if 'varRL' in dictdat:
         dictdat['varRL'] = dictdat['varRL'][iuse]
         dictdat['varRH'] = dictdat['varRH'][iuse]
     # end if
-    if "ne" in dictdat and dictdat['ne'].shape==iuse.shape:
-        dictdat['ne'] = dictdat['ne'][iuse]
-        if "neL" in dictdat:
-            dictdat['neL'] = dictdat['neL'][iuse]
-            dictdat['neH'] = dictdat['neH'][iuse]
+    if "n%s"%(species,) in dictdat and dictdat['n%s'%(species,)].shape==iuse.shape:
+        dictdat['n%s'%(species,)] = dictdat['n%s'%(species,)][iuse]
+        if "n%sL"%(species,) in dictdat:
+            dictdat['n%sL'%(species,)] = dictdat['n%sL'%(species,)][iuse]
+            dictdat['n%sH'%(species,)] = dictdat['n%sH'%(species,)][iuse]
 
-#            dictdat['varNL'] = dictdat['neL']**2.0
-#            dictdat['varNH'] = dictdat['neH']**2.0
+#            dictdat['varNL'] = dictdat['n%sL'%(species,)]**2.0
+#            dictdat['varNH'] = dictdat['n%sH'%(species,)]**2.0
         else:
             dictdat['varNL'] = dictdat['varNL'][iuse]
             dictdat['varNH'] = dictdat['varNH'][iuse]
 
-#            dictdat['neL'] = _np.sqrt(dictdat['varNL'])
-#            dictdat['neH'] = _np.sqrt(dictdat['varNH'])
+#            dictdat['n%sL'%(species,)] = _np.sqrt(dictdat['varNL'])
+#            dictdat['n%sH'%(species,)] = _np.sqrt(dictdat['varNH'])
         # end if
     # end if
     return dictdat, iuse
 
 def prep_Tdat(rdat, Tdat, Tvar, rlow=None, rhigh=None,
-              edge=None, rescale_amin=1.0):
+              edge=None, rescale_amin=1.0, species='e'):
 
     rdat = _np.abs(rdat.copy())/rescale_amin
     isort = _np.argsort(rdat.squeeze())
@@ -1674,9 +1668,9 @@ def prep_Tdat(rdat, Tdat, Tvar, rlow=None, rhigh=None,
     Tdat = _ut.cylsym_even(Tdat)
     Tvar = _np.sqrt(_ut.cylsym_even(Tvar))
 
-    dictout, iuse = clean_fitdict({"roa":rdat, "Te":Tdat, "varTL":Tvar, "varTH":Tvar}, Tmin=0.5*Tedge)
+    dictout, iuse = clean_fitdict({"roa":rdat, "T%s"%(species,):Tdat, "varTL":Tvar, "varTH":Tvar}, Tmin=0.5*Tedge, species=species)
     rdat = dictout["roa"]
-    Tdat = dictout["Te"]
+    Tdat = dictout["T%s"%(species,)]
     Tvar = dictout["varTL"]
 
     if rlow is not None:
