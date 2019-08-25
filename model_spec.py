@@ -8602,7 +8602,7 @@ class ModelLogArb(ModelClass):
         func = kwargs.pop('func')
         prof = func._model(XX, aa, **kwargs)
         dprofdx = func._deriv(XX, aa, **kwargs)
-        return divide(dprofdx, prof)
+        return divide(dprofdx, prof, out=_np.zeros_like(dprofdx), where=prof!=0)
 
     @staticmethod
     def _partial(XX, aa, **kwargs):
@@ -8618,7 +8618,7 @@ class ModelLogArb(ModelClass):
         gmod = func._partial(XX, aa, **kwargs)
 
         prof = _np.ones((gmod.shape[0],1), dtype=gmod.dtype)*_np.atleast_2d(prof)
-        return divide(gmod, prof)
+        return divide(gmod, prof, out=_np.zeros_like(gmod), where=prof!=0)
 
     @staticmethod
     def _partial_deriv(XX, aa, **kwargs):
@@ -8639,7 +8639,8 @@ class ModelLogArb(ModelClass):
 
         prof = _np.ones((dyda.shape[0],1), dtype=dyda.dtype)*_np.atleast_2d(prof)
         dydx = _np.ones((dyda.shape[0],1), dtype=dyda.dtype)*_np.atleast_2d(dydx)
-        return divide(d2ydxda, prof) - divide( dydx*dyda, power(prof, 2.0) )
+        return divide(d2ydxda, prof, out=_np.zeros_like(d2ydxda), where=prof!=0) \
+             - divide( dydx*dyda, power(prof, 2.0), out=_np.zeros_like(dydx), where=prof!=0)
 
     @staticmethod
     def _deriv2(XX, aa, **kwargs):
@@ -8656,7 +8657,8 @@ class ModelLogArb(ModelClass):
         prof = func._model(XX, aa, **kwargs)
         dydx = func._deriv(XX, aa, **kwargs)
         d2ydx2 = func._deriv2(XX, aa, **kwargs)
-        return divide(d2ydx2, prof) - dydx*dydx/(prof*prof)
+        return divide(d2ydx2, prof, out=_np.zeros_like(d2ydx2), where=prof!=0) \
+            - divide(dydx*dydx, (prof*prof), out=_np.zeros_like(dydx), where=prof!=0)
 
     @staticmethod
     def _partial_deriv2(XX, aa, **kwargs):
@@ -8678,7 +8680,8 @@ class ModelLogArb(ModelClass):
 
         prof = _np.ones((dyda.shape[0],1), dtype=dyda.dtype)*_np.atleast_2d(prof)
         dydx = _np.ones((dyda.shape[0],1), dtype=dyda.dtype)*_np.atleast_2d(dydx)
-        return divide(d2ydxda, prof) - divide( dydx*dyda, power(prof, 2.0) )
+        return divide(d2ydxda, prof, out=_np.zeros_like(d2ydxda), where=prof!=0) \
+            - divide( dydx*dyda, power(prof, 2.0), out=_np.zeros_like(dydx), where=prof!=0)
 
 
     @staticmethod
