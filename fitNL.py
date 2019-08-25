@@ -133,6 +133,9 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     verbose = kwargs.pop('verbose', True) or not kwargs['quiet']
     random_init = kwargs.pop('randinit', False)
 
+    if _np.isnan(y).any() or _np.isnan(ey).any():
+        if verbose: print('Input data includes nans! this is not allowed')
+        raise Exception('input data to fit_mpfit cannot have nan value!')
     if (ey == 0).any():
         if verbose: print('Input error meant for weights includes zeros! this is not allowed')
         raise Exception('input weights (err) to fit_mpfit cannot have 0 value!')
@@ -193,8 +196,44 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
         LB = _np.where(_np.isnan(LB), -_np.inf, LB)
         UB = _np.where(_np.isnan(UB), _np.inf, UB)
     # end if
+    info.lastaf = _np.copy(p0)
+
 
     # ============================================= #
+
+    if _np.isnan(y).any() or _np.isnan(ey).any():
+        if verbose: print('Scaling data results in nans! this is not allowed')
+        raise Exception('Scaling data results in nans! input data to fit_mpfit cannot have nan value!')
+    if (ey == 0).any():
+        if verbose: print('Input error meant for weights includes zeros! this is not allowed')
+        raise Exception('input weights (err) to fit_mpfit cannot have 0 value!')
+#        return None
+
+    # ============================================= #
+
+    def checkp(p):
+        status = 0
+        if _np.isnan(p).any():
+            if verbose: print('NaN in model parameters!')
+            status = -2
+#            raise Exception('Nan in model parameters!')
+        elif _np.isnan(p).all():
+            if verbose: print('All the model parameters are NaNs!')
+            status = -3
+        else:
+            info.lastaf = _np.copy(p)
+        # end if
+
+#        if status<0:
+#            p = _np.copy(info.lastaf)
+#            p += 0.1*p*_np.random.normal(0.0, 1.0)
+##            if _np.atleast_1d(p==0).any():
+##                p[p==0] = 1e-14
+##            # end if
+#            if (p<LB).any():      p[p<LB] = LB[p<LB] + 1e-14        # end if
+#            if (p>UB).any():      p[p>UB] = UB[p>UB] - 1e-14        # end if
+#        # end if
+        return p, status
 
     autoderivative = kwargs.setdefault('autoderivative', 1)
     def mymodel(p, fjac=None, x=None, y=None, err=None, nargout=1):
@@ -204,15 +243,7 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
         # flag.
         # Non-negative status value means MPFIT should continue, negative means
         # stop the calculation.
-        status = 0
-        if _np.isnan(p).any():
-            if verbose: print('NaN in model parameters!')
-            status = -2
-            raise Exception('Nan in model parameters!')
-        elif _np.isnan(p).all():
-            if verbose: print('All the model parameters are NaNs!')
-            status = -3
-        # end if
+        p, status = checkp(p)
 
 #        model, gvec = info.update_minimal(x, p)
         model, gvec, temp = func(x, p, **fkwargs)
@@ -237,8 +268,8 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
             # vertical distance
             weights = err
         # end if
-        weights = _np.where(weights==0, 1.0, weights)
-        residual = (y-model)/weights
+        weights = _np.where(weights==0+_np.isnan(weights), 1.0, weights)
+        residual = _np.divide( y-model, weights, out=y-model, where=model!=0)
 
         if _np.isnan(residual).any():
             if verbose:    print('NaN in residual!')
