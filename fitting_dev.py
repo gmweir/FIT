@@ -99,7 +99,10 @@ def linreg(X, Y, verbose=True, varY=None, varX=None, cov=False, plotit=False):
         Syy += w*y*y
         Sxy += w*x*y
     det = Sxx * Sw - Sx * Sx         # delta
-    a, b = (Sxy * Sw - Sy * Sx)/det, (Sxx * Sy - Sx * Sxy)/det
+#    a, b = (Sxy * Sw - Sy * Sx)/det, (Sxx * Sy - Sx * Sxy)/det
+
+    a = _np.divide(_np.atleast_1d(Sxy * Sw - Sy * Sx), _np.atleast_1d(det), out=_np.atleast_1d(det), where=_np.atleast_1d(det)!=0)
+    b = _np.divide(_np.atleast_1d(Sxx * Sy - Sx * Sxy), _np.atleast_1d(det), out=_np.atleast_1d(det), where=_np.atleast_1d(det)!=0)
 
     meanerror = residual = 0.0
     for x, y, w in zip(X, Y, weights):
@@ -107,9 +110,12 @@ def linreg(X, Y, verbose=True, varY=None, varX=None, cov=False, plotit=False):
 #        residual += (w/Sw)*(y - a * x - b)**2.0
         meanerror += (y - _np.mean(Y))**2.0
         residual += (y - a * x - b)**2.0
-    RR = 1.0 - residual/meanerror
+    RR = 1.0 - _np.divide(_np.atleast_1d(residual), _np.atleast_1d(meanerror),
+                    out=_np.nan*_np.atleast_1d(residual), where=_np.atleast_1d(meanerror)!=0)
     ss = residual / (N-2.0)
-    Var_a, Var_b = ss * Sw / det, ss * Sxx / det
+#    Var_a, Var_b = ss * Sw / det, ss * Sxx / det
+    Var_a = _np.divide(_np.atleast_1d(ss * Sw), _np.atleast_1d(det), out=_np.atleast_1d(det), where=_np.atleast_1d(det)!=0)
+    Var_b = _np.divide(_np.atleast_1d(ss * Sxx), _np.atleast_1d(det), out=_np.atleast_1d(det), where=_np.atleast_1d(det)!=0)
 
     Cov_ab = _np.sqrt(Var_a)*_np.sqrt(Var_b)
     Cov_ab *= RR
