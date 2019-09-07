@@ -196,10 +196,10 @@ class ModelLine(ModelClass):
 
     def __str__(self):
         return "Model: f(x)= ax+b"
-#        return "Model: f(x)= %3.1fx+%3.1f"%(self.af[0], self.af[1])
+#        return "Model: f(x)= %10.6fx+%10.6f"%(self.af[0], self.af[1])
 
     def __repr__(self):
-        return "Line Model(a=%3.1f, b=%3.1f)"%(self.af[0], self.af[1])
+        return "Line Model(a=%10.6f, b=%10.6f)"%(self.af[0], self.af[1])
 
     @staticmethod
     def _model(XX, aa, **kwargs):
@@ -441,12 +441,12 @@ class ModelSines(ModelClass):
     def __str__(self):
         return "Model: f(x)= 0.5*ao " + \
             "".join("+ a%isin(2pif%ix+p%i)"% (ii,ii,ii) for ii in range(1,self.nfreqs+1))
-#        return "Model: f(x)= 0.5*%3.1f "%(self.af[0],) + \
-#            "".join("+ %3.1fsin(2pi*%3.1fx+%3.1f)"% (self.af[1+3*ii], self.af[2+3*ii], self.af[3+3*ii]) for ii in range(self.nfreqs))
+#        return "Model: f(x)= 0.5*%10.6f "%(self.af[0],) + \
+#            "".join("+ %10.6fsin(2pi*%10.6fx+%10.6f)"% (self.af[1+3*ii], self.af[2+3*ii], self.af[3+3*ii]) for ii in range(self.nfreqs))
 
     def __repr__(self):
-        return "Sine Model(ao=%3.1f"%(self.af[0],) + \
-            "".join(", a%i=%3.1f,  f%i=%3.1f, p%i=%3.1f"%(ii+1, self.af[3*ii+1], ii+1, self.af[3*ii+2], ii+1, self.af[3*ii+3]) for ii in range(self.nfreqs)) + \
+        return "Sine Model(ao=%10.6f"%(self.af[0],) + \
+            "".join(", a%i=%10.6f,  f%i=%10.6f, p%i=%10.6f"%(ii+1, self.af[3*ii+1], ii+1, self.af[3*ii+2], ii+1, self.af[3*ii+3]) for ii in range(self.nfreqs)) + \
             ")"
 
     def _shape(self, **kwargs):
@@ -1008,12 +1008,12 @@ class ModelFourier(ModelClass):
     def __str__(self):
         return "Model: f(x)= 0.5*ao " + \
             "".join("+ a%icos(2pi(%i*f)x)+b%isin(2pi(%i*f)x)"%(ii,ii,ii,ii) for ii in range(1,self.nfreqs+1))
-#        return "Model: f(x)= 0.5*%3.1f "%(self.af[1],) + \
-#            "".join("+ %3.1fcos(2pi%3.1fx)+%3.1fsin(2pi%3.1fx)"% (self.af[2+3*ii], (ii+1)*self.af[0], self.af[3+3*ii], (ii+1)*self.af[0]) for ii in range(self.nfreqs))
+#        return "Model: f(x)= 0.5*%10.6f "%(self.af[1],) + \
+#            "".join("+ %10.6fcos(2pi%10.6fx)+%10.6fsin(2pi%10.6fx)"% (self.af[2+3*ii], (ii+1)*self.af[0], self.af[3+3*ii], (ii+1)*self.af[0]) for ii in range(self.nfreqs))
 
     def __repr__(self):
-        return "Fourier Model(f=%3.1f, ao=%3.1f, "%(self.af[0],self.af[1]) + \
-            "".join("a%i=%3.1f, b%i=%3.1f"%(ii+1, self.af[2+ii], ii+1, self.af[3+ii]) for ii in range(self.nfreqs)) + \
+        return "Fourier Model(f=%10.6f, ao=%10.6f, "%(self.af[0],self.af[1]) + \
+            "".join("a%i=%10.6f, b%i=%10.6f"%(ii+1, self.af[2+ii], ii+1, self.af[3+ii]) for ii in range(self.nfreqs)) + \
             ")"
 
     def _shape(self, **kwargs):
@@ -1531,13 +1531,13 @@ class ModelPoly(ModelClass):
             "".join("a%ix^%i +"%(ii, ii) for ii in range(self.npoly,0,-1)) +\
             " a%i"%(0,)
 #        return "Model: f(x)= " + \
-#            "".join("%3.1fx^%i +"%(self.af[ii],self.npoly-ii) for ii in range(self.npoly-1)) +\
-#            " %3.1f"%(self.af[-1])
+#            "".join("%10.6fx^%i +"%(self.af[ii],self.npoly-ii) for ii in range(self.npoly-1)) +\
+#            " %10.6f"%(self.af[-1])
 
     def __repr__(self):
         return "Polynomial Model(" + \
-            "".join("a%i=%3.1f, "%(self.npoly-ii,self.af[ii]) for ii in range(self.npoly)) + \
-            "a%i=%3.1f)"%(0, self.af[-1],)
+            "".join("a%i=%10.6f, "%(self.npoly-ii,self.af[ii]) for ii in range(self.npoly)) + \
+            "a%i=%10.6f)"%(0, self.af[-1],)
 
     @staticmethod
     def _model(XX, aa, **kwargs):
@@ -2324,13 +2324,13 @@ class ModelProdExp(ModelClass):
             "".join("a%ix^%i +"%(self.npoly-ii,self.npoly-ii) for ii in range(self.npoly)) +\
             " a%i)"%(0)
 #        return "Model: f(x)= exp(" + \
-#            "".join("%3.1fx^%i +"%(self.af[ii], self.npoly-ii) for ii in range(self.npoly-1)) +\
-#            " %3.1f)"%(self.af[-1])
+#            "".join("%10.6fx^%i +"%(self.af[ii], self.npoly-ii) for ii in range(self.npoly-1)) +\
+#            " %10.6f)"%(self.af[-1])
 
     def __repr__(self):
         return "Product of exponential Model(" + \
-            "".join("a%i=%3.1f, "%(self.npoly-ii,self.af[ii]) for ii in range(self.npoly)) + \
-            "ao=%3.1f)"%(self.af[-1],)
+            "".join("a%i=%10.6f, "%(self.npoly-ii,self.af[ii]) for ii in range(self.npoly)) + \
+            "ao=%10.6f)"%(self.af[-1],)
 
     @staticmethod
     def _model(XX, aa, **kwargs):
@@ -2591,18 +2591,18 @@ class ModelEvenPoly(ModelClass):
 #            "".join("a%ix^%i +"%(ii,ii)for ii in range(2*self.npoly,0,-2)) +\
 #            " a%i"%(0,)
 #        return "Model: f(x)= " + \
-#            "".join("%3.1fx^%i +"%(self.af[ii],2*(self.npoly-ii)) for ii in range(self.npoly-1)) +\
-#            " %3.1f"%(self.af[-1])
+#            "".join("%10.6fx^%i +"%(self.af[ii],2*(self.npoly-ii)) for ii in range(self.npoly-1)) +\
+#            " %10.6f"%(self.af[-1])
 
     def __repr__(self):
         numfit = len(self.af)
         return "Even Polynomial Model(" + \
-            "".join("a%i=%3.1f, "%(self.npoly-2*ii, self.af[ii]) for ii in range(numfit-1)) + \
-            "a%i=%3.1f)"%(0, self.af[-1],)
-#            "".join("a%i=%3.1f, "%(int(2*(self.npoly-ii)), self.af[ii]) for ii in range(self.npoly)) + \
-#            "a%i=%3.1f)"%(0, self.af[-1],)
-#            "".join("a%i=%3.1f, "%(int(2*(self.npoly-ii)), self.af[ii]) for ii in range(self.npoly)) + \
-#            "a%i=%3.1f)"%(0, self.af[-1],)
+            "".join("a%i=%10.6f, "%(self.npoly-2*ii, self.af[ii]) for ii in range(numfit-1)) + \
+            "a%i=%10.6f)"%(0, self.af[-1],)
+#            "".join("a%i=%10.6f, "%(int(2*(self.npoly-ii)), self.af[ii]) for ii in range(self.npoly)) + \
+#            "a%i=%10.6f)"%(0, self.af[-1],)
+#            "".join("a%i=%10.6f, "%(int(2*(self.npoly-ii)), self.af[ii]) for ii in range(self.npoly)) + \
+#            "a%i=%10.6f)"%(0, self.af[-1],)
 
     @staticmethod
     def _model(XX, aa, **kwargs):
@@ -2875,14 +2875,14 @@ class ModelPowerLaw(ModelClass):
         return "Model: f(x) = a%iexp(a%ix)x^("%(self.npoly+1, self.npoly+2) + \
             "".join("a%ix^%i +"%(ii,ii) for ii in range(self.npoly,1,-1)) +\
             " a%i)"%(0)
-#        return "Model: f(x)= %3.1f exp(%3.1fx)x^("%(self.af[-1], self.af[-2]) + \
-#            "".join("%3.1fx^%i +"%(self.af[ii],(self.npoly-ii)) for ii in range(self.npoly-1)) +\
-#            " %3.1f)"%(self.af[-1])
+#        return "Model: f(x)= %10.6f exp(%10.6fx)x^("%(self.af[-1], self.af[-2]) + \
+#            "".join("%10.6fx^%i +"%(self.af[ii],(self.npoly-ii)) for ii in range(self.npoly-1)) +\
+#            " %10.6f)"%(self.af[-1])
 
     def __repr__(self):
         return "Cut-off Power Law Model(" + \
-            "".join("a%i=%3.1f, "%(self.npoly-ii,self.af[ii]) for ii in range(self.npoly)) + \
-            "a%i=%3.1f, a%i=%3.1f)"%(self.npoly+1,self.af[-2],self.npoly+2, self.af[-1])
+            "".join("a%i=%10.6f, "%(self.npoly-ii,self.af[ii]) for ii in range(self.npoly)) + \
+            "a%i=%10.6f, a%i=%10.6f)"%(self.npoly+1,self.af[-2],self.npoly+2, self.af[-1])
 
 #    def leftboundary(self, XX, aa, **kwargs):
 #        """
@@ -3275,10 +3275,10 @@ class ModelParabolic(ModelClass):
 
     def __str__(self):
         return "Model: f(x)= a(1-x^2)"
-#        return "Model: f(x)= %3.1f (1-x^2)"%(self.af[0],)
+#        return "Model: f(x)= %10.6f (1-x^2)"%(self.af[0],)
 
     def __repr__(self):
-        return "Parabolic Model(a=%3.1f)"%(self.af[0],)
+        return "Parabolic Model(a=%10.6f)"%(self.af[0],)
 
     @staticmethod
     def _model(XX, aa, **kwargs):
@@ -3417,10 +3417,10 @@ class ModelExp(ModelClass):
 
     def __str__(self):
         return "Model: f(x)= a*exp(b*x^c)"
-#        return "Model: f(x)= %3.1f exp(%3.1fx^%3.1f)"%(self.af[0],self.af[1],self.af[2])
+#        return "Model: f(x)= %10.6f exp(%10.6fx^%10.6f)"%(self.af[0],self.af[1],self.af[2])
 
     def __repr__(self):
-        return "Exponential Model(a=%3.1f,b=%3.1f,c=%3.1f)"%(self.af[0],self.af[1],self.af[2])
+        return "Exponential Model(a=%10.6f,b=%10.6f,c=%10.6f)"%(self.af[0],self.af[1],self.af[2])
 
     @staticmethod
     def powerc(XX, c):
@@ -3767,10 +3767,10 @@ class ModelExponential(ModelClass):
 
     def __str__(self):
         return "Model: f(x)= a*exp(b*x^c)+ a*x^d"
-#        return "Model: f(x)= %3.1f exp(%3.1fx^%3.1f)"%(self.af[0],self.af[1],self.af[2])
+#        return "Model: f(x)= %10.6f exp(%10.6fx^%10.6f)"%(self.af[0],self.af[1],self.af[2])
 
     def __repr__(self):
-        return "Exponential Model(a=%3.1f,b=%3.1f,c=%3.1f,d=%3.1f)"%(self.af[0],self.af[1],self.af[2],self.af[3])
+        return "Exponential Model(a=%10.6f,b=%10.6f,c=%10.6f,d=%10.6f)"%(self.af[0],self.af[1],self.af[2],self.af[3])
 
 #    @staticmethod
 #    def absX(XX):
@@ -4147,10 +4147,10 @@ class ModelGaussian(ModelClass):
 
     def __str__(self):
         return "Model: f(x)=  Aexp(-(x-xo)^2/(2*sigma^2))"
-#        return "Model: f(x)= %3.1f exp(-(x-%3.1f)^2/(2*%3.1f^2))"%(self.af[0],self.af[1],self.af[2])
+#        return "Model: f(x)= %10.6f exp(-(x-%10.6f)^2/(2*%10.6f^2))"%(self.af[0],self.af[1],self.af[2])
 
     def __repr__(self):
-        return "Gaussian Model(A=%3.1f,xo=%3.1f,sigma=%3.1f)"%(self.af[0],self.af[1],self.af[2])
+        return "Gaussian Model(A=%10.6f,xo=%10.6f,sigma=%10.6f)"%(self.af[0],self.af[1],self.af[2])
 
 
     @staticmethod
@@ -4439,10 +4439,10 @@ class ModelOffsetGaussian(ModelClass):
 
     def __str__(self):
         return "Model: f(x)= Ao + Aexp(-(x-xo)^2/(2*sigma^2))"
-#        return "Model: f(x)= %3.1f + %3.1f exp(-(x-%3.1f)^2/(2*%3.1f^2))"%(self.af[0],self.af[1],self.af[2], self.af[3])
+#        return "Model: f(x)= %10.6f + %10.6f exp(-(x-%10.6f)^2/(2*%10.6f^2))"%(self.af[0],self.af[1],self.af[2], self.af[3])
 
     def __repr__(self):
-        return "Offset Gaussian Model(A0=%3.1f, A=%3.1f,xo=%3.1f,sigma=%3.1f)"%(self.af[0],self.af[1],self.af[2],self.af[3])
+        return "Offset Gaussian Model(A0=%10.6f, A=%10.6f,xo=%10.6f,sigma=%10.6f)"%(self.af[0],self.af[1],self.af[2],self.af[3])
 
     @staticmethod
     def _model(XX, aa, **kwargs):
@@ -4589,10 +4589,10 @@ class ModelOffsetNormal(ModelClass):
 
     def __str__(self):
         return "Model: f(x)= Ao + Aexp(-(x-xo)^2/(2*sigma^2))/sqrt(2*pi*sigma^2)"
-#        return "Model: f(x)= %3.1f + %3.1f exp(-(x-%3.1f)^2/(2*%3.1f^2))/\sqrt(2*\pi*%3.1f^2)"%(self.af[0],self.af[1],self.af[2], self.af[3], self.af[3])
+#        return "Model: f(x)= %10.6f + %10.6f exp(-(x-%10.6f)^2/(2*%10.6f^2))/\sqrt(2*\pi*%10.6f^2)"%(self.af[0],self.af[1],self.af[2], self.af[3], self.af[3])
 
     def __repr__(self):
-        return "Offset Normal Model(A0=%3.1f, A=%3.1f, xo=%3.1f, sigma=%3.1f)"%(self.af[0],self.af[1],self.af[2],self.af[3])
+        return "Offset Normal Model(A0=%10.6f, A=%10.6f, xo=%10.6f, sigma=%10.6f)"%(self.af[0],self.af[1],self.af[2],self.af[3])
 
     @staticmethod
     def _model(XX, aa, **kwargs):
@@ -4776,10 +4776,10 @@ class ModelNormal(ModelClass):
 
     def __str__(self):
         return "Model: f(x)= Aexp(-(x-xo)^2/(2*sigma^2))/sqrt(2*pi*sigma^2)"
-#        return "Model: f(x)= %3.1f exp(-(x-%3.1f)^2/(2*%3.1f^2))/\sqrt(2*\pi*%3.1f^2)"%(self.af[0],self.af[1],self.af[2], self.af[2])
+#        return "Model: f(x)= %10.6f exp(-(x-%10.6f)^2/(2*%10.6f^2))/\sqrt(2*\pi*%10.6f^2)"%(self.af[0],self.af[1],self.af[2], self.af[2])
 
     def __repr__(self):
-        return "Normal Model(A=%3.1f,xo=%3.1f,sigma=%3.1f)"%(self.af[0],self.af[1],self.af[2])
+        return "Normal Model(A=%10.6f,xo=%10.6f,sigma=%10.6f)"%(self.af[0],self.af[1],self.af[2])
 
     @staticmethod
     def _model(XX, aa, **kwargs):
@@ -5082,10 +5082,10 @@ class ModelLogGaussian(ModelClass):
 
     def __str__(self):
         return "Model: f(x)= 10log10(Aexp(-(x-xo)^2/(2*sigma^2)))"
-#        return "Model: f(x)= 10log10(%3.1f exp(-(x-%3.1f)^2/(2*%3.1f^2)))"%(self.af[0],self.af[1],self.af[2])
+#        return "Model: f(x)= 10log10(%10.6f exp(-(x-%10.6f)^2/(2*%10.6f^2)))"%(self.af[0],self.af[1],self.af[2])
 
     def __repr__(self):
-        return "Log-Gaussian Model(A=%3.1f,xo=%3.1f,sigma=%3.1f)"%(self.af[0],self.af[1],self.af[2])
+        return "Log-Gaussian Model(A=%10.6f,xo=%10.6f,sigma=%10.6f)"%(self.af[0],self.af[1],self.af[2])
 
     @staticmethod
     def _model(XX, aa, **kwargs):
@@ -5368,10 +5368,10 @@ class ModelLorentzian(ModelClass):
 
     def __str__(self):
         return "Model: f(x)= 0.5*A*sigma / ( (x-xo)**2.0 + sigma^2.0/4 ) / pi"
-#        return "Model: f(x)= %3.1f*%3.1f/(2*pi)/((x-%3.1f)^+%3.1f^/4)"%(self.af[0],self.af[2],self.af[1],self.af[2])
+#        return "Model: f(x)= %10.6f*%10.6f/(2*pi)/((x-%10.6f)^+%10.6f^/4)"%(self.af[0],self.af[2],self.af[1],self.af[2])
 
     def __repr__(self):
-        return "Lorentzian Model(A=%3.1f,xo=%3.1f,sigma=%3.1f)"%(self.af[0],self.af[1],self.af[2])
+        return "Lorentzian Model(A=%10.6f,xo=%10.6f,sigma=%10.6f)"%(self.af[0],self.af[1],self.af[2])
 
     @staticmethod
     def _model(XX, aa, **kwargs):
@@ -5697,11 +5697,11 @@ class ModelPseudoVoigt(ModelClass):
     def __str__(self):
         return "Model: f(x)= eta*0.5*Al*sl / ( (x-xol)^2.0 + sl^2.0/4 ) / pi" \
                 + " + (1-eta)Ag exp(-(x-xog)^2/(2*sg^2))/\sqrt(2*\pi*sg^2)"
-#        return "Model: f(x)= %3.1f*(%3.1f*%3.1f/(2*pi)/((x-%3.1f)^+%3.1f^/4))"%(self.af[0],self.af[1],self.af[3],self.af[2],self.af[3]) \
-#                + "(1-%3.1f)%3.1f exp(-(x-%3.1f)^2/(2*%3.1f^2))/\sqrt(2*\pi*%3.1f^2)"%(self.af[0],self.af[4],self.af[5], self.af[6], self.af[6])
+#        return "Model: f(x)= %10.6f*(%10.6f*%10.6f/(2*pi)/((x-%10.6f)^+%10.6f^/4))"%(self.af[0],self.af[1],self.af[3],self.af[2],self.af[3]) \
+#                + "(1-%10.6f)%10.6f exp(-(x-%10.6f)^2/(2*%10.6f^2))/\sqrt(2*\pi*%10.6f^2)"%(self.af[0],self.af[4],self.af[5], self.af[6], self.af[6])
 
     def __repr__(self):
-        return "Pseudo-Voigt Model(\eta=%3.1f, Al=%3.1f,xol=%3.1f,sl=%3.1f, Ag=%3.1f,xog=%3.1f,sg=%3.1f)"%(self.af[0],self.af[1],self.af[2],self.af[3], self.af[4],self.af[5], self.af[6])
+        return "Pseudo-Voigt Model(\eta=%10.6f, Al=%10.6f,xol=%10.6f,sl=%10.6f, Ag=%10.6f,xog=%10.6f,sg=%10.6f)"%(self.af[0],self.af[1],self.af[2],self.af[3], self.af[4],self.af[5], self.af[6])
 
 
     @staticmethod
@@ -5862,10 +5862,10 @@ class ModelLogLorentzian(ModelClass):
 
     def __str__(self):
         return "Model: f(x)= 10log10( 0.5*A*sigma / ( (x-xo)**2.0 + sigma^2.0/4 ) / pi )"
-#        return "Model: f(x)= 10*log10(%3.1f*%3.1f/(2*pi)/((x-%3.1f)^+%3.1f^/4))"%(self.af[0],self.af[2],self.af[1],self.af[2])
+#        return "Model: f(x)= 10*log10(%10.6f*%10.6f/(2*pi)/((x-%10.6f)^+%10.6f^/4))"%(self.af[0],self.af[2],self.af[1],self.af[2])
 
     def __repr__(self):
-        return "Log-Lorentzian Model(A=%3.1f,xo=%3.1f,sigma=%3.1f)"%(self.af[0],self.af[1],self.af[2])
+        return "Log-Lorentzian Model(A=%10.6f,xo=%10.6f,sigma=%10.6f)"%(self.af[0],self.af[1],self.af[2])
 
 
     @staticmethod
@@ -6744,10 +6744,10 @@ class _ModelTwoPower(ModelClass):
 
     def __str__(self):
         return "Model: f(x) = a*(1.0 - x^c)^d"
-#        return "Model: f(x)= (1-x^%3.1f)^%3.1f"%(self.af[0], self.af[1])
+#        return "Model: f(x)= (1-x^%10.6f)^%10.6f"%(self.af[0], self.af[1])
 
     def __repr__(self):
-        return "Two-power Model(c=%3.1f, d=%3.1f)"%(self.af[0], self.af[1])
+        return "Two-power Model(c=%10.6f, d=%10.6f)"%(self.af[0], self.af[1])
 
     @staticmethod
     def _model_base(XX, aa):
@@ -7038,10 +7038,10 @@ class ModelTwoPower(ModelClass):
 
     def __str__(self):
         return "Model: f(x) = a*( (1-b)*(1.0 - x^c)^d + b )"
-#        return "Model: f(x)= (1-%3.1f)(1-x^%3.1f)^%3.1f+%3.1f"%(self.af[0], self.af[1], self.af[2], self.af[0])
+#        return "Model: f(x)= (1-%10.6f)(1-x^%10.6f)^%10.6f+%10.6f"%(self.af[0], self.af[1], self.af[2], self.af[0])
 
     def __repr__(self):
-        return "Two-power Model(b=%3.1f, c=%3.1f, d=%3.1f)"%(self.af[0], self.af[1], self.af[2])
+        return "Two-power Model(b=%10.6f, c=%10.6f, d=%10.6f)"%(self.af[0], self.af[1], self.af[2])
 
     @staticmethod
     def _model(XX, aa, **kwargs):
@@ -7289,10 +7289,10 @@ class ModelExpEdge(ModelClass):
 
     def __str__(self):
         return "Model: f(x) = h*(1-exp(-x^2/w^2))"
-#        return "Model: f(x)= %3.1f(1-exp(-x^2/%3.1f^2))"%(self.af[0], self.af[1])
+#        return "Model: f(x)= %10.6f(1-exp(-x^2/%10.6f^2))"%(self.af[0], self.af[1])
 
     def __repr__(self):
-        return "Exponential Hole Model(h=%3.1f, w=%3.1f)"%(self.af[0], self.af[1])
+        return "Exponential Hole Model(h=%10.6f, w=%10.6f)"%(self.af[0], self.af[1])
 
 
     @staticmethod
@@ -7667,11 +7667,11 @@ class ModelQuasiParabolic(ModelClass):
 
     def __str__(self):
         return "Model: f(x) = a*( e-h + (1-e+h)*(1.0-x^c)^d + h*(1-exp(-x^2/w^2)))"
-#        return "Model: f(x)= %3.1f( %3.1f - %3.1f + (1 - %3.1f + %3.1f)(1-x^%3.1f)^%3.1f + %3.1f(1-exp(-x^2/%3.1f^2)) )"%(
+#        return "Model: f(x)= %10.6f( %10.6f - %10.6f + (1 - %10.6f + %10.6f)(1-x^%10.6f)^%10.6f + %10.6f(1-exp(-x^2/%10.6f^2)) )"%(
 #            self.af[0], self.af[1], self.af[4], self.af[1], self.af[4], self.af[2], self.af[3], self.af[4], self.af[5])
 
     def __repr__(self):
-        return "Quasi-parabolic Model(a=%3.1f, e=%3.1f, c=%3.1f, d=%3.1f, h=%3.1f, w=%3.1f)"%(self.af[0], self.af[1], self.af[2], self.af[3], self.af[4], self.af[5])
+        return "Quasi-parabolic Model(a=%10.6f, e=%10.6f, c=%10.6f, d=%10.6f, h=%10.6f, w=%10.6f)"%(self.af[0], self.af[1], self.af[2], self.af[3], self.af[4], self.af[5])
 
     @staticmethod
     def _model(XX, aa, **kwargs):
@@ -8026,10 +8026,10 @@ class ModelFlattop(ModelClass):
 
     def __str__(self):
         return "Model: f(x)= a/(1+(x/b)^c)"
-#        return "Model: f(x)= %3.1f/(1+(x/%3.1f)^%3.1f)"%(self.af[0], self.af[1], self.af[2])
+#        return "Model: f(x)= %10.6f/(1+(x/%10.6f)^%10.6f)"%(self.af[0], self.af[1], self.af[2])
 
     def __repr__(self):
-        return "Flattop Model(a=%3.1f, b=%3.1f, c=%3.1f)"%(self.af[0], self.af[1], self.af[2])
+        return "Flattop Model(a=%10.6f, b=%10.6f, c=%10.6f)"%(self.af[0], self.af[1], self.af[2])
 
     @staticmethod
     def _model(XX, aa, **kwargs):
@@ -8333,10 +8333,10 @@ class ModelSlopetop(ModelClass):
 
     def __str__(self):
         return "Model: f(x)= a(1-hx/b)/(1+(x/b)^c)"
-#        return "Model: f(x)= %3.1f(1-%3.1fx/%3.1f)/(1+(x/%3.1f)^%3.1f)"%(self.af[0], self.af[3], self.af[1], self.af[1], self.af[2])
+#        return "Model: f(x)= %10.6f(1-%10.6fx/%10.6f)/(1+(x/%10.6f)^%10.6f)"%(self.af[0], self.af[3], self.af[1], self.af[1], self.af[2])
 
     def __repr__(self):
-        return "Slopetop Model(a=%3.1f, b=%3.1f, c=%3.1f, h=%3.1f)"%(self.af[0], self.af[1], self.af[2], self.af[3])
+        return "Slopetop Model(a=%10.6f, b=%10.6f, c=%10.6f, h=%10.6f)"%(self.af[0], self.af[1], self.af[2], self.af[3])
 
     @staticmethod
     def _model(XX, aa, **kwargs):
