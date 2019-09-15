@@ -80,13 +80,15 @@ def linreg(X, Y, verbose=True, varY=None, varX=None, cov=False, plotit=False):
 
     if varX is not None:
         a, b, _, _ = linreg(X, Y, varY=varY)
-        varY += a*varX
+        varY += a**2.0*varX
+#        varY += a*varX
     # endif
 
     if varY is None:
         weights = _np.ones_like(Y)
     else:
-        weights = 1.0/varY
+        weights = 1.0/varY    # unscaled covariance
+#        weights = 1.0/_np.sqrt(varY)   # scaled covariance
 #        weights /= _np.sum(1.0/varY)   # normalized
     # endif
 
@@ -163,6 +165,63 @@ def linreg(X, Y, verbose=True, varY=None, varX=None, cov=False, plotit=False):
         return a, b, Var_a, Var_b
     # end if
 # end def linreg
+
+def linreg_bs(X, Y, verbose=True, varY=None, varX=None, cov=False, plotit=False, nmonti=100):
+
+    af = _np.zeros((nmonti, 2), dtype=_np.float)
+    acov = _np.zeros((nmonti, 2, 2), dtype=_np.float)
+
+    for ii in range(nmonti):
+        _xx = _np.copy(X)
+        _yy = _np.copy(Y)
+        if varX is not None:
+            _xx += _np.sqrt(varX)*_np.random.normal(0.0, 1.0, len(X))
+        if varY is not None:
+            _yy += _np.sqrt(varY)*_np.random.normal(0.0, 1.0, len(X))
+        _vx = _np.abs(_xx-X)**2.0
+        _vy = _np.abs(_yy-Y)**2.0
+
+
+        _af, _acov = linreg(_xx, _yy, verbose=verbose, varY=_vy, varX=_vx, cov=True, plotit=False)
+
+        af[ii,:], acov[ii,:] = _af.squeeze(), _acov.squeeze()
+    # end for
+    acov = _np.cov(af, rowvar=False)
+    vaf = _np.var(af, axis=0)
+    af = _np.mean(af, axis=0)
+
+    Var_a = acov[0,0]
+    Var_b = acov[1,1]
+    Cov_ab = acov[0,1]
+    if plotit:
+        xo = _np.linspace(_np.min(X)-_np.abs(0.05*_np.min(X)), _np.max(X)+_np.abs(0.05*_np.min(X)))
+
+        _plt.figure()
+        if varX is not None:
+            _plt.errorbar(X.flatten(), Y.flatten(),
+                          xerr=_np.sqrt(varX.flatten()),
+                          yerr=_np.sqrt(varY.flatten()), fmt='bo' )
+        elif varY is not None:
+            _plt.errorbar(X.flatten(), Y.flatten(),
+                          yerr=_np.sqrt(varY.flatten()), fmt='bo' )
+        else:
+            _plt.plot(X.flatten(), Y.flatten(), 'bo')
+        # endif
+        yo = af[0]*xo+af[1]
+        vyo = Var_a*(xo)**2.0 + Var_b*(1.0)**2.0
+#        vyo += 2.0*Cov_ab
+        _plt.plot(xo, yo, 'r-')
+        _plt.plot(xo, yo+_np.sqrt(vyo), 'r--')
+        _plt.plot(xo, yo-_np.sqrt(vyo), 'r--')
+        _plt.title('Linear regression')
+    # endif
+
+    if cov:
+        return af, acov
+    else:
+        return af[0], af[1], Var_a, Var_b
+    # end if
+# end def linreg_bs
 
 # ======================================================================== #
 
@@ -1764,6 +1823,9 @@ def test_linreg():
     a, b, Var_a, Var_b = linreg(x, y, verbose=True, varY=vary, varX=None, cov=False, plotit=True)
     print(a-af[0], b-af[1] )
 
+    a, b, Var_a, Var_b = linreg_bs(x, y, verbose=True, varY=vary, varX=None, cov=False, plotit=True)
+    print(a-af[0], b-af[1] )
+
 def test_derivatives():
 
     x, y, vary = test_dat(multichannel=True)
@@ -1920,46 +1982,47 @@ def test_derivatives():
 
 
 if __name__=="__main__":
-    try:
-        from FIT.model_spec import model_qparab
-    except:
-        from .model_spec import model_qparab
-    # end try
-    for jj in range(3):
-        info = model_qparab(XX=None)
-        af = info.af
 
-        aN = _np.asarray([af[ii]+0.50*af[ii]*_np.random.normal(0.0, 1.0, 1) for ii in range(len(af))],
-                         dtype=_np.float64)
-        aN[0] = _np.random.uniform(0.1, 1.2, 1)
-        aN = aN.flatten()
-        QTBdat = {}
-        QTBdat['roa'] = _np.linspace(0.05, 1.05, num=10)
-        QTBdat['ne'], _, _ = model_qparab(QTBdat['roa'], aN)
-
-        QTBdat['ne'] *= 1e20
-        QTBdat['varNL'] = (0.1*QTBdat['ne'])**2.0
-        QTBdat['varNH'] = (0.1*QTBdat['ne'])**2.0
-
-#        aT = _np.asarray([4.00, 0.07, 5.0, 2.0, 0.04, 0.50], dtype=_np.float64)
-        aT = _np.asarray([af[ii]+0.50*af[ii]*_np.random.normal(0.0, 1.0, 1) for ii in range(len(af))],
-                         dtype=_np.float64)
-        aT[0] = _np.random.uniform(1.0, 9.0, 1)
-#        aT = _np.asarray([aT[ii]+0.05*aT[ii]*_np.random.normal(0.0, 1.0, 1) for ii in range(len(aT))],
+#    try:
+#        from FIT.model_spec import model_qparab
+#    except:
+#        from .model_spec import model_qparab
+#    # end try
+#    for jj in range(3):
+#        info = model_qparab(XX=None)
+#        af = info.af
+#
+#        aN = _np.asarray([af[ii]+0.50*af[ii]*_np.random.normal(0.0, 1.0, 1) for ii in range(len(af))],
 #                         dtype=_np.float64)
-        aT = aT.flatten()
-        QTBdat['Te'], _, _ = model_qparab(QTBdat['roa'], aT)
-        QTBdat['varTL'] = (0.1*QTBdat['Te'])**2.0
-        QTBdat['varTH'] = (0.1*QTBdat['Te'])**2.0
+#        aN[0] = _np.random.uniform(0.1, 1.2, 1)
+#        aN = aN.flatten()
+#        QTBdat = {}
+#        QTBdat['roa'] = _np.linspace(0.05, 1.05, num=10)
+#        QTBdat['ne'], _, _ = model_qparab(QTBdat['roa'], aN)
+#
+#        QTBdat['ne'] *= 1e20
+#        QTBdat['varNL'] = (0.1*QTBdat['ne'])**2.0
+#        QTBdat['varNH'] = (0.1*QTBdat['ne'])**2.0
+#
+##        aT = _np.asarray([4.00, 0.07, 5.0, 2.0, 0.04, 0.50], dtype=_np.float64)
+#        aT = _np.asarray([af[ii]+0.50*af[ii]*_np.random.normal(0.0, 1.0, 1) for ii in range(len(af))],
+#                         dtype=_np.float64)
+#        aT[0] = _np.random.uniform(1.0, 9.0, 1)
+##        aT = _np.asarray([aT[ii]+0.05*aT[ii]*_np.random.normal(0.0, 1.0, 1) for ii in range(len(aT))],
+##                         dtype=_np.float64)
+#        aT = aT.flatten()
+#        QTBdat['Te'], _, _ = model_qparab(QTBdat['roa'], aT)
+#        QTBdat['varTL'] = (0.1*QTBdat['Te'])**2.0
+#        QTBdat['varTH'] = (0.1*QTBdat['Te'])**2.0
+#
+#        nout = fit_TSneprofile(QTBdat, _np.linspace(0, 1.05, num=51), plotit=True,
+#                               agradrho=1.20, returnaf=False, bootstrappit=False)
+#
+#        Tout = fit_TSteprofile(QTBdat, _np.linspace(0, 1.05, num=51), plotit=True,
+#                               agradrho=1.20, returnaf=False, bootstrappit=False)
+#    # end if
 
-        nout = fit_TSneprofile(QTBdat, _np.linspace(0, 1.05, num=51), plotit=True,
-                               agradrho=1.20, returnaf=False, bootstrappit=False)
-
-        Tout = fit_TSteprofile(QTBdat, _np.linspace(0, 1.05, num=51), plotit=True,
-                               agradrho=1.20, returnaf=False, bootstrappit=False)
-    # end if
-
-#    test_linreg()
+    test_linreg()
 #    test_derivatives()
 
 #    x = _np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10 ,11, 12, 13, 14, 15], dtype=float)
