@@ -9663,8 +9663,9 @@ if __name__ == '__main__':
 #            ModelLogGaussian, ModelLorentzian, ModelPseudoVoigt, ModelDoppler,
 #            ModelLogDoppler, ModelLogLorentzian, ModelQuasiParabolic, ModelPowerLaw,
 #            ModelExponential, ModelExp, ModelFlattop, ModelSlopetop]
-    funcs = [ModelPieceWise]
-    funcs = [ModelLine, ModelPoly]
+#    funcs = [ModelPieceWise]
+#    funcs = [ModelLine, ModelPoly]
+    funcs = [ModelEvenPoly]
     for func in funcs:
         tmp = func(None)
         tmp.af = tmp._af
@@ -9674,7 +9675,7 @@ if __name__ == '__main__':
 #    XX = _np.linspace(1e-3, 0.99, num=61)
 #    XX = _np.linspace(1e-3, 0.99, num=100)
 
-    mod = ModelPieceWise().test_numerics(num=int(20), start=0.1, stop=2.0, Model=ModelLine, af=_np.asarray([[3, 5],[2, 3]]))
+#    mod = ModelPieceWise().test_numerics(num=int(20), start=0.1, stop=2.0, Model=ModelLine, af=_np.asarray([[3, 5],[2, 3]]))
 
     # Numerical testing for errors in models
     # Analytic testing for errors in forward/reverse scalings
