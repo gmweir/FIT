@@ -37,6 +37,9 @@ __metaclass__ = type
 # ======================================================================== #
 
 
+class NaNinResidual(Exception):
+    pass
+
 def gen_random_init_conds(func, **fkwargs):
 #    af0 = fkwargs.pop('af0', None)
 #    varaf0 = fkwargs.pop('varaf0', None)
@@ -274,9 +277,7 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
         if _np.isnan(residual).any():
             if verbose:    print('NaN in residual!')
             status = -4
-
-#        if _np.isnan(residual).any():
-#            raise Exception('Nan detected in chi2. Check model parameters and bounds \n %s'%(str(residual),))
+            raise NaNinResidual('Nan detected in chi2. Check model parameters and bounds \n %s'%(str(residual),))
 
         if autoderivative == 0:
             fjac = gvec.copy().T   # use analytic jacobian  # transpose is from weird reshape in mpfit
@@ -317,21 +318,33 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     # Call mpfit
 #    kwargs['nprint'] = kwargs.get('nprint',10)
     mpwargs = _clean_mpfit_kwargs(kwargs)
-#    m = LMFIT(mymodel, p0, parinfo=parinfo, residual_keywords=fa, **kwargs)
-    if 'damp' in mpwargs and mpwargs['damp']:
-#        mpwargs['damp'] = 0.1*_np.max(y)/(ey[_np.argmax(y)])
+
+    try:
+    #    m = LMFIT(mymodel, p0, parinfo=parinfo, residual_keywords=fa, **kwargs)
+        if 'damp' in mpwargs and mpwargs['damp']:
+    #        mpwargs['damp'] = 0.1*_np.max(y)/(ey[_np.argmax(y)])
+            parinfo = getparinfo()
+            m = LMFIT(mymodel, p0, parinfo=parinfo, residual_keywords=fa, **mpwargs)
+            p0 = m.params
+            mpwargs['damp'] = 0
+        if use_perpendicular_distance:
+            parinfo = getparinfo()
+            m = LMFIT(mymodel, p0, parinfo=parinfo, residual_keywords=fa, **mpwargs)
+            p0 = m.params
+            use_perpendicular_distance = False
+        # end if
         parinfo = getparinfo()
         m = LMFIT(mymodel, p0, parinfo=parinfo, residual_keywords=fa, **mpwargs)
-        p0 = m.params
-        mpwargs['damp'] = 0
-    if use_perpendicular_distance:
-        parinfo = getparinfo()
-        m = LMFIT(mymodel, p0, parinfo=parinfo, residual_keywords=fa, **mpwargs)
-        p0 = m.params
-        use_perpendicular_distance = False
-    # end if
-    parinfo = getparinfo()
-    m = LMFIT(mymodel, p0, parinfo=parinfo, residual_keywords=fa, **mpwargs)
+    except NaNinResidual:
+        info.success = False
+        info.chi2_reduced = _np.nan
+        info.mpfit = m
+        if verbose: print('error message = ', m.errmsg) # end info
+        return info
+    except:
+        raise
+    # end try
+
     #  m - object
     #   m.status   - there are more than 12 return codes (see mpfit documentation)
     #   m.errmsg   - a string error or warning message
@@ -353,9 +366,10 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
 
     if (m.status <= 0):
         info.success = False
+        info.chi2_reduced = _np.nan
         if verbose:
             print('error message = ', m.errmsg)
-        raise ValueError('The NL fitter failed to converge: see fit_mpfit/modelfit in fitNL')
+#        raise ValueError('The NL fitter failed to converge: see fit_mpfit/modelfit in fitNL')
         return info
     # end error checking
 
@@ -513,8 +527,8 @@ def modelfit(x, y, ey, XX=None, func=None, fkwargs={}, **kwargs):
 
 
 def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwargs):
-#    method = kwargs.setdefault('Method', 'Bootstrap')  # we use a Smooth bootstrap, or a "Wild-Bootstrap" with the normal distribution!
-    method = kwargs.setdefault('Method', 'Jackknife')  #
+    method = kwargs.setdefault('Method', 'Bootstrap')  # we use a Smooth bootstrap, or a "Wild-Bootstrap" with the normal distribution!
+#    method = kwargs.setdefault('Method', 'Jackknife')  #
 
     weightit = kwargs.setdefault('weightit', False)
     verbose = kwargs.setdefault('verbose', True)
@@ -564,6 +578,7 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
 #    chi2_limit = 15.0
 #    chi2_limit = 30.0
 #    chi2_limit = 1e18
+    chi2_limit = 1e2
     chi2_min = 1e18
     _np.random.seed()
     for mm in range(niterate):
@@ -589,14 +604,12 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
 #        try:
             info = fitter(xdat, ydat, _np.sqrt(vary), XX, func, fkwargs, **kwargs)
 
+            if _np.isnan(info.chi2_reduced) or (info.chi2_reduced>chi2_limit):
+                continue
+
             if verbose:
                 print(r"%i: $\chi_%i^2$=%4.1f"%(mm, info.dof, info.chi2_reduced))
 
-#            if nn < 3 and mm>10:    # if the initial guess is in a weird hole, relax the residual constraint
-#                raise Exception('check your starting conditions')
-#                chi2_limit = 2.0*chi2_limit
-            if info.chi2_reduced>chi2_limit:
-                continue
             if info.chi2_reduced<chi2_min:
                 kwargs['af0'] = info.af.copy()
                 chi2_min = _np.copy(info.chi2_reduced)
@@ -1310,6 +1323,9 @@ def profilefit(x, y, ey, XX, func, fkwargs={}, **kwargs):
 #        info = resampleprofilefit(profilefit, x, y, ey, XX, func, fkwargs, nmonti=resampleit, **kwargs)
     else:
         info = fit_mpfit(xt, yt, eyt, XXt, func, fkwargs, **kwargs)
+
+        if _np.isnan(info.chi2_reduced):
+            return info
 
         if hasattr(info, 'xdat'):            info.xdat = xslope*info.xdat+xoffset
         if hasattr(info, 'vxdat'):           info.vxdat = info.vxdat*(xslope*xslope)
@@ -2642,7 +2658,7 @@ if __name__=="__main__":
 #    test_fit(_ms.model_ProdExp, npoly=4)
 #    test_fit(_ms.model_evenpoly, npoly=2)
 #    test_fit(_ms.model_evenpoly, npoly=3)
-#    test_fit(_ms.model_evenpoly, npoly=6)
+    test_fit(_ms.model_evenpoly, npoly=6)
 #    test_fit(_ms.model_evenpoly, npoly=10)
 #    test_fit(_ms.model_PowerLaw, npoly=4)   #
 #    test_fit(_ms.model_PowerLaw, npoly=5)   #

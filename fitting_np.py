@@ -16,11 +16,11 @@ import numpy as _np
 from pybaseutils import utils as _ut
 
 try:
-    from. import model_spec as _ms
-    from .fitNLbase import fitNL_base
+    from . import model_spec as _ms
+    from .fitNL import fitNL_base
 except:
     from FIT import model_spec as _ms
-    from FIT.fitNLbase import fitNL_base
+    from FIT.fitNL import fitNL_base
 # end try
 
 __metaclass__ = type
