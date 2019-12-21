@@ -148,7 +148,7 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     # This is incredibly slow, but improves the convergence for some problems.
     # Also messes up the error propagation, so you have to rerun the minimizer
     # and set the initial conditions to match the output of the first run.
-    use_perpendicular_distance = kwargs.setdefault('perpchi2', True)
+    use_perpendicular_distance = kwargs.setdefault('perpchi2', False)
 
     # fitter kwargs
     LB = kwargs.setdefault('LB', None)
@@ -573,15 +573,21 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
     vfit = _np.zeros((niterate, nx), dtype=_np.float64) # end if
     vdprofdx = _np.zeros_like(vfit)
 
-    nn = 0
+    # danger in taking a low chi2_limit is that some models will never have a low chi2.
 #    chi2_limit = 10.0
 #    chi2_limit = 15.0
 #    chi2_limit = 30.0
 #    chi2_limit = 1e18
-    chi2_limit = 1e2
+#    chi2_limit = 1e2
+    chi2_limit = 30
     chi2_min = 1e18
     _np.random.seed()
-    for mm in range(niterate):
+#    for mm in range(niterate):
+    mm = 0
+    nn = 0
+    # instead of looping and hoping we get enough good fits to average.
+    # we'll wait for them with a reasonable cap (if every 3rd fails, that is just an ill-posed problem)
+    while nn<niterate and mm<3*niterate:
         if method.lower().find('boot')>-1:
             ydat = ysav.copy() + _np.sqrt(vsav)*_np.random.normal(0.0,1.0,_np.shape(ysav))
             vary = (ydat-ysav)*(ydat-ysav)
@@ -597,22 +603,24 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
         # end if
 
         if verbose and mm % 10 == 0:
-            print('%i of %i'%(mm,niterate))
+            print('%i of %i total: %i success'%(mm,niterate, nn))
         # end if
 
         if 1:
 #        try:
-            info = fitter(xdat, ydat, _np.sqrt(vary), XX, func, fkwargs, **kwargs)
+            temp = fitter(xdat, ydat, _np.sqrt(vary), XX, func, fkwargs, **kwargs)
 
-            if _np.isnan(info.chi2_reduced) or (info.chi2_reduced>chi2_limit):
+            if _np.isnan(temp.chi2_reduced) or (temp.chi2_reduced>chi2_limit):
                 continue
 
+            info = temp
             if verbose:
                 print(r"%i: $\chi_%i^2$=%4.1f"%(mm, info.dof, info.chi2_reduced))
 
-            if info.chi2_reduced<chi2_min:
+            if _np.abs(1.0-info.chi2_reduced)<chi2_min:
                 kwargs['af0'] = info.af.copy()
-                chi2_min = _np.copy(info.chi2_reduced)
+                chi2_min = _np.abs(1.0-_np.copy(info.chi2_reduced))
+            dof = info.dof.copy()
 
             af[nn, :], covmat[nn,:,:] = info.af.copy(), info.covmat.copy()
             vaf[nn, :] = _np.power(info.perror.copy(), 2.0)
@@ -626,13 +634,14 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
 #        except:
 #            pass
         # end try
+        mm += 1
     # end for
     if verbose and nn<niterate:
         if method.lower().find('jack')>-1:
-            print('Warning: rejecting %i/%i runs for $\chi_/\nu^2$>%3.1f'%(nmonti*nch-1-nn, nmonti*nch-1, chi2_limit))
+            print(r'Warning: rejecting %i/%i runs for $\chi_{/\nu}^2$>%3.1f'%(nmonti*nch-1-nn, nmonti*nch-1, chi2_limit))
         else:
 #            print('Warning: rejecting %i/%i runs for $\chi_/\nu^2$>%3.1f'%(nmonti*nch-1-nn, nmonti*nch-1, chi2_limit))
-            print('Warning: rejecting %i/%i runs for $\chi_/\nu^2$>%3.1f'%(niterate-nn, niterate, chi2_limit))
+            print(r'Warning: rejecting %i/%i runs for $\chi_{/\nu}^2$>%3.1f'%(niterate-nn, niterate, chi2_limit))
     af = af[:nn, :]
     vaf = vaf[:nn,:]
     covmat = covmat[:nn,:,:]
@@ -641,12 +650,13 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
     dprofdx = dprofdx[:nn, :]
     vdprofdx = vdprofdx[:nn, :]
     chi2_reduced = chi2_reduced[:nn]
+    chi2_reduced = _np.abs(chi2_reduced)
 
     xdat = xsav
     ydat = ysav
     vary = vsav
     if plotit:
-        fixed = fkwargs.pop('fixed', _np.zeros(info.af.shape, dtype=int))
+        fixed = fkwargs.pop('fixed', _np.zeros(numfit, dtype=int))
         hfig, _ax = _plt.subplots(numfit-_np.sum(fixed),1)
 #        hfig, _ax = _plt.subplots(numfit,1)
         for ii in range(numfit):
@@ -669,12 +679,16 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
 
     # =========================== #
 
+    if (chi2_reduced==1.0).any():
+        chi2_reduced[chi2_reduced==1] = chi2_min
+
     if weightit:
         # # weighted mean and covariance
         # aw = 1.0/(1.0-chi2) # chi2 close to 1 is good, high numbers good in aweights
         # # aw[_np.isnan(aw)*_np.isinf(aw)]
         # Weighting by chi2
-        aw = 1.0/chi2_reduced
+#        aw = 1.0/chi2_reduced
+        aw = 1.0/_np.abs(1.0-chi2_reduced)
     else:
         aw = _np.ones_like(chi2_reduced)
     # end if
@@ -685,7 +699,11 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
     coeff = Sw/(Sw2-S2w)
 
     # Covariance of the parameters
+#    try:
     covmat = _ut.cov( af, rowvar=False, fweights=None, aweights=aw)
+#    except:
+#        print(1)
+#    # end try
 
     # Parameter averaging
     afm = _np.ones((nn,1), dtype=af.dtype)*_np.atleast_2d(_np.nanmean(af, axis=0))
@@ -749,6 +767,7 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
     info.vaf = vaf
     info.covmat = covmat
     info.perror = _np.sqrt(_np.diagonal(info.covmat))
+    info.dof = dof
 
     # Should we use the resampled parameter values or the resampled profile values?
     info.prof = mfit
@@ -1244,6 +1263,164 @@ class fitNL(fitNL_base):
 # ========================================================================== #
 # ========================================================================== #
 
+def multimodel(x, y, ey, XX, funcs, fkwargs=[{}], **kwargs):
+
+    nargout = kwargs.pop('nargout', 1)
+    plotit = kwargs.pop('plotit', True)
+    weightit = kwargs.pop('weightit', True)
+    kwargs['plotit'] = False
+
+    niterate = len(_np.atleast_1d(funcs))
+    nx = len(XX)
+
+    mfit = _np.zeros((niterate, nx), dtype=_np.float64)
+    vfit = _np.zeros_like(mfit)
+    dprofdx = _np.zeros_like(mfit)
+    vdprofdx = _np.zeros_like(mfit)
+
+    chi2_reduced = _np.zeros((niterate,), dtype=_np.float64)
+    for ii, func in enumerate(funcs):
+        fkwarg = fkwargs[ii]
+
+        info = profilefit(x, y, ey, XX, func, fkwargs=fkwarg, **kwargs)
+
+        mfit[ii, :] = _np.copy(info.prof)
+        vfit[ii, :] = _np.copy(info.varprof)
+        dprofdx[ii,:] = _np.copy(info.dprofdx)
+        vdprofdx[ii,:] = _np.copy(info.vardprofdx)
+        chi2_reduced[ii] = _np.copy(info.chi2_reduced)
+    # end for
+
+    # ====================== #
+
+    if plotit:
+        hfig1, _ax1 = _plt.subplots(1,1)
+        hfig2, _ax2 = _plt.subplots(1,1)
+        hfig3, _ax3 = _plt.subplots(1,1)
+
+        _ax1.set_xlabel('r/a')
+        _ax2.set_xlabel('r/a')
+        _ax3.set_xlabel('r/a')
+
+        _ax1.plot(XX, mfit.T, 'k-')
+#       _plt.plot(xvec, (mfit+_np.sqrt(vfit)).T, 'k--')
+#       _plt.plot(xvec, (mfit-_np.sqrt(vfit)).T, 'k--')
+        _ax2.plot(XX, dprofdx.T, 'k-')
+    # end if
+
+#    mfit, vfit = _ut.combine_var(dat=mfit, statvar=vfit, axis=0)
+    mfit, vfit = _ut.combine_var(dat=mfit, systvar=vfit, axis=0)
+
+#    mfit, vfit = _ut.combine_var(dat=mfit, statvar=vfit, axis=0)
+    dprofdx, vdprofdx = _ut.combine_var(dat=dprofdx, systvar=vdprofdx, axis=0)
+
+    # ====================== #
+#    # Profile fit averaging
+#    mfit = _np.nansum( aw*mfit, axis=0)
+#
+#    # Profile derivative averaging
+#    dprofdx = _np.nansum( aw*dprofdx, axis=0)
+
+#    if weightit:
+#        # # weighted mean and covariance
+#        # aw = 1.0/(1.0-chi2) # chi2 close to 1 is good, high numbers good in aweights
+#        # # aw[_np.isnan(aw)*_np.isinf(aw)]
+#        # Weighting by chi2
+#        aw = 1.0/chi2_reduced
+#    else:
+#        aw = _np.ones_like(chi2_reduced)
+#    # end if
+#    aw = aw/_np.sum(aw)
+#    Sw = _np.sum(aw)
+#    S2w = _np.sum(aw*aw)
+#    Sw2 = Sw*Sw
+#    coeff = Sw/(Sw2-S2w)
+#
+#    # Parameter averaging
+#    mfm = _np.ones((ii+1,1), dtype=mfit.dtype)*_np.atleast_2d(_np.nanmean(mfit, axis=0))
+#    dpm = _np.ones((ii+1,1), dtype=dprofdx.dtype)*_np.atleast_2d(_np.nanmean(dprofdx, axis=0))
+#
+#    # Generate temprorary wegihts the same size as the arrays to average
+#    aw = _np.atleast_2d(aw).T*_np.ones_like(mfit)
+#
+#    vfit = (coeff*_np.nansum(aw*(mfit-mfm)*(mfit-mfm), axis=0)
+#            + _np.nansum(aw*vfit, axis=0)/Sw   )  # adding in statistical/standard error from each fit
+##            + _np.nansum(aw*aw*vfit, axis=0)/S2w   )  # adding in statistical/standard error from each fit
+#
+#    vdprofdx = (coeff*_np.nansum(aw*(dprofdx-dpm)*(dprofdx-dpm), axis=0)
+#            + _np.nansum(aw*vdprofdx, axis=0)/Sw   )  # adding in statistical/standard error from each fit
+##            + _np.nansum(aw*aw*vdprofdx, axis=0)/S2w   )  # adding in statistical/standard error from each fit
+#
+#    # Profile fit averaging
+#    mfit = _np.nansum( aw*mfit, axis=0)
+#
+#    # Profile derivative averaging
+#    dprofdx = _np.nansum( aw*dprofdx, axis=0)
+
+    # ====================================================================== #
+
+    # Should we use the resampled parameter values or the resampled profile values?
+    info.prof = mfit
+    info.varprof = vfit
+    info.dprofdx = dprofdx
+    info.vardprofdx = vdprofdx
+
+    # Now if we update the function based on the new fit parameters it will
+    # recalculate all the fits etc.
+    info.residuals = (y-_ut.interp(XX, info.prof, ei=None, xo=x))/_np.where(ey==0, 1.0, ey)
+    info.chi2_reduced = _np.sum(info.residuals*info.residuals)/info.dof
+
+    # ====================================================================== #
+
+    if plotit:
+        _ax1.errorbar(x, y, yerr=ey, fmt='ro', color='r')
+        _ax1.plot(XX, info.prof, 'r-', linewidth=2.0)
+        _ax1.fill_between(XX, info.prof-_np.sqrt(info.varprof), info.prof+_np.sqrt(info.varprof),
+                          interpolate=True, color='r', alpha=0.3)
+#        ylim = _ax2.get_ylims()
+        _ax1.set_ylim((_np.min((0, 0.8*_np.min(info.prof), 1.2*_np.min(info.prof))),
+                   _np.max((   0.8*_np.max(info.prof), 1.2*_np.max(info.prof)))))
+        _ax1.set_ylabel('f(x)')
+        _ax1.set_title('Multi-model comparison')
+
+        _ax2.plot(XX, info.dprofdx, 'r-', linewidth=2.0)
+        _ax2.fill_between(XX, info.dprofdx-_np.sqrt(info.vardprofdx), info.dprofdx+_np.sqrt(info.vardprofdx),
+                          interpolate=True, color='r', alpha=0.3)
+#        ylim = _ax2.get_ylims()
+        _ax2.set_ylim((_np.min((0, 0.8*_np.min(info.dprofdx), 1.2*_np.min(info.dprofdx))),
+                   _np.max((   0.8*_np.max(info.dprofdx), 1.2*_np.max(info.dprofdx)))))
+        _ax2.set_ylabel('dfdx')
+#        _ax2.set_xlabel('x')
+
+        tmpy, tmpe = _ut.interp(XX, info.prof, ei=info.varprof, xo=x)
+        tmpy = y/tmpy
+        tmpe = _np.sqrt(tmpy*tmpy*( tmpe*tmpe + ey*ey ))
+        _ax3.errorbar(x, tmpy, yerr=tmpe, fmt='ko', color='k')
+        ylims = _ax3.get_ylim()
+        xlims = _ax3.get_xlim()
+        _ax3.axhline(y=1.0, linewidth=2.0, linestyle='--', color='k')
+        _ax3.text(x=0.6*(xlims[1]-xlims[0])+xlims[0], y=0.6*(ylims[1]-ylims[0])+ylims[0],
+                 s=r'$\chi_\nu^2$=%4.1f'%(info.chi2_reduced,), fontsize=16)
+        _ax3.set_ylabel('f(x)/MC')
+        _ax3.set_xlabel('x')
+
+        hfig1.tight_layout()
+        hfig2.tight_layout()
+        hfig3.tight_layout()
+    # end if
+
+    if nargout == 1:
+        return info
+    elif nargout == 4:
+        return info.prof, info.varprof, info.dprofdx, info.vardprofdx
+    else:
+        return info.prof, info.varprof, info.dprofdx, info.vardprofdx, info.residuals, info.chi2_reduced
+    # end if
+# end def
+
+# ========================================================================== #
+
+
 # ============================================ #
 # ---------- Specific Profile Fitting -------- #
 # ============================================ #
@@ -1327,10 +1504,10 @@ def profilefit(x, y, ey, XX, func, fkwargs={}, **kwargs):
         if _np.isnan(info.chi2_reduced):
             return info
 
-        if hasattr(info, 'xdat'):            info.xdat = xslope*info.xdat+xoffset
-        if hasattr(info, 'vxdat'):           info.vxdat = info.vxdat*(xslope*xslope)
-        if hasattr(info, 'pdat'):            info.pdat = slope*info.pdat+offset
-        if hasattr(info, 'vdat'):            info.vdat = info.vdat*(slope*slope)
+        if hasattr(info, 'xdat'):  info.xdat = xslope*info.xdat+xoffset
+        if hasattr(info, 'vxdat'): info.vxdat = info.vxdat*(xslope*xslope)
+        if hasattr(info, 'pdat'):  info.pdat = slope*info.pdat+offset
+        if hasattr(info, 'vdat'):  info.vdat = info.vdat*(slope*slope)
 
         info.XX = info.XX*xslope+xoffset
         info.prof = slope*info.prof+offset
