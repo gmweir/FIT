@@ -52,7 +52,7 @@ __metaclass__ = type
 # ---- no scipy dependence ------ #
 # =============================== #
 
-def linreg(X, Y, verbose=True, varY=None, varX=None, cov=False, plotit=False):
+def linreg(X, Y, verbose=True, varY=None, varX=None, cov=False, plotit=False, chi2_out=False):
     """
     Returns coefficients to the regression line "y=ax+b" from x[] and
     y[].  Basically, solves
@@ -126,6 +126,7 @@ def linreg(X, Y, verbose=True, varY=None, varX=None, cov=False, plotit=False):
 #    corrcoef = tst[0,1]/_np.sqrt(tst[0,0]*tst[1,1])
 #    Cov_ab *= corrcoef
 
+    chi2_nu = ss*1.0 / (_np.sum(weights)/N)
     if verbose:
         print("y=ax+b")
         print("N= %d" % N )
@@ -133,7 +134,7 @@ def linreg(X, Y, verbose=True, varY=None, varX=None, cov=False, plotit=False):
         print("b= %g \\pm t_{%d;\\alpha/2} %g" % (b, N-2, _np.sqrt(Var_b)) )
         print("R^2= %g" % RR)
         print("s^2= %g" % ss)
-        print(r"$\chi^2_\nu$ = %g, $\nu$ = %g" % (ss*1.0 / (_np.sum(weights)/N), N-2))
+        print(r"$\chi^2_\nu$ = %g, $\nu$ = %g" % (chi2_nu, N-2))
     # end if
 
     if plotit:
@@ -159,19 +160,27 @@ def linreg(X, Y, verbose=True, varY=None, varX=None, cov=False, plotit=False):
         _plt.title('Linear regression')
     # endif
 
-    if cov:
+    if cov and chi2_out:
+        return _np.asarray([a, b]), _np.asarray([[Var_a, Cov_ab],[Cov_ab, Var_b]]), chi2_nu
+    elif cov:
         return _np.asarray([a, b]), _np.asarray([[Var_a, Cov_ab],[Cov_ab, Var_b]])
+    elif chi2_out:
+        return a, b, Var_a, Var_b, chi2_nu
     else:
         return a, b, Var_a, Var_b
     # end if
 # end def linreg
 
-def linreg_bs(X, Y, verbose=True, varY=None, varX=None, cov=False, plotit=False, nmonti=100):
+def linreg_bs(X, Y, verbose=False, varY=None, varX=None, cov=False, plotit=False, nmonti=100):
 
     af = _np.zeros((nmonti, 2), dtype=_np.float)
     acov = _np.zeros((nmonti, 2, 2), dtype=_np.float)
 
-    for ii in range(nmonti):
+    ii = 0
+    nn = 0
+    chi2_min = 50
+    while ii < nmonti and nn<3*nmonti:
+#    for ii in range(nmonti):
         _xx = _np.copy(X)
         _yy = _np.copy(Y)
         if varX is not None:
@@ -182,10 +191,18 @@ def linreg_bs(X, Y, verbose=True, varY=None, varX=None, cov=False, plotit=False,
         _vy = _np.abs(_yy-Y)**2.0
 
 
-        _af, _acov = linreg(_xx, _yy, verbose=verbose, varY=_vy, varX=_vx, cov=True, plotit=False)
+#        _af, _acov = linreg(_xx, _yy, verbose=verbose, varY=_vy, varX=_vx, cov=True, plotit=False)
+        _af, _acov, chi2 = linreg(_xx, _yy, verbose=verbose, varY=_vy, varX=_vx, cov=True, plotit=False, chi2_out=True)
 
-        af[ii,:], acov[ii,:] = _af.squeeze(), _acov.squeeze()
+        if chi2<chi2_min:
+            af[ii,:], acov[ii,:] = _af.squeeze(), _acov.squeeze()
+            ii += 1
+        # end if
+        nn += 1
     # end for
+    af = af[:ii]
+    acov = acov[:ii]
+
     acov = _np.cov(af, rowvar=False)
     vaf = _np.var(af, axis=0)
     af = _np.mean(af, axis=0)
