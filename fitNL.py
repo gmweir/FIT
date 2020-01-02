@@ -530,6 +530,7 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
     method = kwargs.setdefault('Method', 'Bootstrap')  # we use a Smooth bootstrap, or a "Wild-Bootstrap" with the normal distribution!
 #    method = kwargs.setdefault('Method', 'Jackknife')  #
 
+    MCerr = kwargs.setdefault('MCerr', False)
     weightit = kwargs.setdefault('weightit', False)
     verbose = kwargs.setdefault('verbose', True)
     plotit = kwargs.pop('plotit', True)
@@ -575,11 +576,11 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
 
     # danger in taking a low chi2_limit is that some models will never have a low chi2.
 #    chi2_limit = 10.0
-#    chi2_limit = 15.0
+    chi2_limit = 15.0
 #    chi2_limit = 30.0
 #    chi2_limit = 1e18
 #    chi2_limit = 1e2
-    chi2_limit = 30
+#    chi2_limit = 30
     chi2_min = 1e18
     _np.random.seed()
 #    for mm in range(niterate):
@@ -592,6 +593,7 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
             ydat = ysav.copy() + _np.sqrt(vsav)*_np.random.normal(0.0,1.0,_np.shape(ysav))
             vary = (ydat-ysav)*(ydat-ysav)
             vary = _np.where(vary==0, _np.nanmean(vary), vary)
+            vary += vsav.copy()
         elif method.lower().find('jack')>-1:
             if nn>nmonti*nch-1:
                 break
@@ -617,9 +619,10 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
             if verbose:
                 print(r"%i: $\chi_%i^2$=%4.1f"%(mm, info.dof, info.chi2_reduced))
 
-            if _np.abs(1.0-info.chi2_reduced)<chi2_min:
+            if _np.abs(1.0-info.chi2_reduced)<_np.abs(1.0-chi2_min):
                 kwargs['af0'] = info.af.copy()
-                chi2_min = _np.abs(1.0-_np.copy(info.chi2_reduced))
+#                chi2_min = _np.abs(1.0-_np.copy(info.chi2_reduced))
+                chi2_min = _np.abs(_np.copy(info.chi2_reduced))
             dof = info.dof.copy()
 
             af[nn, :], covmat[nn,:,:] = info.af.copy(), info.covmat.copy()
@@ -687,8 +690,8 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
         # aw = 1.0/(1.0-chi2) # chi2 close to 1 is good, high numbers good in aweights
         # # aw[_np.isnan(aw)*_np.isinf(aw)]
         # Weighting by chi2
-#        aw = 1.0/chi2_reduced
-        aw = 1.0/_np.abs(1.0-chi2_reduced)
+        aw = 1.0/chi2_reduced
+#        aw = 1.0/_np.abs(1.0-chi2_reduced)
     else:
         aw = _np.ones_like(chi2_reduced)
     # end if
@@ -726,33 +729,48 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
 #        vdprofdx = (coeff*_np.nansum(aw*(dprofdx-dpm)*(dprofdx-dpm), axis=0)/Sw2
 #                + _np.nansum(aw*aw*vdprofdx, axis=0)/S2w   )  # adding in statistical/standard error from each fit
 
-        vaf = (coeff*_np.nansum(awt*(af-afm)*(af-afm), axis=0)
-                + _np.nansum(awt*vaf, axis=0)/Sw   )  # adding in statistical/standard error from each fit
-#                + _np.nansum(awt*awt*vaf, axis=0)/S2w   )  # adding in statistical/standard error from each fit
+        _vaf = coeff*_np.nansum(awt*(af-afm)*(af-afm), axis=0)
 
-        vfit = (coeff*_np.nansum(aw*(mfit-mfm)*(mfit-mfm), axis=0)
-                + _np.nansum(aw*vfit, axis=0)/Sw   )  # adding in statistical/standard error from each fit
-#                + _np.nansum(aw*aw*vfit, axis=0)/S2w   )  # adding in statistical/standard error from each fit
 
-        vdprofdx = (coeff*_np.nansum(aw*(dprofdx-dpm)*(dprofdx-dpm), axis=0)
-                + _np.nansum(aw*vdprofdx, axis=0)/Sw   )  # adding in statistical/standard error from each fit
-#                + _np.nansum(aw*aw*vdprofdx, axis=0)/S2w   )  # adding in statistical/standard error from each fit
+        _vfit = coeff*_np.nansum(aw*(mfit-mfm)*(mfit-mfm), axis=0)
+
+        _vdprofdx = coeff*_np.nansum(aw*(dprofdx-dpm)*(dprofdx-dpm), axis=0)
+
+        if not MCerr:
+            _vaf += _np.nansum(awt*vaf, axis=0)/Sw     # adding in statistical/standard error from each fit
+#            _vaf += _np.nansum(awt*awt*vaf, axis=0)/S2w     # adding in statistical/standard error from each fit
+
+            _vfit += _np.nansum(aw*vfit, axis=0)/Sw     # adding in statistical/standard error from each fit
+#            _vfit += _np.nansum(aw*aw*vfit, axis=0)/S2w     # adding in statistical/standard error from each fit
+
+            _vdprofdx += _np.nansum(aw*vdprofdx, axis=0)/Sw     # adding in statistical/standard error from each fit
+#            _vdprofdx += _np.nansum(aw*aw*vdprofdx, axis=0)/S2w     # adding in statistical/standard error from each fit
+        # end if
+
     elif method.lower().find('jack')>-1:
         coeff = (nn-1.0)/nn
 
-        vaf = (coeff*_np.nansum(awt*(af-afm)*(af-afm), axis=0)
-                + _np.nansum(awt*vaf, axis=0)/Sw   )  # adding in statistical/standard error from each fit
-#                + _np.nansum(awt*awt*vaf, axis=0)/S2w   )  # adding in statistical/standard error from each fit
+        _vaf = coeff*_np.nansum(awt*(af-afm)*(af-afm), axis=0)
 
-        vfit = (coeff*_np.nansum(aw*(mfit-mfm)*(mfit-mfm), axis=0)
-                + _np.nansum(aw*vfit, axis=0)/Sw   )  # adding in statistical/standard error from each fit
-#                + _np.nansum(aw*aw*vfit, axis=0)/S2w   )  # adding in statistical/standard error from each fit
+        _vfit = coeff*_np.nansum(aw*(mfit-mfm)*(mfit-mfm), axis=0)
 
+        _vdprofdx = coeff*_np.nansum(aw*(dprofdx-dpm)*(dprofdx-dpm), axis=0)
 
-        vdprofdx = (coeff*_np.nansum(aw*(dprofdx-dpm)*(dprofdx-dpm), axis=0)
-                + _np.nansum(aw*vdprofdx, axis=0)/Sw   )  # adding in statistical/standard error from each fit
-#                + _np.nansum(aw*aw*vdprofdx, axis=0)/S2w   )  # adding in statistical/standard error from each fit
+        if not MCerr:
+            _vaf += _np.nansum(awt*vaf, axis=0)/Sw     # adding in statistical/standard error from each fit
+#            _vaf += _np.nansum(awt*awt*vaf, axis=0)/S2w     # adding in statistical/standard error from each fit
+
+            _vfit += _np.nansum(aw*vfit, axis=0)/Sw     # adding in statistical/standard error from each fit
+#            _vfit += _np.nansum(aw*aw*vfit, axis=0)/S2w     # adding in statistical/standard error from each fit
+
+            _vdprofdx += _np.nansum(aw*vdprofdx, axis=0)/Sw     # adding in statistical/standard error from each fit
+#            _vdprofdx += _np.nansum(aw*aw*vdprofdx, axis=0)/S2w     # adding in statistical/standard error from each fit
+        # end if
     # end if
+    vaf = _vaf
+    vfit = _vfit
+    vdprofdx = _vdprofdx
+
     af = _np.nansum( awt*af, axis=0)
 
     # Profile fit averaging
@@ -1265,10 +1283,13 @@ class fitNL(fitNL_base):
 
 def multimodel(x, y, ey, XX, funcs, fkwargs=[{}], **kwargs):
 
+    kwargs.setdefault('weightit', True)
+    kwargs.setdefault('MCerr', True)
     nargout = kwargs.pop('nargout', 1)
     plotit = kwargs.pop('plotit', True)
-    weightit = kwargs.pop('weightit', True)
+    systvar = kwargs.pop('systvar', True)
     kwargs['plotit'] = False
+    chi2_min = kwargs.pop('chi2_min', 1e21)
 
     niterate = len(_np.atleast_1d(funcs))
     nx = len(XX)
@@ -1278,17 +1299,25 @@ def multimodel(x, y, ey, XX, funcs, fkwargs=[{}], **kwargs):
     dprofdx = _np.zeros_like(mfit)
     vdprofdx = _np.zeros_like(mfit)
 
+    niter = 0
     chi2_reduced = _np.zeros((niterate,), dtype=_np.float64)
     for ii, func in enumerate(funcs):
         fkwarg = fkwargs[ii]
 
         info = profilefit(x, y, ey, XX, func, fkwargs=fkwarg, **kwargs)
 
-        mfit[ii, :] = _np.copy(info.prof)
-        vfit[ii, :] = _np.copy(info.varprof)
-        dprofdx[ii,:] = _np.copy(info.dprofdx)
-        vdprofdx[ii,:] = _np.copy(info.vardprofdx)
         chi2_reduced[ii] = _np.copy(info.chi2_reduced)
+        if chi2_reduced[ii]<chi2_min:
+            mfit[ii, :] = _np.copy(info.prof)
+            vfit[ii, :] = _np.copy(info.varprof)
+            dprofdx[ii,:] = _np.copy(info.dprofdx)
+            vdprofdx[ii,:] = _np.copy(info.vardprofdx)
+            niter += 1
+        else:
+            mfit[ii, :] = _np.nan*_np.ones_like(info.prof)
+            vfit[ii, :] = _np.nan*_np.ones_like(info.varprof)
+            dprofdx[ii,:] = _np.nan*_np.ones_like(info.dprofdx)
+            vdprofdx[ii,:] = _np.nan*_np.ones_like(info.vardprofdx)
     # end for
 
     # ====================== #
@@ -1308,11 +1337,22 @@ def multimodel(x, y, ey, XX, funcs, fkwargs=[{}], **kwargs):
         _ax2.plot(XX, dprofdx.T, 'k-')
     # end if
 
-#    mfit, vfit = _ut.combine_var(dat=mfit, statvar=vfit, axis=0)
-    mfit, vfit = _ut.combine_var(dat=mfit, systvar=vfit, axis=0)
+    # these only work when the populations are large enough to be gaussian distributed
+    if systvar:
+        mfit, vfit = _ut.combine_var(dat=mfit, systvar=vfit, axis=0, niter=niter)
+        dprofdx, vdprofdx = _ut.combine_var(dat=dprofdx, systvar=vdprofdx, axis=0, niter=niter)
+    else:
+        mfit, vfit = _ut.combine_var(dat=mfit, statvar=vfit, axis=0, niter=niter)
+        dprofdx, vdprofdx = _ut.combine_var(dat=dprofdx, statvar=vdprofdx, axis=0, niter=niter)
+    # end if
 
-#    mfit, vfit = _ut.combine_var(dat=mfit, statvar=vfit, axis=0)
-    dprofdx, vdprofdx = _ut.combine_var(dat=dprofdx, systvar=vdprofdx, axis=0)
+#    # y = sum(yi)/ni
+#    # dydyi =  1/ni
+#    # vy = sum(vyi*(1/ni)**2.0)
+#    vfit = _np.nansum(vfit, axis=0)/(niter*niter) + _np.nanvar(mfit, axis=0)
+#    vdprofdx = _np.nansum(vdprofdx, axis=0)/(niter*niter) + _np.nanvar(dprofdx, axis=0)
+#    mfit = _np.nanmean(mfit, axis=0)
+#    dprofdx = _np.nanmean(dprofdx, axis=0)
 
     # ====================== #
 #    # Profile fit averaging
@@ -1392,7 +1432,7 @@ def multimodel(x, y, ey, XX, funcs, fkwargs=[{}], **kwargs):
         _ax2.set_ylabel('dfdx')
 #        _ax2.set_xlabel('x')
 
-        tmpy, tmpe = _ut.interp(XX, info.prof, ei=info.varprof, xo=x)
+        tmpy, tmpe = _ut.interp(XX, info.prof, ei=_np.sqrt(info.varprof), xo=x)
         tmpy = y/tmpy
         tmpe = _np.sqrt(tmpy*tmpy*( tmpe*tmpe + ey*ey ))
         _ax3.errorbar(x, tmpy, yerr=tmpe, fmt='ko', color='k')
@@ -1420,6 +1460,66 @@ def multimodel(x, y, ey, XX, funcs, fkwargs=[{}], **kwargs):
 
 # ========================================================================== #
 
+
+#def inversePowerBalance(XX, gradrho, gradrho2, qe, varqe, nef, varnef, Tif, varTif, Te, varTe):
+#
+#
+#    def calc_LSQTfit(af):
+#        Afit = af[:numfit].copy() # Omit Tedge if fitting it
+#
+#    def initialize_LSQTfit(self, init_with_fd=False, **kwargs):
+#        """
+#        use the finite difference estimate of the thermal diffusivity to fit
+#        a diffusivity profile, then use the parameters as the initial guess
+#        """
+#        # Get the bounds on input parameters from the model function
+##            _, _, self.chi_info = _ms.model_chieff(af=self.af, XX=self.XX,
+#        _, _, self.chi_info = _ms.model_chieff(af=None, XX=XX,
+#                      model_number=chi_model, npoly=cpoly, nargout=3)
+#        # self.func = info.func
+#        self.LB = self.chi_info.Lbounds
+#        self.UB = self.chi_info.Ubounds
+#        self.af = self.chi_info.af
+#
+#        if init_with_fd:
+#            self.__DirectChi_fd()
+#
+#            fkwargs = {'npoly':self.cpoly}
+#            plotit = True
+#            self.solver_options = self.get_solveroptions()
+#            chifit_info = modelfit(x=_ut.cylsym_odd(self.roat.copy()), y=_ut.cylsym_even(self.chi_fd.copy()),
+#                                  ey=_ut.cylsym_even(_np.sqrt(self.varchi_fd.copy())), XX=self.XX.copy(),
+#                                  func=self.chi_info.func, fkwargs=fkwargs,
+#                                  LB=self.LB, UB=self.UB, af0=self.af, plotit=plotit,
+#                                  **_ut.merge_dicts(kwargs, self.solver_options))
+#            self.af = chifit_info.params
+#            self.chi = chifit_info.prof
+#            self.varchi = chifit_info.varprof
+#    #        self.dChidrho = chifit_info.dprofdx
+#    #        self.vardChidrho = chifit_info.vardprofdx
+#        # end if
+#
+#        if self.fitTedge:
+##                self.UB = _np.asarray(self.UB.tolist()+[_np.inf], dtype=_np.float64)
+#            self.UB = _np.asarray(self.UB.tolist()+[_np.max(self.Td)], dtype=_np.float64)
+#            self.LB = _np.asarray(self.LB.tolist()+[1e-14], dtype=_np.float64)
+#
+#            Tedge = _ut.interp(self.roat[-2:], self.Td[-2:], None, max((_np.max(self.roat),0.99)))
+#            # Tedge = self.Td[-1].copy()
+#            self.af = _np.asarray(self.af.tolist()+[Tedge], dtype=_np.float64)
+#        # end if
+#        # Determine model edge temperature (based on boolean 'fitTedge')
+#        self.getTedge()
+#
+#        return self.af
+#
+#    self.af = self.initialize_LSQTfit(init_with_fd=False, **self.solver_options)
+##            self.af = self.initialize_LSQTfit()
+#
+#    # Perform an initial fit with the provided profile fits, etc.
+#    self.calc_LSQchi()
+#
+#    self.__calc_varchif(self.covmat)
 
 # ============================================ #
 # ---------- Specific Profile Fitting -------- #
@@ -2870,8 +2970,8 @@ if __name__=="__main__":
 #    test_profile_fit(_ms.model_slopetop)
 ###
     test_profile_fit(_ms.model_qparab, resampleit=30)
-#    test_profile_fit(_ms.model_flattop, resampleit=30)
-#    test_profile_fit(_ms.model_slopetop, resampleit=30)
+    test_profile_fit(_ms.model_flattop, resampleit=30)
+    test_profile_fit(_ms.model_slopetop, resampleit=30)
 
 #    # need to be reformatted still (2 left!)
 ##    test_fit(_ms.model_Heaviside, npoly=3, rinits=[0.30, 0.35])
