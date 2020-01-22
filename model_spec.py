@@ -2818,6 +2818,27 @@ class ModelEvenPoly(ModelClass):
     # ====================================== #
 # end def ModelEvenPoly
 
+
+# ========================================================================== #
+# ========================================================================== #
+
+def evenpoly_lin(XX, aa):
+    xa2 = aa[-1]
+    xa1 = aa[-2]
+    lin = ModelLine._model(XX, aa[-4:-2])
+    epol = ModelEvenPoly._model(XX, aa[:-4])
+
+    yxx = _np.zeros_like(XX)
+    iint = _np.argwhere((XX<xa1)).flatten()
+    imid = _np.argwhere((XX>xa1)*(XX<xa2)).flatten()
+    iout = _np.argwhere((XX>xa2)).flatten()
+
+    yxx[iout] += epol[iout]
+    yxx[imid] += lin[imid]
+    yxx[iint] += epol[iint] + lin[imid[0]]
+    return yxx
+
+
 # ========================================================================== #
 # ========================================================================== #
 
