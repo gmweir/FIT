@@ -2969,9 +2969,9 @@ if __name__=="__main__":
 #    test_profile_fit(_ms.model_flattop)
 #    test_profile_fit(_ms.model_slopetop)
 ###
-    test_profile_fit(_ms.model_qparab, resampleit=30)
-    test_profile_fit(_ms.model_flattop, resampleit=30)
-    test_profile_fit(_ms.model_slopetop, resampleit=30)
+#    test_profile_fit(_ms.model_qparab, resampleit=30)
+#    test_profile_fit(_ms.model_flattop, resampleit=30)
+#    test_profile_fit(_ms.model_slopetop, resampleit=30)
 
 #    # need to be reformatted still (2 left!)
 ##    test_fit(_ms.model_Heaviside, npoly=3, rinits=[0.30, 0.35])
