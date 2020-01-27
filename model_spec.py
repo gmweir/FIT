@@ -124,23 +124,23 @@ def divide(num, den):
 #        super(ModelExample, self).__init__(XX, af, **kwargs)
 #    # end def __init__
 #
-#    @staticmethod
+#    @staticmethod    # model to fit
 #    def _model(XX, aa, **kwargs):
 #        return NotImplementedError
 #
-#    @staticmethod
+#    @staticmethod    # derivative of the model to fit wrt x-data
 #    def _deriv(XX, aa, **kwargs):
 #        return NotImplementedError
 #
-#    @staticmethod
+#    @staticmethod    # partial derivative of the model wrt to the model parameters (dyda) == jacobian
 #    def _partial(XX, aa, **kwargs):
 #        return NotImplementedError
 #
-#    @staticmethod
+#    @staticmethod    # radial derivative of the jacobian dydxda
 #    def _partial_deriv(XX, aa, **kwargs):
 #        return NotImplementedError
 #
-#    @staticmethod
+#    @staticmethod   # the hessian ... basically the second derivative 
 #    def _hessian(XX, aa):
 #        return NotImplementedError
 #
