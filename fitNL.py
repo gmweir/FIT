@@ -2987,6 +2987,129 @@ if __name__=="__main__":
 # ======================================================================= #
 # ======================================================================= #
 
+#
+## simple example call that works well for the Thomson / ECE / XICS profiles:
+#
+## Electron Temperature profiles
+#iuse = _np.ones(Tedat['yy'].shape, dtype=bool)
+#xt = Tedat['xx'][iuse].copy()
+#yt = Tedat['yy'][iuse].copy()
+#st = Tedat['sy'][iuse].copy()
+#
+#iuse = _np.argwhere(xt>0).squeeze()
+#xt = xt[iuse]
+#yt = yt[iuse]
+#st = st[iuse]
+#
+## fit the electron temperature profile to make it simple:
+##isort = _np.argsort(_np.abs(Tedat['xx']))
+#isort = _np.argsort(_np.abs(xt)).squeeze()
+#xt = xt[isort]
+#yt = yt[isort]
+#st = st[isort]
+#
+#iuse = _np.ones(yt.shape, dtype=bool)
+#if ((xt>0.28)*(yt>2.9)).any():
+#    iuse[(xt>0.28)*(yt>2.9)] = False
+#xt = xt[iuse]
+#yt = yt[iuse]
+#st = st[iuse]
+#
+## increase the data uncertainty to mask systematic uncertainty and improve convergence
+## the electron temperature profiles are a mix of Thomson and ECE.
+## The Thomson needs an additional systematic uncertainty
+#if (st<0.2*yt).any():
+#    st[st<0.2*yt] = _np.sqrt( st[st<0.2*yt]**2.0 + (0.2*yt[st<0.2*yt])**2.0)
+#
+#info = multimodel(x=xt.copy(), y=_np.log(yt.copy()), ey=st/yt, XX=roa,
+#              funcs=[_ms.model_evenpoly, _ms.model_evenpoly, _ms.model_evenpoly,_ms.model_evenpoly,_ms.model_evenpoly],
+#              fkwargs=[{'npoly':6},{'npoly':8},{'npoly':10},{'npoly':12},{'npoly':14}],
+#              resampleit=51, plotit=plotit, verbose=False, systvar=False, chi2_min=31)
+##info = profilefit(x=xt.copy(), y=_np.log(yt.copy()), ey=st/yt, XX=roa, func=_ms.model_evenpoly, fkwargs={'npoly':12}, resampleit=400, plotit=plotit, verbose=False)
+#dlnTedrho = info.dprofdx.copy()
+#vardlnTedrho = info.vardprofdx.copy()
+#Tef, varTef = _np.exp(info.prof), _np.exp(info.prof)**2.0*(info.varprof)
+#
+## Density profiles
+#iuse = _np.ones(nedat['yy'].shape, dtype=bool)
+#xt = nedat['xx'][iuse].copy()
+#yt = nedat['yy'][iuse].copy()
+#st = nedat['sy'][iuse].copy()
+#
+#iuse = _np.argwhere(xt>0).squeeze()
+#xt = xt[iuse]
+#yt = yt[iuse]
+#st = st[iuse]
+#
+#iuse = _np.ones(yt.shape, dtype=bool)
+#temp = yt[_np.abs(xt)<0.2].mean()
+#if ((yt<0.6*temp)*(_np.abs(xt)<0.4)).any():
+#    iuse[(yt<0.6*temp)*(_np.abs(xt)<0.4)] = False
+#xt = xt[iuse]
+#yt = yt[iuse]
+#st = st[iuse]
+#
+#yt, st = 1e20*yt, 1e20*st
+#
+## fit
+#isort = _np.argsort(_np.abs(xt)).squeeze()
+#xt = xt[isort]
+#yt = yt[isort]
+#st = st[isort]
+#
+## increase the data uncertainty to mask systematic uncertainty and improve convergence
+##                st *= 3.5  # works best for the ion temperature fits, where systematics in fitting dominate
+#st = _np.sqrt( st**2.0 + (0.2*yt)**2.0)
+#if (st<0.2*yt).any():
+#    st[st<0.2*yt] = 0.2*yt[st<0.2*yt].copy()
+#if (st<0.5e19).any():
+#    st[st<0.5e19] += 0.5e19  # I don't trust the profile diagnostics to within 100 eV anyways
+## end if
+#info = multimodel(x=xt.copy(), y=1e-20*yt.copy(), ey=1e-20*st.copy(), XX=roa.copy(),
+#              funcs=[_ms.model_evenpoly, _ms.model_evenpoly, _ms.model_evenpoly, _ms.model_slopetop],
+#              fkwargs=[{'npoly':4}, {'npoly':6}, {'npoly':8}, {}],
+#              resampleit=51, plotit=plotit, verbose=False, systvar=False, chi2_min=31)
+## info = profilefit(x=xt.copy(), y=1e-20*yt.copy(), ey=1e-20*st.copy(), XX=roa.copy(), func=_ms.model_slopetop, resampleit=300, plotit=plotit, scalex=True, scaley=True)
+#if (info.prof<0).any():
+#    info.dprofdx[info.prof<0] = 0.0
+#    info.prof[info.prof<0] = _np.min(info.prof[info.prof>0])
+#dlnnedrho = info.dprofdx/info.prof
+#vardlnnedrho = info.vardprofdx/info.prof**2.0
+#nef, varnef = 1e20*info.prof.copy(), 1e40*info.varprof.copy()
+#
+## Ion temperature profiles
+#iuse = _np.ones(Tidat['yy'].shape, dtype=bool)
+#xt = Tidat['xx'][iuse].copy()
+#yt = Tidat['yy'][iuse].copy()
+#st = Tidat['sy'][iuse].copy()
+#
+#iuse = _np.argwhere(xt>0).squeeze()
+#xt = xt[iuse]
+#yt = yt[iuse]
+#st = st[iuse]
+#
+## fit
+#isort = _np.argsort(_np.abs(xt)).squeeze()
+#xt = xt[isort]
+#yt = yt[isort]
+#st = st[isort]
+#
+## increase the data uncertainty to mask systematic uncertainty and improve convergence
+#st *= 5
+#if (st<0.2*yt).any():
+#    st[st<0.2*yt] = 0.2*yt[st<0.2*yt].copy()
+##if (st<0.1).any():
+##   st[st<0.1] += 0.1  # I don't trust the profile diagnostics to within 100 eV anyways
+### end if
+#info = multimodel(x=xt.copy(), y=_np.log(yt.copy()), ey=st/yt, XX=roa.copy(),
+#              funcs=[_ms.model_evenpoly,_ms.model_evenpoly,_ms.model_evenpoly,_ms.model_evenpoly],
+#              fkwargs=[{'npoly':6},{'npoly':8},{'npoly':10},{'npoly':12}],
+#              resampleit=51, plotit=plotit, verbose=False, systvar=False, chi2_min=31)
+## info = profilefit(x=xt.copy(), y=_np.log(yt.copy()), ey=5*st/yt, XX=roa, func=_ms.model_evenpoly, fkwargs={'npoly':12}, resampleit=600, plotit=plotit, verbose=False)
+#dlnTidrho = info.dprofdx.copy()
+#vardlnTidrho = info.vardprofdx.copy()
+#Tif, varTif = _np.exp(info.prof), _np.exp(info.prof)**2.0*(info.varprof)
+
 # ======================================================================== #
 # ======================================================================== #
 
