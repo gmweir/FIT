@@ -79,7 +79,7 @@ def linreg(X, Y, verbose=True, varY=None, varX=None, cov=False, plotit=False, ch
     if len(X) != len(Y):  raise ValueError('unequal length')
 
     if varX is not None:
-        a, b, _, _ = linreg(X, Y, varY=varY)
+        a, b, _, _ = linreg(X, Y, verbose=verbose, varY=varY, plotit=False, chi2_out=False)
         varY += a**2.0*varX
 #        varY += a*varX
     # endif

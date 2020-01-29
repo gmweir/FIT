@@ -484,7 +484,22 @@ def linreg(X, Y, verbose=True, varY=None, varX=None, cov=False, plotit=False):
 # ======================================================================== #
 
 
-def weightedPolyfit(xvar, yvar, xo, vary=None, deg=1, nargout=2):
+def weightedPolyfit(xvar, yvar, xo, vary=None, deg=1, nargout=2, xbnds=None, sortit=True):
+
+    if xbnds is not None:
+        iuse = (xvar>xbnds[0])*(xvar<xbnds[1])
+
+        xvar = xvar[iuse]
+        yvar = yvar[iuse, ...]
+        vary = vary[iuse, ...]
+    if sortit:
+
+        isort = _np.argsort(xvar)
+        xvar = xvar[isort]
+        yvar = yvar[isort, ...]
+        vary = vary[isort, ...]
+    # end if
+
     if vary is None:
         weights = _np.ones_like(yvar)
     # end if
