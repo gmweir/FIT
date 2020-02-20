@@ -135,6 +135,7 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     kwargs = _default_mpfit_kwargs(**kwargs)
     verbose = kwargs.pop('verbose', True) or not kwargs['quiet']
     random_init = kwargs.pop('randinit', False)
+    sigma_clip = kwargs.pop('sigma_clip', False)
 
     if _np.isnan(y).any() or _np.isnan(ey).any():
         if verbose: print('Input data includes nans! this is not allowed')
@@ -274,6 +275,21 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
         weights = _np.where(weights==0+_np.isnan(weights), 1.0, weights)
         residual = _np.divide( y-model, weights, out=y-model, where=model!=0)
 
+#        # sigma-clipping by input number of standard deviations
+#        if sigma_clip:
+#            dof = len(x)-len(p)-1
+#            chi2_reduced = _np.nansum(residual*residual)/dof
+#
+#            iuse = _np.abs(residual)<sigma_clip
+#            if chi2_reduced<10 and sum(iuse)-len(p)>2:
+#                weights = weights[iuse]
+#                residual = residual[iuse]
+#                if use_perpendicular_distance or (errx !=0).any():
+#                    errx = errx[iuse]
+#                # end if
+#            # end if
+#        # end if
+
         if _np.isnan(residual).any():
             if verbose:    print('NaN in residual!')
             status = -4
@@ -335,6 +351,22 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
         # end if
         parinfo = getparinfo()
         m = LMFIT(mymodel, p0, parinfo=parinfo, residual_keywords=fa, **mpwargs)
+
+        if sigma_clip:
+            # remove outliers from the model that are graeter than an input number of std's
+            out = mymodel(_np.copy(m.params), x=x, y=y, err=ey)
+            residual = out['residual']
+            iuse = _np.abs(residual)<sigma_clip
+
+            dof = sum(iuse)-len(m.params)-2
+            if dof>0:
+                # Pass data into the solver through keywords
+                fa = {'x':x[iuse], 'y':y[iuse], 'err':ey[iuse]}
+                parinfo = getparinfo()
+                m = LMFIT(mymodel, p0, parinfo=parinfo, residual_keywords=fa, **mpwargs)
+            else:
+                print('Cannot sigma-clip: insufficient degrees of freedom: %i'%(dof,))
+        # end if
     except NaNinResidual:
         info.success = False
         info.chi2_reduced = _np.nan
