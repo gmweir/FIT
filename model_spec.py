@@ -102,6 +102,7 @@ def divide(num, den):
     if len(_np.atleast_1d(den))<len(_np.atleast_1d(num)):
         den = den*_np.ones_like(num)
     return _np.divide(num, den, out=_np.zeros_like(num), where=den!=0)
+#    return _np.divide(num, den, out=_np.zeros_like(num), where=_np.abs(den)<=1e-100)
 
 #class MultiModel(ModelClass):
 #    """
@@ -140,7 +141,7 @@ def divide(num, den):
 #    def _partial_deriv(XX, aa, **kwargs):
 #        return NotImplementedError
 #
-#    @staticmethod   # the hessian ... basically the second derivative 
+#    @staticmethod   # the hessian ... basically the second derivative
 #    def _hessian(XX, aa):
 #        return NotImplementedError
 #
@@ -8036,8 +8037,8 @@ class ModelFlattop(ModelClass):
     domain: (b<0 and x<0) or (b>0 and x>0)
     """
     _af = _np.asarray([1.0, 0.4, 5.0], dtype=_np.float64)
-    _LB = _np.asarray([1e-18, 1e-18, 1.0], dtype=_np.float64)
-    _UB = _np.asarray([_np.inf, 1.0, _np.inf], dtype=_np.float64)
+    _LB = _np.asarray([-_np.inf, 1e-18, 1.0], dtype=_np.float64)
+    _UB = _np.asarray([ _np.inf, 1.0, 20], dtype=_np.float64)
     _fixed = _np.zeros( (3,), dtype=int)
     _analytic_xscaling = True
     _analytic_yscaling = True
@@ -8076,6 +8077,7 @@ class ModelFlattop(ModelClass):
         a, b, c = tuple(aa)
         XX = _np.copy(XX)
         temp = ModelExp.powerc(divide(XX,b), c)
+#        print("line 8079 ms: Flattop Model(a=%10.6f, b=%10.6f, c=%10.6f, nan=%i)"%(a, b, c, int(_np.isnan(temp).any())))
 
         return divide(-1.0*a*c*temp, XX*power(1.0+temp,2.0))
 
@@ -8338,8 +8340,8 @@ class ModelSlopetop(ModelClass):
                      negative (peaked profile, h > 0).
     """
     _af = _np.asarray([1.0, 0.4, 5.0, 0.5], dtype=_np.float64)
-    _LB = _np.asarray([1e-18, 0.0, 1.0, -1], dtype=_np.float64)
-    _UB = _np.asarray([_np.inf, 1.0, _np.inf, 1], dtype=_np.float64)
+    _LB = _np.asarray([-_np.inf, 0.0, 1.0, -1], dtype=_np.float64)
+    _UB = _np.asarray([_np.inf,  1.0, _np.inf, 1], dtype=_np.float64)
     _fixed = _np.zeros( (4,), dtype=int)
     _analytic_xscaling = True
     _analytic_yscaling = True
@@ -8722,6 +8724,160 @@ class ModelLogArb(ModelClass):
         return super(ModelLogArb, self).scalings(xdat, ydat, **kwargs)
 # end def ModelLogArb
 
+class ModelSumArb(ModelClass):
+    """
+    Calculate model / derivatives of the sum of two arbitrary models
+    """
+    _af = _np.asarray([1.0], dtype=_np.float64)
+    _LB = _np.asarray([0.0], dtype=_np.float64)
+    _UB = _np.asarray([_np.inf], dtype=_np.float64)
+    _fixed = _np.zeros( (1,), dtype=int)
+    def __init__(self, XX, af=None, **kwargs):
+        kwargs = _np.copy(kwargs)
+        fkwargs = kwargs.pop('fkwargs')   # analysis:ignore
+        funcs = kwargs.pop('funcs')
+        nfuncs = len(funcs)
+        nargs = kwargs.pop('funcs')
+
+        nargs = []
+        _af, _LB, _UB, _fixed = [[] for _ in range(4)]
+
+        for ii in range(nfuncs):
+            nargs.append(len(funcs[ii]._af))
+            _af.append(len(funcs[ii]._af))
+            _LB.append(len(funcs[ii]._LB))
+            _UB.append(len(funcs[ii]._UB))
+            _fixed.append(len(funcs[ii]._fixed))
+        # end for
+        self.nargs = nargs
+        self._af = _af
+        self._LB = _LB
+        self._UB = _UB
+        self._fixed = _fixed
+
+        super(ModelSumArb, self).__init__(XX, af, **kwargs)
+    # end def __init__
+
+    @staticmethod
+    def _model(XX, aa, **kwargs):
+        kwargs = _np.copy(kwargs)
+        fkwargs = kwargs.pop('fkwargs')   # analysis:ignore
+        funcs = kwargs.pop('funcs')
+        nfuncs = len(funcs)
+
+        res = 0.0
+        iaf = 0
+        for ii in range(nfuncs):
+            naf = len(funcs[ii]._af)
+            res += funcs[ii]._model(XX, aa[iaf:naf+1], fkwargs)
+        # end for
+        return res
+
+    @staticmethod
+    def _deriv(XX, aa, **kwargs):
+        """
+        """
+        kwargs = _np.copy(kwargs)
+        fkwargs = kwargs.pop('fkwargs')   # analysis:ignore
+        funcs = kwargs.pop('funcs')
+        nfuncs = len(funcs)
+
+        res = 0.0
+        iaf = 0
+        for ii in range(nfuncs):
+            naf = len(funcs[ii]._af)
+            res += funcs[ii]._deriv(XX, aa[iaf:naf+1], fkwargs)
+        # end for
+        return res
+
+    @staticmethod
+    def _partial(XX, aa, **kwargs):
+        """
+        """
+        kwargs = _np.copy(kwargs)
+        fkwargs = kwargs.pop('fkwargs')   # analysis:ignore
+        funcs = kwargs.pop('funcs')
+        nfuncs = len(funcs)
+
+        res = []
+        iaf = 0
+        for ii in range(nfuncs):
+            naf = len(funcs[ii]._af)
+            res.append(funcs[ii]._partial(XX, aa[iaf:naf+1], fkwargs))
+        # end for
+        return _np.asarray(res)
+
+    @staticmethod
+    def _partial_deriv(XX, aa, **kwargs):
+        """
+        """
+        kwargs = _np.copy(kwargs)
+        fkwargs = kwargs.pop('fkwargs')   # analysis:ignore
+        funcs = kwargs.pop('funcs')
+        nfuncs = len(funcs)
+
+        res = []
+        iaf = 0
+        for ii in range(nfuncs):
+            naf = len(funcs[ii]._af)
+            res.append(funcs[ii]._partial_deriv(XX, aa[iaf:naf+1], fkwargs))
+        # end for
+        return _np.asarray(res)
+
+    @staticmethod
+    def _deriv2(XX, aa, **kwargs):
+        """
+        """
+        kwargs = _np.copy(kwargs)
+        fkwargs = kwargs.pop('fkwargs')   # analysis:ignore
+        funcs = kwargs.pop('funcs')
+        nfuncs = len(funcs)
+
+        res = 0.0
+        iaf = 0
+        for ii in range(nfuncs):
+            naf = len(funcs[ii]._af)
+            res += funcs[ii]._partial_deriv(XX, aa[iaf:naf+1], fkwargs)
+        # end for
+        return _np.asarray(res)
+
+    @staticmethod
+    def _partial_deriv2(XX, aa, **kwargs):
+        """
+        """
+        kwargs = _np.copy(kwargs)
+        fkwargs = kwargs.pop('fkwargs')   # analysis:ignore
+        funcs = kwargs.pop('funcs')
+        nfuncs = len(funcs)
+
+        res = []
+        iaf = 0
+        for ii in range(nfuncs):
+            naf = len(funcs[ii]._af)
+            res.append(funcs[ii]._partial_deriv2(XX, aa[iaf:naf+1], fkwargs))
+        # end for
+        return _np.asarray(res)
+
+    @staticmethod
+    def _hessian(XX, aa):
+        return NotImplementedError
+
+    # ====================================== #
+
+    def unscaleaf(self, ain):
+        return NotImplementedError
+
+    def scalings(self, xdat, ydat, **kwargs):
+        self.xoffset = 0.0
+        self.offset = 0.0
+        self.xslope = 1.0
+        self.slope = 1.0
+        return super(ModelSumArb, self).scalings(xdat, ydat, **kwargs)
+# end def ModelSumArb
+
+
+# ========================================================================== #
+# ========================================================================== #
 
 # ========================================================================== #
 # ========================================================================== #
