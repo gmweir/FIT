@@ -135,7 +135,7 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     kwargs = _default_mpfit_kwargs(**kwargs)
     verbose = kwargs.pop('verbose', True) or not kwargs['quiet']
     random_init = kwargs.pop('randinit', False)
-    sigma_clip = kwargs.pop('sigma_clip', False)
+#    sigma_clip = kwargs.pop('sigma_clip', False)
 
     if _np.isnan(y).any() or _np.isnan(ey).any():
         if verbose: print('Input data includes nans! this is not allowed')
@@ -352,20 +352,21 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
         parinfo = getparinfo()
         m = LMFIT(mymodel, p0, parinfo=parinfo, residual_keywords=fa, **mpwargs)
 
-        if sigma_clip:
-            # remove outliers from the model that are graeter than an input number of std's
-            out = mymodel(_np.copy(m.params), x=x, y=y, err=ey)
-            residual = out['residual']
-            iuse = _np.abs(residual)<sigma_clip
-
-            dof = sum(iuse)-len(m.params)-2
-            if dof>0:
-                # Pass data into the solver through keywords
-                fa = {'x':x[iuse], 'y':y[iuse], 'err':ey[iuse]}
-                parinfo = getparinfo()
-                m = LMFIT(mymodel, p0, parinfo=parinfo, residual_keywords=fa, **mpwargs)
-            else:
-                print('Cannot sigma-clip: insufficient degrees of freedom: %i'%(dof,))
+#        if sigma_clip:
+#            # remove outliers from the model that are graeter than an input number of std's
+#            out = mymodel(_np.copy(m.params), x=x, y=y, err=ey)
+#            residual = out['residual']
+#            iuse = _np.abs(residual)<sigma_clip
+#
+#            dof = sum(iuse)-len(m.params)-2
+#            if dof>0 and sum(iuse)!=len(residual):
+#                # Pass data into the solver through keywords
+#                fa = {'x':x[iuse], 'y':y[iuse], 'err':ey[iuse]}
+#                parinfo = getparinfo()
+#                m = LMFIT(mymodel, p0, parinfo=parinfo, residual_keywords=fa, **mpwargs)
+##            elif dof==0 or dof<0:
+##                print('Cannot sigma-clip: insufficient degrees of freedom: %i'%(dof,))
+#            # end if
         # end if
     except NaNinResidual:
         info.success = False
