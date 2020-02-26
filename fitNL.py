@@ -62,11 +62,14 @@ def gen_random_init_conds(func, **fkwargs):
 #    aa += 0.5*aa*_np.random.uniform(0.0, 1.0, len(aa))
     for ii in range(len(aa)):
         if fixed[ii] == 0:
-            if _np.isinf(LB[ii]):     LB[ii] = -10.0     # end if
-            if _np.isinf(UB[ii]):     UB[ii] =  10.0     # end if
+#            if _np.isinf(LB[ii]):     LB[ii] = -1e22     # end if
+#            if _np.isinf(UB[ii]):     UB[ii] =  1e22     # end if
+#            if _np.isinf(LB[ii]):     LB[ii] = -10.0     # end if
+#            if _np.isinf(UB[ii]):     UB[ii] =  10.0     # end if
 #            _np.random.seed()
-#            aa[ii] += 0.1*aa[ii]*_np.random.normal(0.0, 1.0, 1)
+##            aa[ii] += 0.1*aa[ii]*_np.random.normal(0.0, 1.0, 1)
             aa[ii] += 0.5*aa[ii]*_np.random.uniform(low=-1.0, high=1.0, size=1)
+#            aa[ii] = _np.random.uniform(low=LB[ii], high=UB[ii], size=1)
 #            aa[ii] = _np.random.uniform(low=LB[ii]+1e-5, high=UB[ii]-1e-5, size=1)
             if aa[ii]<LB[ii]:                aa[ii] = LB[ii] + 0.5
             if aa[ii]>UB[ii]:                aa[ii] = UB[ii] - 0.5
@@ -609,9 +612,10 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
 
     # danger in taking a low chi2_limit is that some models will never have a low chi2.
 #    chi2_limit = 10.0
-    chi2_limit = 15.0
+#    chi2_limit = 15.0
 #    chi2_limit = 30.0
 #    chi2_limit = 1e18
+    chi2_limit = 1e18 if 'chi2_min' not in kwargs else kwargs.pop('chi2_min')
 #    chi2_limit = 1e2
 #    chi2_limit = 30
     chi2_min = 1e18
@@ -621,7 +625,8 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
     nn = 0
     # instead of looping and hoping we get enough good fits to average.
     # we'll wait for them with a reasonable cap (if every 3rd fails, that is just an ill-posed problem)
-    while nn<niterate and mm<3*niterate:
+    while nn<niterate and mm<5*niterate:
+        mm += 1
         if method.lower().find('boot')>-1:
             ydat = ysav.copy() + _np.sqrt(vsav)*_np.random.normal(0.0,1.0,_np.shape(ysav))
             vary = (ydat-ysav)*(ydat-ysav)
@@ -638,7 +643,7 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
         # end if
 
         if verbose and mm % 10 == 0:
-            print('%i of %i total: %i success'%(mm,niterate, nn))
+            print('%i of %i total: %i success'%(mm-1,niterate, nn))
         # end if
 
         if 1:
@@ -650,9 +655,10 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
 
             info = temp
             if verbose:
-                print(r"%i: $\chi_%i^2$=%4.1f"%(mm, info.dof, info.chi2_reduced))
+                print(r"%i: $\chi_%i^2$=%4.1f"%(mm-1, info.dof, info.chi2_reduced))
 
             if _np.abs(1.0-info.chi2_reduced)<_np.abs(1.0-chi2_min):
+                " if the current results is a better guess than the previous, replace the guess"
                 kwargs['af0'] = info.af.copy()
 #                chi2_min = _np.abs(1.0-_np.copy(info.chi2_reduced))
                 chi2_min = _np.abs(_np.copy(info.chi2_reduced))
@@ -670,14 +676,34 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
 #        except:
 #            pass
         # end try
-        mm += 1
     # end for
+    ifk = nn
     if verbose and nn<niterate:
         if method.lower().find('jack')>-1:
             print(r'Warning: rejecting %i/%i runs for $\chi_{/\nu}^2$>%3.1f'%(nmonti*nch-1-nn, nmonti*nch-1, chi2_limit))
         else:
 #            print('Warning: rejecting %i/%i runs for $\chi_/\nu^2$>%3.1f'%(nmonti*nch-1-nn, nmonti*nch-1, chi2_limit))
             print(r'Warning: rejecting %i/%i runs for $\chi_{/\nu}^2$>%3.1f'%(niterate-nn, niterate, chi2_limit))
+        # end if
+    if nn == 0:
+        if verbose:
+            print('rejected all runs? loosen up why dont ya: you get NaNs!')
+        info.af = _np.nan*_np.ones( (numfit,), dtype=_np.float64)
+        info.vaf = _np.nan*_np.ones_like(info.af)
+        info.covmat = _np.nan*_np.ones( (numfit,numfit), dtype=_np.float64)
+        info.perror = info.af.copy()
+        info.dof = 0
+
+        # Should we use the resampled parameter values or the resampled profile values?
+        info.prof = _np.nan*XX.copy()
+        info.varprof = _np.nan*XX.copy()
+        info.dprofdx = _np.nan*XX.copy()
+        info.vardprofdx = _np.nan*XX.copy()
+        info.residuals = _np.nan*_np.ones_like(ydat)
+        info.chi2_reduced = _np.nan
+        info.cormat = _np.nan*info.covmat.copy()
+        return info
+    # end if
     af = af[:nn, :]
     vaf = vaf[:nn,:]
     covmat = covmat[:nn,:,:]
@@ -715,16 +741,16 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
 
     # =========================== #
 
-    if (chi2_reduced==1.0).any():
-        chi2_reduced[chi2_reduced==1] = chi2_min
+#    if (chi2_reduced==1.0).any():
+#        chi2_reduced[chi2_reduced==1] = chi2_min
 
     if weightit:
         # # weighted mean and covariance
         # aw = 1.0/(1.0-chi2) # chi2 close to 1 is good, high numbers good in aweights
         # # aw[_np.isnan(aw)*_np.isinf(aw)]
         # Weighting by chi2
-        aw = 1.0/chi2_reduced
-#        aw = 1.0/_np.abs(1.0-chi2_reduced)
+#        aw = 1.0/chi2_reduced
+        aw = 1.0/_np.abs(1.0-chi2_reduced)
     else:
         aw = _np.ones_like(chi2_reduced)
     # end if
@@ -742,16 +768,16 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
 #    # end try
 
     # Parameter averaging
-    afm = _np.ones((nn,1), dtype=af.dtype)*_np.atleast_2d(_np.nanmean(af, axis=0))
-    mfm = _np.ones((nn,1), dtype=mfit.dtype)*_np.atleast_2d(_np.nanmean(mfit, axis=0))
-    dpm = _np.ones((nn,1), dtype=dprofdx.dtype)*_np.atleast_2d(_np.nanmean(dprofdx, axis=0))
+    afm = _np.ones((ifk,1), dtype=af.dtype)*_np.atleast_2d(_np.nanmean(af, axis=0))
+    mfm = _np.ones((ifk,1), dtype=mfit.dtype)*_np.atleast_2d(_np.nanmean(mfit, axis=0))
+    dpm = _np.ones((ifk,1), dtype=dprofdx.dtype)*_np.atleast_2d(_np.nanmean(dprofdx, axis=0))
 
     # Generate temprorary wegihts the same size as the arrays to average
     awt = _np.atleast_2d(aw).T*_np.ones((1,numfit), dtype=aw.dtype)
     aw = _np.atleast_2d(aw).T*_np.ones_like(mfit)
 
     if method.lower().find('boot')>-1:
-#        coeff = nn/(nn-1.0)
+#        coeff = ifk/(ifk-1.0)
 
 #        vaf = (coeff*_np.nansum(awt*awt*(af-afm)*(af-afm), axis=0)/Sw2
 #                + _np.nansum(awt*awt*vaf, axis=0)/S2w   )  # adding in statistical/standard error from each fit
@@ -781,7 +807,7 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
         # end if
 
     elif method.lower().find('jack')>-1:
-        coeff = (nn-1.0)/nn
+        coeff = (ifk-1.0)/ifk
 
         _vaf = coeff*_np.nansum(awt*(af-afm)*(af-afm), axis=0)
 
@@ -1318,9 +1344,11 @@ def multimodel(x, y, ey, XX, funcs, fkwargs=[{}], **kwargs):
 
     kwargs.setdefault('weightit', True)
     kwargs.setdefault('MCerr', True)
+
     nargout = kwargs.pop('nargout', 1)
     plotit = kwargs.pop('plotit', True)
     systvar = kwargs.pop('systvar', True)
+    statvar = False if systvar or not kwargs.pop('statvar', False) else True
     kwargs['plotit'] = False
     chi2_min = kwargs.pop('chi2_min', 1e21)
 
@@ -1337,7 +1365,8 @@ def multimodel(x, y, ey, XX, funcs, fkwargs=[{}], **kwargs):
     for ii, func in enumerate(funcs):
         fkwarg = fkwargs[ii]
 
-        info = profilefit(x, y, ey, XX, func, fkwargs=fkwarg, **kwargs)
+#        info = profilefit(x, y, ey, XX, func, fkwargs=fkwarg, **kwargs)
+        info = profilefit(x, y, ey, XX, func, fkwargs=fkwarg, chi2_min=chi2_min, **kwargs)
 
         chi2_reduced[ii] = _np.copy(info.chi2_reduced)
         if chi2_reduced[ii]<chi2_min:
@@ -1352,6 +1381,7 @@ def multimodel(x, y, ey, XX, funcs, fkwargs=[{}], **kwargs):
             dprofdx[ii,:] = _np.nan*_np.ones_like(info.dprofdx)
             vdprofdx[ii,:] = _np.nan*_np.ones_like(info.vardprofdx)
     # end for
+    ifk = len(funcs)
 
     # ====================== #
 
@@ -1370,65 +1400,86 @@ def multimodel(x, y, ey, XX, funcs, fkwargs=[{}], **kwargs):
         _ax2.plot(XX, dprofdx.T, 'k-')
     # end if
 
-    # these only work when the populations are large enough to be gaussian distributed
     if systvar:
+        # systematic combination is probably the correct method
         mfit, vfit = _ut.combine_var(dat=mfit, systvar=vfit, axis=0, niter=niter)
         dprofdx, vdprofdx = _ut.combine_var(dat=dprofdx, systvar=vdprofdx, axis=0, niter=niter)
-    else:
+    elif statvar:
+        # these only work when the populations are large enough to be gaussian distributed
         mfit, vfit = _ut.combine_var(dat=mfit, statvar=vfit, axis=0, niter=niter)
         dprofdx, vdprofdx = _ut.combine_var(dat=dprofdx, statvar=vdprofdx, axis=0, niter=niter)
+    else:
+#        mfit, vfit = _ut.combine_var(dat=mfit, axis=0, niter=niter)
+#        dprofdx, vdprofdx = _ut.combine_var(dat=dprofdx, axis=0, niter=niter)
+
+#        def invertnansum(mfit, vfit):
+#            _vfit = _np.zeros_like(vfit[0, :])
+#            _mfit = _np.zeros_like(mfit[0, :])
+#            for jj in range(ifk):
+#                iuse = _np.argwhere(~_np.isnan(mfit[jj,:])).squeeze()
+#                _mfit[iuse] += 1.0/mfit[jj,iuse]
+#
+#                iuse = _np.argwhere((~_np.isnan(mfit[jj,:]))*(~_np.isnan(vfit[jj,:]))).squeeze()
+#                _vfit[iuse] += vfit[jj,iuse]/mfit[jj,iuse]**4.0
+#            # end for
+#            _mfit = 1.0/_mfit
+#            _vfit = _vfit/_mfit**4.0
+#            return _mfit, _vfit
+#
+#        mfit, vfit = invertnanmean(mfit, vfit)
+#        dprofdx, vdprofdx = invertnanmean(dprofdx, vdprofdx)
+
+        # ====================== #
+
+#        # Profile fit averaging
+#        mfit = _np.nansum( aw*mfit, axis=0)
+#
+#        # Profile derivative averaging
+#        dprofdx = _np.nansum( aw*dprofdx, axis=0)
+
+        # Parameter averaging
+        mfm = _np.ones((ifk,1), dtype=mfit.dtype)*_np.atleast_2d(_np.nanmean(mfit, axis=0))
+        dpm = _np.ones((ifk,1), dtype=dprofdx.dtype)*_np.atleast_2d(_np.nanmean(dprofdx, axis=0))
+
+        weightit = True
+        if weightit:
+            # # weighted mean and covariance
+            # aw = 1.0/(1.0-chi2) # chi2 close to 1 is good, high numbers good in aweights
+            # # aw[_np.isnan(aw)*_np.isinf(aw)]
+            # Weighting by chi2
+##            aw = 1.0/chi2_reduced
+             aw = 1.0/_np.abs(1.0-chi2_reduced) # chi2 close to 1 is good, high numbers good in aweights
+##             aw = _np.divide(1.0, _np.abs(1.0-chi2_reduced), out=_np.ones_like(chi2_reduced), where=chi2_reduced==1.0)
+#            aw = 1.0/vfit.copy()
+        else:
+            aw = _np.ones_like(chi2_reduced)
+#            aw = _np.ones_like(mfit)
+        # end if
+        aw = aw/_np.nansum(aw, axis=0)
+        Sw = _np.nansum(aw, axis=0)
+        S2w = _np.nansum(aw*aw, axis=0)
+        Sw2 = Sw*Sw
+        coeff = Sw/(Sw2-S2w)
+
+        # Generate temprorary wegihts the same size as the arrays to average
+        aw = _np.atleast_2d(aw).T*_np.ones_like(mfit)
+
+        vfit = (coeff*_np.nansum(aw*(mfit-mfm)*(mfit-mfm), axis=0)
+                + _np.nansum(aw*vfit, axis=0)/Sw   )  # adding in statistical/standard error from each fit
+#    #            + _np.nansum(aw*aw*vfit, axis=0)/S2w   )  # adding in statistical/standard error from each fit
+#                + 0.0 )
+
+        vdprofdx = (coeff*_np.nansum(aw*(dprofdx-dpm)*(dprofdx-dpm), axis=0)
+                + _np.nansum(aw*vdprofdx, axis=0)/Sw   )  # adding in statistical/standard error from each fit
+#    #            + _np.nansum(aw*aw*vdprofdx, axis=0)/S2w   )  # adding in statistical/standard error from each fit
+#                + 0.0 )
+
+        # Profile fit averaging
+        mfit = _np.nansum( aw*mfit, axis=0)
+
+        # Profile derivative averaging
+        dprofdx = _np.nansum( aw*dprofdx, axis=0)
     # end if
-
-#    # y = sum(yi)/ni
-#    # dydyi =  1/ni
-#    # vy = sum(vyi*(1/ni)**2.0)
-#    vfit = _np.nansum(vfit, axis=0)/(niter*niter) + _np.nanvar(mfit, axis=0)
-#    vdprofdx = _np.nansum(vdprofdx, axis=0)/(niter*niter) + _np.nanvar(dprofdx, axis=0)
-#    mfit = _np.nanmean(mfit, axis=0)
-#    dprofdx = _np.nanmean(dprofdx, axis=0)
-
-    # ====================== #
-#    # Profile fit averaging
-#    mfit = _np.nansum( aw*mfit, axis=0)
-#
-#    # Profile derivative averaging
-#    dprofdx = _np.nansum( aw*dprofdx, axis=0)
-
-#    if weightit:
-#        # # weighted mean and covariance
-#        # aw = 1.0/(1.0-chi2) # chi2 close to 1 is good, high numbers good in aweights
-#        # # aw[_np.isnan(aw)*_np.isinf(aw)]
-#        # Weighting by chi2
-#        aw = 1.0/chi2_reduced
-#    else:
-#        aw = _np.ones_like(chi2_reduced)
-#    # end if
-#    aw = aw/_np.sum(aw)
-#    Sw = _np.sum(aw)
-#    S2w = _np.sum(aw*aw)
-#    Sw2 = Sw*Sw
-#    coeff = Sw/(Sw2-S2w)
-#
-#    # Parameter averaging
-#    mfm = _np.ones((ii+1,1), dtype=mfit.dtype)*_np.atleast_2d(_np.nanmean(mfit, axis=0))
-#    dpm = _np.ones((ii+1,1), dtype=dprofdx.dtype)*_np.atleast_2d(_np.nanmean(dprofdx, axis=0))
-#
-#    # Generate temprorary wegihts the same size as the arrays to average
-#    aw = _np.atleast_2d(aw).T*_np.ones_like(mfit)
-#
-#    vfit = (coeff*_np.nansum(aw*(mfit-mfm)*(mfit-mfm), axis=0)
-#            + _np.nansum(aw*vfit, axis=0)/Sw   )  # adding in statistical/standard error from each fit
-##            + _np.nansum(aw*aw*vfit, axis=0)/S2w   )  # adding in statistical/standard error from each fit
-#
-#    vdprofdx = (coeff*_np.nansum(aw*(dprofdx-dpm)*(dprofdx-dpm), axis=0)
-#            + _np.nansum(aw*vdprofdx, axis=0)/Sw   )  # adding in statistical/standard error from each fit
-##            + _np.nansum(aw*aw*vdprofdx, axis=0)/S2w   )  # adding in statistical/standard error from each fit
-#
-#    # Profile fit averaging
-#    mfit = _np.nansum( aw*mfit, axis=0)
-#
-#    # Profile derivative averaging
-#    dprofdx = _np.nansum( aw*dprofdx, axis=0)
 
     # ====================================================================== #
 
@@ -1990,7 +2041,7 @@ def test_fit(func=_ms.model_qparab, **fkwargs):
         xdat = _np.linspace(tstart, tend, num=numpts)
         XX = _np.linspace(tstart, tend, num=numpts)
     else:
-        numpts = 21
+        numpts = 31
         xdat = _np.linspace(-0.05, 1.25, numpts)
 #        XX = _np.linspace( -1.0, 1.3, 99)
         XX = _np.linspace( 0.0, 1.3, 99)
@@ -2016,6 +2067,7 @@ def test_fit(func=_ms.model_qparab, **fkwargs):
 #    kwargs.setdefault('resampleit', 10) # testing
     if len(xdat)>100 and kwargs['resampleit']:
         kwargs['resampleit'] = 1000
+    # end if
     kwargs.pop('XX')
     kwargs.pop('af')
 
@@ -2093,6 +2145,130 @@ def test_fit(func=_ms.model_qparab, **fkwargs):
     ax3.bar(left=_np.asarray(range(len(aa))), height=100.0*(1.0-info2.params/aa), width=1.0)
     ax3.set_title('perc. diff.')
     _plt.show()
+#    print(ydat)
+# end
+
+
+def test_multifit(funcs=[_ms.model_poly], fkwargs=[{'npoly':6}], **mkwargs):
+    if 'Fs' in mkwargs:
+        Fs = mkwargs.pop('Fs', 10.0e3)
+        tstart, tend = tuple(mkwargs.pop('tbnds', [0.0, 6.0/33.0]))
+        numpts = mkwargs.pop('num', int((tend-tstart)*Fs))
+        xdat = _np.linspace(tstart, tend, num=numpts)
+        XX = _np.linspace(tstart, tend, num=numpts)
+    else:
+        numpts = 9
+        xdat = _np.linspace(-0.05, 1.25, numpts)
+#        XX = _np.linspace( -1.0, 1.3, 99)
+        XX = _np.linspace( 0.0, 1.3, 99)
+#        XX = _np.linspace( 1e-6, 1.0, 99)
+    # end if
+
+    # Model to fit
+    aa = gen_random_init_conds(funcs[0], **fkwargs[0])
+    yxx, _, temp = funcs[0](XX=XX, af=aa, **fkwargs[0])
+    aa =temp.af
+    ydat, _, _, _ = temp.update(xdat)
+
+#    if (yxx<0.0).any():
+#        offset = yxx.min()
+#        ydat -= offset
+#        yxx -= offset
+#    # end if
+    kwargs = temp.dict_from_class()
+    kwargs.setdefault('plotit', True)
+    kwargs.setdefault('perpchi2', False)
+    kwargs.setdefault('errx', 0.00)
+    kwargs.setdefault('chi2_min', 10)
+    kwargs.setdefault('systvar', False)
+    kwargs.setdefault('statvar', False)
+    kwargs.setdefault('randinit', True)  # TODO! good with False
+    kwargs.setdefault('resampleit', True)
+#    kwargs.setdefault('resampleit', 10) # testing
+    if len(xdat)>100 and kwargs['resampleit']:
+        kwargs['resampleit'] = 1000
+    elif len(xdat) == 9 and kwargs['resampleit']:
+#        kwargs['resampleit'] = 31
+        kwargs['resampleit'] = 51
+    # end if
+    for key in ['XX', 'af', 'Lbounds', 'Ubounds', 'fixed', 'p0']:
+        if key in kwargs:
+            kwargs.pop(key)
+        # end if
+    # end for
+
+    # Initial conditions for model
+    if 'shape' in fkwargs[0]: fkwargs[0].pop('shape')
+#    kwargs['af0'] = gen_random_init_conds(func, af0=aa, **fkwargs)
+
+    # ====================== #
+
+    yerr = 0.05*(_np.nanmean(ydat*ydat) - _np.nanmean(ydat)*_np.nanmean(ydat))
+    yerr = yerr*_np.ones_like(ydat)
+#    yerr = 0.1*ydat
+    yerr = _np.where(0.05*ydat<yerr, yerr, 0.05*ydat)
+
+#    kwargs['damp'] = 10.0*_np.nanmean(ydat/yerr)
+    kwargs.setdefault('plotit', False)
+    info1 = multimodel(x=xdat.copy(), y=ydat.copy(), ey=yerr.copy(), XX=XX,
+                      funcs=funcs, fkwargs=fkwargs, **kwargs)
+#                      chi2_min=10, scalex=True, scaley=True, **kwargs)
+
+    # ====================== #
+    _np.random.seed()
+#    ydat = ydat + 0.1*_np.nanmean(ydat)*_np.random.normal(0.0, 1.0, len(ydat))
+    ydat = ydat + yerr*_np.random.normal(0.0, 1.0, len(ydat))
+    info2 = multimodel(x=xdat.copy(), y=ydat.copy(), ey=yerr.copy(), XX=XX,
+                      funcs=funcs, fkwargs=fkwargs, **kwargs)
+#                      chi2_min=10, scalex=True, scaley=True, **kwargs)
+
+    _plt.figure()
+    ax1 = _plt.subplot(2, 1, 1)
+    if numpts<50:
+        ax1.errorbar(xdat, ydat, yerr=yerr, fmt='kx')
+    else:
+        ax1.plot(xdat, ydat, 'k-')
+    ax1.plot(XX, yxx, 'k-', linewidth=1.0)
+    ax1.plot(XX, info1.prof, 'b-')
+    ax1.plot(XX, info1.prof-_np.sqrt(info1.varprof), 'b--')
+    ax1.plot(XX, info1.prof+_np.sqrt(info1.varprof), 'b--')
+    ax1.plot(XX, info2.prof, 'r-')
+    ax1.plot(XX, info2.prof-_np.sqrt(info2.varprof), 'r--')
+    ax1.plot(XX, info2.prof+_np.sqrt(info2.varprof), 'r--')
+
+    # ax1.fill_between(XX, info.prof-_np.sqrt(info.varprof))
+#    isolid = _np.where(yerr/ydat<0.3)[0]
+#    if len(isolid)>0:
+#        ax1.set_ylim((_np.nanmin(_np.append(0.0, _np.asarray([0.8,1.2])*_np.nanmin(ydat[isolid]-yerr[isolid]))),
+#                      _np.nanmax(_np.append(0.0, _np.asarray([0.8,1.2])*_np.nanmax(ydat[isolid]+yerr[isolid]))) ))
+    ax1.set_title(type(info1).__name__)
+    xlims = ax1.get_xlim()
+    ylims = ax1.get_ylim()
+    ax1.text(x=0.6*(xlims[1]-xlims[0])+xlims[0], y=0.6*(ylims[1]-ylims[0])+ylims[0],
+             s=r'\chi_\nu^2=%4.1f'%(info2.chi2_reduced,), fontsize=16)
+#    ylims = ax1.get_ylim()
+#    xlims = ax1.get_xlim()
+#    print(ylims)
+
+    ax2 = _plt.subplot(2, 1, 2, sharex=ax1)
+    if numpts<50:
+        ax2.plot(xdat, temp.dprofdx, 'kx')
+    else:
+        ax2.plot(xdat, temp.dprofdx, 'k-')
+    ax2.plot(XX, info1.dprofdx, 'b-')
+    ax2.plot(XX, info1.dprofdx-_np.sqrt(info1.vardprofdx), 'b--')
+    ax2.plot(XX, info1.dprofdx+_np.sqrt(info1.vardprofdx), 'b--')
+    ax2.plot(XX, info2.dprofdx, 'r-')
+    ax2.plot(XX, info2.dprofdx-_np.sqrt(info2.vardprofdx), 'r--')
+    ax2.plot(XX, info2.dprofdx+_np.sqrt(info2.vardprofdx), 'r--')
+#    ax2.set_ylim((_np.min((0,1.2*_np.min(info.dprofdx))), 1.2*_np.max(info.dprofdx)))
+#    isolid = _np.where(_np.sqrt(info.vardprofdx)/info.dprofdx<0.3)[0]
+#    if len(isolid)>0:
+#        ax2.set_ylim((_np.nanmin(_np.append( 0.0, _np.asarray([0.8, 1.2])*_np.nanmin(info.dprofdx[isolid]-_np.sqrt(info.vardprofdx[isolid])) )),
+#                      _np.nanmax(_np.append( 0.0, _np.asarray([0.8, 1.2])*_np.nanmax(info.dprofdx[isolid]+_np.sqrt(info.vardprofdx[isolid])) )) ))
+#                  #, (_np.nanmax(ydat)-_np.nanmin(ydat))/(0.1*_np.diff(xlims))))))
+##    print(ax2.get_ylim())
+
 #    print(ydat)
 # end
 
@@ -2932,6 +3108,28 @@ def doppler_test(scale_by_data=False, noshift=True, Fs=10.0e6, model_order=2, lo
 # ========================================================================== #
 
 if __name__=="__main__":
+
+    mkwargs = {}
+    mkwargs['chi2_min'] = 3.0
+    funcs = [_ms.model_poly]
+    fkwargs = [{'npoly':3}]
+    for ifk in range(6,0,-1):
+        if ifk == 3:
+            continue
+        else:
+            funcs.append(_ms.model_poly)
+            fkwargs.append({'npoly':ifk})
+        # end if
+    # end if
+    for ii in range(3):
+        for ifk in range(6,0,-1):
+            if 1:
+                funcs.append(_ms.model_poly)
+                fkwargs.append({'npoly':ifk})
+            # end if
+        # end if
+    # end if
+    test_multifit(funcs, fkwargs, **mkwargs)
 
 #    for ii in range(5):
 ##        out, ft = doppler_test(scale_by_data=False, logdata=False, Fs=10.0e6, fmax=1.0e6)
