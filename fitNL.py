@@ -563,6 +563,8 @@ def modelfit(x, y, ey, XX=None, func=None, fkwargs={}, **kwargs):
 
 
 def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwargs):
+#    from scipy.stats import chi2
+
     method = kwargs.setdefault('Method', 'Bootstrap')  # we use a Smooth bootstrap, or a "Wild-Bootstrap" with the normal distribution!
 #    method = kwargs.setdefault('Method', 'Jackknife')  #
 
@@ -599,6 +601,7 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
         niterate = 2*nmonti*nch
     # endif
 
+#    pp = _np.zeros((niterate, ), dtype=_np.float64)
     af = _np.zeros((niterate, numfit), dtype=_np.float64)
     vaf = _np.zeros((niterate, numfit), dtype=_np.float64)
     covmat = _np.zeros((niterate, numfit, numfit), dtype=_np.float64)
@@ -672,6 +675,9 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
             dprofdx[nn,:] = _np.copy(info.dprofdx)
             vdprofdx[nn,:] = _np.copy(info.vardprofdx)
             chi2_reduced[nn] = _np.copy(info.chi2_reduced)
+
+            # weight it by the probability from Pearson test
+#            pp[nn] = 1.0 - chi2.cdf(chi2_reduced[nn]*info.dof, info.dof)
             nn += 1
 #        except:
 #            pass
@@ -685,9 +691,9 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
 #            print('Warning: rejecting %i/%i runs for $\chi_/\nu^2$>%3.1f'%(nmonti*nch-1-nn, nmonti*nch-1, chi2_limit))
             print(r'Warning: rejecting %i/%i runs for $\chi_{/\nu}^2$>%3.1f'%(niterate-nn, niterate, chi2_limit))
         # end if
-    if nn == 0:
+    if nn < 2:
         if verbose:
-            print('rejected all runs? loosen up why dont ya: you get NaNs!')
+            print('rejecting too many runs? loosen up why dont ya: you get NaNs!')
         info.af = _np.nan*_np.ones( (numfit,), dtype=_np.float64)
         info.vaf = _np.nan*_np.ones_like(info.af)
         info.covmat = _np.nan*_np.ones( (numfit,numfit), dtype=_np.float64)
@@ -704,6 +710,7 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
         info.cormat = _np.nan*info.covmat.copy()
         return info
     # end if
+#    pp = pp[:nn]
     af = af[:nn, :]
     vaf = vaf[:nn,:]
     covmat = covmat[:nn,:,:]
@@ -749,8 +756,10 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
         # aw = 1.0/(1.0-chi2) # chi2 close to 1 is good, high numbers good in aweights
         # # aw[_np.isnan(aw)*_np.isinf(aw)]
         # Weighting by chi2
-#        aw = 1.0/chi2_reduced
-        aw = 1.0/_np.abs(1.0-chi2_reduced)
+#        aw = 1.0/chi2_reduced   # great usually, uncertainties possibly too small
+        aw = 1.0/_np.abs(1.0-chi2_reduced)  # larger uncertainties, but good
+        # weight it by the probability from Pearson test
+#        aw = pp
     else:
         aw = _np.ones_like(chi2_reduced)
     # end if
@@ -796,14 +805,14 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
         _vdprofdx = coeff*_np.nansum(aw*(dprofdx-dpm)*(dprofdx-dpm), axis=0)
 
         if not MCerr:
-            _vaf += _np.nansum(awt*vaf, axis=0)/Sw     # adding in statistical/standard error from each fit
-#            _vaf += _np.nansum(awt*awt*vaf, axis=0)/S2w     # adding in statistical/standard error from each fit
+#            _vaf += _np.nansum(awt*vaf, axis=0)/Sw     # adding in statistical/standard error from each fit
+            _vaf += _np.nansum(awt*awt*vaf, axis=0)/S2w     # adding in statistical/standard error from each fit
 
-            _vfit += _np.nansum(aw*vfit, axis=0)/Sw     # adding in statistical/standard error from each fit
-#            _vfit += _np.nansum(aw*aw*vfit, axis=0)/S2w     # adding in statistical/standard error from each fit
+#            _vfit += _np.nansum(aw*vfit, axis=0)/Sw     # adding in statistical/standard error from each fit
+            _vfit += _np.nansum(aw*aw*vfit, axis=0)/S2w     # adding in statistical/standard error from each fit
 
-            _vdprofdx += _np.nansum(aw*vdprofdx, axis=0)/Sw     # adding in statistical/standard error from each fit
-#            _vdprofdx += _np.nansum(aw*aw*vdprofdx, axis=0)/S2w     # adding in statistical/standard error from each fit
+#            _vdprofdx += _np.nansum(aw*vdprofdx, axis=0)/Sw     # adding in statistical/standard error from each fit
+            _vdprofdx += _np.nansum(aw*aw*vdprofdx, axis=0)/S2w     # adding in statistical/standard error from each fit
         # end if
 
     elif method.lower().find('jack')>-1:
@@ -816,14 +825,14 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
         _vdprofdx = coeff*_np.nansum(aw*(dprofdx-dpm)*(dprofdx-dpm), axis=0)
 
         if not MCerr:
-            _vaf += _np.nansum(awt*vaf, axis=0)/Sw     # adding in statistical/standard error from each fit
-#            _vaf += _np.nansum(awt*awt*vaf, axis=0)/S2w     # adding in statistical/standard error from each fit
+#            _vaf += _np.nansum(awt*vaf, axis=0)/Sw     # adding in statistical/standard error from each fit
+            _vaf += _np.nansum(awt*awt*vaf, axis=0)/S2w     # adding in statistical/standard error from each fit
 
-            _vfit += _np.nansum(aw*vfit, axis=0)/Sw     # adding in statistical/standard error from each fit
-#            _vfit += _np.nansum(aw*aw*vfit, axis=0)/S2w     # adding in statistical/standard error from each fit
+#            _vfit += _np.nansum(aw*vfit, axis=0)/Sw     # adding in statistical/standard error from each fit
+            _vfit += _np.nansum(aw*aw*vfit, axis=0)/S2w     # adding in statistical/standard error from each fit
 
-            _vdprofdx += _np.nansum(aw*vdprofdx, axis=0)/Sw     # adding in statistical/standard error from each fit
-#            _vdprofdx += _np.nansum(aw*aw*vdprofdx, axis=0)/S2w     # adding in statistical/standard error from each fit
+#            _vdprofdx += _np.nansum(aw*vdprofdx, axis=0)/Sw     # adding in statistical/standard error from each fit
+            _vdprofdx += _np.nansum(aw*aw*vdprofdx, axis=0)/S2w     # adding in statistical/standard error from each fit
         # end if
     # end if
     vaf = _vaf
@@ -1341,9 +1350,10 @@ class fitNL(fitNL_base):
 # ========================================================================== #
 
 def multimodel(x, y, ey, XX, funcs, fkwargs=[{}], **kwargs):
+#    from scipy.stats import chi2
 
     kwargs.setdefault('weightit', True)
-    kwargs.setdefault('MCerr', True)
+    kwargs.setdefault('MCerr', True)   # true uses only statistical error propagation on mean models within the resampler
 
     nargout = kwargs.pop('nargout', 1)
     plotit = kwargs.pop('plotit', True)
@@ -1355,6 +1365,7 @@ def multimodel(x, y, ey, XX, funcs, fkwargs=[{}], **kwargs):
     niterate = len(_np.atleast_1d(funcs))
     nx = len(XX)
 
+#    pp = _np.zeros((niterate, ), dtype=_np.float64)
     mfit = _np.zeros((niterate, nx), dtype=_np.float64)
     vfit = _np.zeros_like(mfit)
     dprofdx = _np.zeros_like(mfit)
@@ -1374,12 +1385,16 @@ def multimodel(x, y, ey, XX, funcs, fkwargs=[{}], **kwargs):
             vfit[ii, :] = _np.copy(info.varprof)
             dprofdx[ii,:] = _np.copy(info.dprofdx)
             vdprofdx[ii,:] = _np.copy(info.vardprofdx)
+
+            # weight it by the probability from Pearson test
+#            pp[ii] = 1.0 - chi2.cdf(chi2_reduced[ii]*info.dof, info.dof)
             niter += 1
         else:
             mfit[ii, :] = _np.nan*_np.ones_like(info.prof)
             vfit[ii, :] = _np.nan*_np.ones_like(info.varprof)
             dprofdx[ii,:] = _np.nan*_np.ones_like(info.dprofdx)
             vdprofdx[ii,:] = _np.nan*_np.ones_like(info.vardprofdx)
+#            pp[ii] = 0.0
     # end for
     ifk = len(funcs)
 
@@ -1447,10 +1462,12 @@ def multimodel(x, y, ey, XX, funcs, fkwargs=[{}], **kwargs):
             # aw = 1.0/(1.0-chi2) # chi2 close to 1 is good, high numbers good in aweights
             # # aw[_np.isnan(aw)*_np.isinf(aw)]
             # Weighting by chi2
-##            aw = 1.0/chi2_reduced
+#            aw = 1.0/chi2_reduced
              aw = 1.0/_np.abs(1.0-chi2_reduced) # chi2 close to 1 is good, high numbers good in aweights
 ##             aw = _np.divide(1.0, _np.abs(1.0-chi2_reduced), out=_np.ones_like(chi2_reduced), where=chi2_reduced==1.0)
 #            aw = 1.0/vfit.copy()
+            # weight it by the probability from Pearson test
+#            aw = pp
         else:
             aw = _np.ones_like(chi2_reduced)
 #            aw = _np.ones_like(mfit)
@@ -1465,13 +1482,13 @@ def multimodel(x, y, ey, XX, funcs, fkwargs=[{}], **kwargs):
         aw = _np.atleast_2d(aw).T*_np.ones_like(mfit)
 
         vfit = (coeff*_np.nansum(aw*(mfit-mfm)*(mfit-mfm), axis=0)
-                + _np.nansum(aw*vfit, axis=0)/Sw   )  # adding in statistical/standard error from each fit
-#    #            + _np.nansum(aw*aw*vfit, axis=0)/S2w   )  # adding in statistical/standard error from each fit
+                + _np.nansum(aw*aw*vfit, axis=0)/S2w   )  # adding in statistical/standard error from each fit
+#                + _np.nansum(aw*vfit, axis=0)/Sw   )  # adding in statistical/standard error from each fit
 #                + 0.0 )
 
         vdprofdx = (coeff*_np.nansum(aw*(dprofdx-dpm)*(dprofdx-dpm), axis=0)
-                + _np.nansum(aw*vdprofdx, axis=0)/Sw   )  # adding in statistical/standard error from each fit
-#    #            + _np.nansum(aw*aw*vdprofdx, axis=0)/S2w   )  # adding in statistical/standard error from each fit
+                + _np.nansum(aw*aw*vdprofdx, axis=0)/S2w   )  # adding in statistical/standard error from each fit
+#                + _np.nansum(aw*vdprofdx, axis=0)/Sw   )  # adding in statistical/standard error from each fit
 #                + 0.0 )
 
         # Profile fit averaging
@@ -2179,10 +2196,10 @@ def test_multifit(funcs=[_ms.model_poly], fkwargs=[{'npoly':6}], **mkwargs):
     kwargs.setdefault('plotit', True)
     kwargs.setdefault('perpchi2', False)
     kwargs.setdefault('errx', 0.00)
-    kwargs.setdefault('chi2_min', 10)
     kwargs.setdefault('systvar', False)
     kwargs.setdefault('statvar', False)
-    kwargs.setdefault('randinit', True)  # TODO! good with False
+    kwargs.setdefault('randinit', True)  # TODO! good with False, not working how i want it to
+    kwargs['chi2_min'] = mkwargs.pop('chi2_min', 1e18)
     kwargs.setdefault('resampleit', True)
 #    kwargs.setdefault('resampleit', 10) # testing
     if len(xdat)>100 and kwargs['resampleit']:
@@ -2216,8 +2233,8 @@ def test_multifit(funcs=[_ms.model_poly], fkwargs=[{'npoly':6}], **mkwargs):
 
     # ====================== #
     _np.random.seed()
-#    ydat = ydat + 0.1*_np.nanmean(ydat)*_np.random.normal(0.0, 1.0, len(ydat))
-    ydat = ydat + yerr*_np.random.normal(0.0, 1.0, len(ydat))
+    ydat = ydat + 0.1*_np.nanmean(ydat)*_np.random.uniform(-1.0, 1.0, len(ydat))
+#    ydat = ydat + yerr*_np.random.normal(0.0, 1.0, len(ydat))
     info2 = multimodel(x=xdat.copy(), y=ydat.copy(), ey=yerr.copy(), XX=XX,
                       funcs=funcs, fkwargs=fkwargs, **kwargs)
 #                      chi2_min=10, scalex=True, scaley=True, **kwargs)
@@ -3110,7 +3127,7 @@ def doppler_test(scale_by_data=False, noshift=True, Fs=10.0e6, model_order=2, lo
 if __name__=="__main__":
 
     mkwargs = {}
-    mkwargs['chi2_min'] = 3.0
+    mkwargs['chi2_min'] = 1e18
     funcs = [_ms.model_poly]
     fkwargs = [{'npoly':3}]
     for ifk in range(6,0,-1):
