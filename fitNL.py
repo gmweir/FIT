@@ -3127,7 +3127,8 @@ def doppler_test(scale_by_data=False, noshift=True, Fs=10.0e6, model_order=2, lo
 if __name__=="__main__":
 
     mkwargs = {}
-    mkwargs['chi2_min'] = 1e18
+#    mkwargs['chi2_min'] = 1e18
+    mkwargs['chi2_min'] =10
     funcs = [_ms.model_poly]
     fkwargs = [{'npoly':3}]
     for ifk in range(6,0,-1):
