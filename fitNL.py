@@ -203,6 +203,7 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
         LB = _np.where(_np.isnan(LB), -_np.inf, LB)
         UB = _np.where(_np.isnan(UB), _np.inf, UB)
     # end if
+    _Xsav = info.XX.copy()
     info.lastaf = _np.copy(p0)
 
 
@@ -252,29 +253,36 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
         # stop the calculation.
         p, status = checkp(p)
 
-#        model, gvec = info.update_minimal(x, p)
-        model, gvec, temp = func(x, p, **fkwargs)
-
-        if nargout>1:
-            return model, gvec, temp
-
-        if _np.isnan(model).any():
-            if verbose: print('NaN in model!')
-            status = -1
-
         if "errx" in kwargs:
             errx = _np.atleast_1d(kwargs["errx"])
         elif use_perpendicular_distance:
             errx = _np.ones_like(err)  # no weighting
         else:
             errx = _np.zeros_like(err)  # no perpendicular distance
+        # end if
+
         if use_perpendicular_distance or (errx !=0).any():    #perp_distance
-            weights = _np.sqrt(err*err + temp.dprofdx*temp.dprofdx*(errx*errx))
+            model, gvec = info.update(x, p, **fkwargs)
+#            model, gvec, info = func(x, p, **fkwargs)
+
+            weights = _np.sqrt(err*err + info.dprofdx*info.dprofdx*(errx*errx))
 #            weights = _np.sqrt(err**2.0 + (errx*temp.dprofdx)**2.0)  # effective variance method
         else:
+            model, gvec = info.update_minimal(x, p, **fkwargs)
+#            model, gvec, info = func(x, p, **fkwargs)
+
             # vertical distance
             weights = err
         # end if
+
+
+        if nargout>1:
+            return model, gvec, info
+
+        if _np.isnan(model).any():
+            if verbose: print('NaN in model!')
+            status = -1
+
         weights = _np.where(weights==0+_np.isnan(weights), 1.0, weights)
         residual = _np.divide( y-model, weights, out=y-model, where=model!=0)
 
@@ -304,9 +312,11 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
             # analytic jacobian of the resiudal function
             p1s = _np.ones( (1,len(p)), dtype=fjac.dtype)
             fjac = -1.0*fjac/(_np.atleast_2d(weights).T*p1s)
+
+
             if use_perpendicular_distance or (errx != 0).any():
                 # The jacobian of the analytic residual is modified by the derivative in the weights
-                fjac = fjac - temp.dgdx.T*(_np.atleast_2d(residual*errx*errx*temp.dprofdx/(weights*weights)).T*p1s)
+                fjac = fjac - info.dgdx.T*(_np.atleast_2d(residual*errx*errx*info.dprofdx/(weights*weights)).T*p1s)
 
 #            fjac = -1.0*fjac  # MPFIT flips the sign on the jacobian
 #            if _np.isnan(fjac).any():
@@ -428,11 +438,17 @@ def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
     info.errmsg = m.errmsg
     info.af = _np.copy(m.params)
 
-    # Final function evaluation
-    info.update(af=info.af)
+    # Final model update to get it across the profile
+    # if scaling, this needs to before the other updates
+    info.update(XX=info.XX, af=info.af)
+
+    # Final function evaluation to get residuals
     out = mymodel(info.af, x=x, y=y, err=ey)
     residual = out['residual']
-#    residual = calc_chi2(info.prof, info.af, x, y, ey)
+
+    # Final model update to get it across the profile
+    # if scaling, this needs to before the other updates
+    info.update(XX=_Xsav, af=info.af)
 
     # ====== Post-processing ====== #
 
