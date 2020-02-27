@@ -8728,32 +8728,34 @@ class ModelSumArb(ModelClass):
     """
     Calculate model / derivatives of the sum of two arbitrary models
     """
-    _af = _np.asarray([1.0], dtype=_np.float64)
-    _LB = _np.asarray([0.0], dtype=_np.float64)
-    _UB = _np.asarray([_np.inf], dtype=_np.float64)
-    _fixed = _np.zeros( (1,), dtype=int)
+    _af = []
+    _LB = []
+    _UB = []
+    _fixed = []
     def __init__(self, XX, af=None, **kwargs):
         kwargs = _np.copy(kwargs)
-        fkwargs = kwargs.pop('fkwargs')   # analysis:ignore
-        funcs = kwargs.pop('funcs')
+        fkwargs = _np.copy(kwargs.pop('fkwargs'))   # analysis:ignore
+        funcs = _np.copy(kwargs.pop('funcs'))
         nfuncs = len(funcs)
-        nargs = kwargs.pop('funcs')
 
-        nargs = []
         _af, _LB, _UB, _fixed = [[] for _ in range(4)]
 
         for ii in range(nfuncs):
-            nargs.append(len(funcs[ii]._af))
-            _af.append(len(funcs[ii]._af))
-            _LB.append(len(funcs[ii]._LB))
-            _UB.append(len(funcs[ii]._UB))
-            _fixed.append(len(funcs[ii]._fixed))
+            # Initialize each model with their keyword arguments
+            fkw = _np.copy(fkwargs[ii])
+            taf = fkwargs[ii].pop('af')
+            self.fkwargs[ii] = _np.copy(fkw)
+            self.funcs[ii] = funcs[ii](XX=XX, af=taf, **fkw)
+
+            _af.append(funcs[ii]._af)
+            _LB.append(funcs[ii]._LB)
+            _UB.append(funcs[ii]._UB)
+            _fixed.append(funcs[ii]._fixed)
         # end for
-        self.nargs = nargs
-        self._af = _af
-        self._LB = _LB
-        self._UB = _UB
-        self._fixed = _fixed
+        self._af = _np.asarray(_af, dtype=_np.float64)
+        self._LB = _np.asarray(_LB, dtype=_np.float64)
+        self._UB = _np.asarray(_UB, dtype=_np.float64)
+        self._fixed = _np.asarray(_fixed, dtype=_np.int64)
 
         super(ModelSumArb, self).__init__(XX, af, **kwargs)
     # end def __init__
