@@ -8740,17 +8740,22 @@ class ModelSumArb(ModelClass):
 
         _af, _LB, _UB, _fixed = [[] for _ in range(4)]
 
+        prev = 0
         for ii in range(nfuncs):
             # Initialize each model with their keyword arguments
-            fkw = _np.copy(fkwargs[ii])
-            taf = fkwargs[ii].pop('af')
-            self.fkwargs[ii] = _np.copy(fkw)
-            self.funcs[ii] = funcs[ii](XX=XX, af=taf, **fkw)
+            # that means that at least the correct number of parameters must be chosen for each model first
+            self.funcs[ii] = funcs[ii](XX=XX, **fkwargs[ii])
 
             _af.append(funcs[ii]._af)
             _LB.append(funcs[ii]._LB)
             _UB.append(funcs[ii]._UB)
             _fixed.append(funcs[ii]._fixed)
+
+            nargs = len(_np.atleast_1d(self.fkwargs[ii]._af))
+            self.fkwargs[ii] = _np.copy(fkwargs[ii])
+            self.fkwargs[ii]["nargs"] = nargs
+            self.fkwargs[ii]["aslice"] = _np.asarray(range(prev, prev + nargs), dtype=int)
+            prev += nargs
         # end for
         self._af = _np.asarray(_af, dtype=_np.float64)
         self._LB = _np.asarray(_LB, dtype=_np.float64)
@@ -8770,8 +8775,9 @@ class ModelSumArb(ModelClass):
         res = 0.0
         iaf = 0
         for ii in range(nfuncs):
-            naf = len(funcs[ii]._af)
-            res += funcs[ii]._model(XX, aa[iaf:naf+1], fkwargs)
+#            naf = len(funcs[ii]._af)
+            naf = fkwargs['nargs']
+            res += funcs[ii]._model(XX, aa[iaf:naf], **fkwargs[ii])
         # end for
         return res
 
