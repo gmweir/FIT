@@ -21,10 +21,10 @@ from scipy.optimize import curve_fit, leastsq
 
 try:
     from. import model_spec as _ms
-    from .fitNLbase import fitNL_base
+    from .fitNL import fitNL_base
 except:
     from FIT import model_spec as _ms
-    from FIT.fitNLbase import fitNL_base
+    from FIT.fitNL import fitNL_base
 # end try
 
 # ==== #
