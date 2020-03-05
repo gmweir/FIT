@@ -42,6 +42,7 @@ from .derivatives import findiff1d, interp_profile, deriv_bsgaussian # analysis:
 from .fitting_dev import linreg, savitzky_golay, spline, pchip, spline_bs # analysis:ignore
 
 if __mpfitonpath__:
+    from . import fitNL as fitNLm # analysis:ignore
     from .fitNL import fitNL, modelfit, qparabfit, profilefit, multimodel # analysis:ignore
     from .fitting_dev import weightedPolyfit, fit_TSneprofile, fit_TSteprofile # analysis:ignore
 # end if
