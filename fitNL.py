@@ -2756,6 +2756,7 @@ def test_doppler_data(**kwargs):
     logdata = kwargs.pop('logdata', False)
     data, _, _ = _ms.model_doppler(XX=freq, af=af, logdata=False, **kwargs)
     _, gvec, info = _ms.model_doppler(XX=freq, af=af, logdata=logdata, **kwargs)
+    info.func = _ms.model_doppler
 
     # assume the data represents the PSD of noisy IQ data
 #    _np.random.seed()
@@ -3081,33 +3082,36 @@ def doppler_test(scale_by_data=False, noshift=True, Fs=10.0e6, model_order=2, lo
 
 if __name__=="__main__":
 
-    mkwargs = {}
-#    mkwargs['chi2_min'] = 1e18
-    mkwargs['chi2_min'] = 5
-    funcs = [_ms.model_poly]
-    fkwargs = [{'npoly':3}]
-    for ifk in range(9,0,-1):
-        if ifk >= 9-1:
-            continue
-        else:
-            funcs.append(_ms.model_poly)
-            fkwargs.append({'npoly':ifk})
-        # end if
-    # end if
-    for ii in range(3):
-        for ifk in range(9,0,-1):
-            if ifk>=9-1:
-                continue
-            else:
-                funcs.append(_ms.model_poly)
-                fkwargs.append({'npoly':ifk})
-            # end if
-        # end if
-    # end if
-    test_multifit(funcs, fkwargs, **mkwargs)
+    doppler_test()
 
+#    mkwargs = {}
+##    mkwargs['chi2_min'] = 1e18
+#    mkwargs['chi2_min'] = 5
+#    funcs = [_ms.model_poly]
+#    fkwargs = [{'npoly':3}]
+#    for ifk in range(9,0,-1):
+#        if ifk >= 9-1:
+#            continue
+#        else:
+#            funcs.append(_ms.model_poly)
+#            fkwargs.append({'npoly':ifk})
+#        # end if
+#    # end if
+#    for ii in range(3):
+#        for ifk in range(9,0,-1):
+#            if ifk>=9-1:
+#                continue
+#            else:
+#                funcs.append(_ms.model_poly)
+#                fkwargs.append({'npoly':ifk})
+#            # end if
+#        # end if
+#    # end if
+#    test_multifit(funcs, fkwargs, **mkwargs)
+
+#    if 1:
 #    for ii in range(5):
-##        out, ft = doppler_test(scale_by_data=False, logdata=False, Fs=10.0e6, fmax=1.0e6)
+#        out, ft = doppler_test(scale_by_data=False, logdata=False, Fs=10.0e6, fmax=1.0e6)
 ##        out, ft = doppler_test(scale_by_data=False, logdata=False, Fs=1.0, fmax=0.1)
 #        out, ft = doppler_test(scale_by_data=False, logdata=False, Fs=1.0, fmax=None)
 #    print(out)
@@ -3141,7 +3145,7 @@ if __name__=="__main__":
 #    test_fit(_ms.model_ProdExp, npoly=4)
 #    test_fit(_ms.model_evenpoly, npoly=2)
 #    test_fit(_ms.model_evenpoly, npoly=3)
-    test_fit(_ms.model_evenpoly, npoly=6)
+#    test_fit(_ms.model_evenpoly, npoly=6)
 #    test_fit(_ms.model_evenpoly, npoly=10)
 #    test_fit(_ms.model_PowerLaw, npoly=4)   #
 #    test_fit(_ms.model_PowerLaw, npoly=5)   #
