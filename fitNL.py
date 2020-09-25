@@ -3082,32 +3082,32 @@ def doppler_test(scale_by_data=False, noshift=True, Fs=10.0e6, model_order=2, lo
 
 if __name__=="__main__":
 
-    doppler_test()
+    # doppler_test()
 
-#    mkwargs = {}
-##    mkwargs['chi2_min'] = 1e18
-#    mkwargs['chi2_min'] = 5
-#    funcs = [_ms.model_poly]
-#    fkwargs = [{'npoly':3}]
-#    for ifk in range(9,0,-1):
-#        if ifk >= 9-1:
-#            continue
-#        else:
-#            funcs.append(_ms.model_poly)
-#            fkwargs.append({'npoly':ifk})
-#        # end if
-#    # end if
-#    for ii in range(3):
-#        for ifk in range(9,0,-1):
-#            if ifk>=9-1:
-#                continue
-#            else:
-#                funcs.append(_ms.model_poly)
-#                fkwargs.append({'npoly':ifk})
-#            # end if
-#        # end if
-#    # end if
-#    test_multifit(funcs, fkwargs, **mkwargs)
+    mkwargs = {}
+#    mkwargs['chi2_min'] = 1e18
+    mkwargs['chi2_min'] = 5
+    funcs = [_ms.model_poly]
+    fkwargs = [{'npoly':3}]
+    for ifk in range(9,0,-1):
+        if ifk >= 9-1:
+            continue
+        else:
+            funcs.append(_ms.model_poly)
+            fkwargs.append({'npoly':ifk})
+        # end if
+    # end if
+    for ii in range(3):
+        for ifk in range(9,0,-1):
+            if ifk>=9-1:
+                continue
+            else:
+                funcs.append(_ms.model_poly)
+                fkwargs.append({'npoly':ifk})
+            # end if
+        # end if
+    # end if
+    test_multifit(funcs, fkwargs, **mkwargs)
 
 #    if 1:
 #    for ii in range(5):
