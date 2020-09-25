@@ -99,7 +99,8 @@ class FD(Struct):
 
 #            dmax = _np.max((tst.max()/0.2, 5.0))
 #            dmax = _np.max((_np.max(_np.abs(aa))/0.2, dmax))   # maximum derivative, arbitraily say 10/0.2
-
+            if len(_np.shape(dmax))>0:
+                dmax = _np.max(dmax)
             if dmax == 0 or _np.isinf(dmax):
                 hh = 0.01
             else:
@@ -1495,7 +1496,8 @@ class ModelClass(FD):
 
         # call the analytic version and the numerical derivative version
         modanal = cls(XX, **kwargs)
-        kwargs.pop('af')
+        if 'af' in kwargs:
+            kwargs.pop('af')
         modnum = cls(XX, modanal.af, analytic=False, **kwargs)
 #        na = len(modanal.af)
 
