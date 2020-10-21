@@ -9417,7 +9417,7 @@ def get_test_Pdep(xvar, rloc=0.1, rhalfwidth=0.05, dVdrho=None, A0=None):
     if dVdrho is None:        dVdrho = _np.ones_like(xvar)    # endif
     # Normalized gaussian for the test power deposition shape : dPdroa
     Amp = 2*_np.pi *rhalfwidth * rhalfwidth
-    dPdx = gaussian(xvar, 1.0/Amp, rloc, rhalfwidth/_np.sqrt(2))
+    dPdx = gaussian(xvar, [1.0/Amp, rloc, rhalfwidth/_np.sqrt(2)])
     dPdx = _np.sqrt(dPdx)
 
 #    dPdx = (exp(-0.5*((xvar-rloc)/rhalfwidth)**2)
