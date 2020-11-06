@@ -92,7 +92,13 @@ def linreg(X, Y, verbose=True, varY=None, varX=None, cov=False, plotit=False, ch
 #        weights /= _np.sum(1.0/varY)   # normalized
     # endif
 
-    Sw = Sx = Sy = Sxx = Syy = Sxy = 0.0
+#    Sw = Sx = Sy = Sxx = Syy = Sxy = 0.0
+    Sw = 0.0
+    Sx = 0.0
+    Sy = 0.0
+    Sxx = 0.0
+    Syy = 0.0
+    Sxy = 0.0
     for x, y, w in zip(X, Y, weights):
         Sw += w
         Sx += w*x
@@ -171,45 +177,146 @@ def linreg(X, Y, verbose=True, varY=None, varX=None, cov=False, plotit=False, ch
     # end if
 # end def linreg
 
-def linreg_bs(X, Y, verbose=False, varY=None, varX=None, cov=False, plotit=False, nmonti=100):
+def linreg_bs(X, Y, verbose=False, varY=None, varX=None, **kwargs):
 
-    af = _np.zeros((nmonti, 2), dtype=_np.float)
-    acov = _np.zeros((nmonti, 2, 2), dtype=_np.float)
+    MCerr = kwargs.setdefault('MCerr', False)
+    weightit = kwargs.setdefault('weightit', False)
+    cov = kwargs.setdefault('cov', False)
+    plotit = kwargs.setdefault('plotit', False)
+    nmonti = kwargs.setdefault('nmonti', 100)
+    method = kwargs.setdefault('Method', 'Bootstrap')  # we use a Smooth bootstrap, or a "Wild-Bootstrap" with the normal distribution!
+#    method = kwargs.setdefault('Method', 'Jackknife')  #
+
+    # =============== #
+
+    nch = _np.atleast_1d(len(X))
+    niterate = 1
+    nmonti = int(nmonti)
+    if method.lower().find('boot')>-1:
+        if nmonti > 1:
+            niterate = nmonti
+        elif nmonti==1:
+            niterate = int(_np.min((10*nch, 100)))
+    elif method.lower().find('jack')>-1:
+        if nmonti == 1:
+            nmonti = 30
+        niterate = int(2*nmonti*nch)
+    # endif
+
+    # =============== #
+
+    af = _np.zeros((niterate, 2), dtype=_np.float)
+    acov = _np.zeros((niterate, 2, 2), dtype=_np.float)
 
     ii = 0
     nn = 0
     chi2_min = 50
-    while ii < nmonti and nn<3*nmonti:
-#    for ii in range(nmonti):
+    chi2_reduced = _np.zeros((niterate,1), dtype=_np.float)
+    while ii < niterate and nn<3*niterate:
         _xx = _np.copy(X)
         _yy = _np.copy(Y)
-        if varX is not None:
-            _xx += _np.sqrt(varX)*_np.random.normal(0.0, 1.0, len(X))
-        if varY is not None:
-            _yy += _np.sqrt(varY)*_np.random.normal(0.0, 1.0, len(X))
-        _vx = _np.abs(_xx-X)**2.0
-        _vy = _np.abs(_yy-Y)**2.0
+        if method.lower().find('boot')>-1:
+            if varX is not None:
+                _xx += _np.sqrt(varX)*_np.random.normal(0.0, 1.0, len(X))
+            if varY is not None:
+                _yy += _np.sqrt(varY)*_np.random.normal(0.0, 1.0, len(X))
+            _vx = _np.abs(_xx-X)**2.0
+            _vy = _np.abs(_yy-Y)**2.0
 
+#            _vx = _np.where(_vx==0, _np.nanmean(_vx), _vx)
+#            _vy = _np.where(_vy==0, _np.nanmean(_vy), _vy)
+        elif method.lower().find('jack')>-1:
+            if ii>nmonti*nch-1:
+                break
+            ind = _np.ones(X.shape, dtype=bool)
+            ind[ii//nmonti] = False
+            _xx = _xx[ind].copy()
+            _yy = _yy[ind].copy()
+            if varX is not None:
+                _vx = varX[ind].copy()
+            else:
+                _vx = _np.zeros_like(_xx)
+            if varY is not None:
+                _vy = varY[ind].copy()
+            else:
+                _vy = _np.zeros_like(_yy)
+        # end if
 
 #        _af, _acov = linreg(_xx, _yy, verbose=verbose, varY=_vy, varX=_vx, cov=True, plotit=False)
         _af, _acov, chi2 = linreg(_xx, _yy, verbose=verbose, varY=_vy, varX=_vx, cov=True, plotit=False, chi2_out=True)
 
         if chi2<chi2_min:
-            af[ii,:], acov[ii,:] = _af.squeeze(), _acov.squeeze()
+            _chi2_reduced = _np.copy(chi2)
+            af[ii,:], acov[ii,:], chi2_reduced[ii,:] = _np.copy(_af).squeeze(), _np.copy(_acov).squeeze(), _np.copy(_chi2_reduced).squeeze()
             ii += 1
         # end if
         nn += 1
     # end for
+    ifk = ii
     af = af[:ii]
     acov = acov[:ii]
+    vaf = _np.zeros_like(af)
+    vaf[:,0] = _np.copy(acov[:,0,0,])
+    vaf[:,1] = _np.copy(acov[:,1,1])
 
+    chi2_reduced = chi2_reduced[:ii]
+    chi2_reduced = _np.abs(chi2_reduced)
+
+    # Covariance of the parameters
     acov = _np.cov(af, rowvar=False)
-    vaf = _np.var(af, axis=0)
-    af = _np.mean(af, axis=0)
+#    vaf = _np.var(af, axis=0)
+#    af = _np.mean(af, axis=0)
 
-    Var_a = acov[0,0]
-    Var_b = acov[1,1]
+    # =================== #
+    if weightit:
+        # # weighted mean and covariance
+        # aw = 1.0/(1.0-chi2) # chi2 close to 1 is good, high numbers good in aweights
+        # # aw[_np.isnan(aw)*_np.isinf(aw)]
+        # Weighting by chi2
+#        aw = 1.0/chi2_reduced   # great usually, uncertainties possibly too small
+        aw = 1.0/_np.abs(1.0-chi2_reduced)  # larger uncertainties, but good
+        # weight it by the probability from Pearson test
+#        aw = pp
+    else:
+        aw = chi2_reduced/chi2_reduced  # nan-safe
+    # end if
+    aw = aw/_np.nansum(aw)
+    Sw = _np.nansum(aw)
+    S2w = _np.nansum(aw*aw)
+    Sw2 = Sw*Sw
+    coeff = Sw/(Sw2-S2w)
+
+    # =================== #
+    # Parameter averaging
+    afm = _np.ones((ifk,1), dtype=af.dtype)*_np.atleast_2d(_np.nanmean(af, axis=0))
+
+    # Generate temprorary wegihts the same size as the arrays to average
+    awt = _np.atleast_2d(aw)*_np.ones((1,2), dtype=aw.dtype)
+
+    if method.lower().find('boot')>-1:
+        _vaf = coeff*_np.nansum(awt*(af-afm)*(af-afm), axis=0)
+        if not MCerr:
+#            _vaf += _np.nansum(awt*vaf, axis=0)/Sw     # adding in statistical/standard error from each fit
+            _vaf += _np.nansum(awt*awt*vaf, axis=0)/S2w     # adding in statistical/standard error from each fit
+    elif method.lower().find('jack')>-1:
+        coeff = (ifk-1.0)/ifk
+
+        _vaf = coeff*_np.nansum(awt*(af-afm)*(af-afm), axis=0)
+
+        if not MCerr:
+#            _vaf += _np.nansum(awt*vaf, axis=0)/Sw     # adding in statistical/standard error from each fit
+            _vaf += _np.nansum(awt*awt*vaf, axis=0)/S2w     # adding in statistical/standard error from each fit
+        # end if
+    # end if
+    vaf = _vaf
+    af = _np.nansum( awt*af, axis=0)
+
+    # =================== #
+
+    Var_a, Var_b = vaf[0], vaf[1]
+#    Var_a, Var_b = acov[0,0], acov[1,1]
     Cov_ab = acov[0,1]
+
     if plotit:
         xo = _np.linspace(_np.min(X)-_np.abs(0.05*_np.min(X)), _np.max(X)+_np.abs(0.05*_np.min(X)))
 
@@ -1837,11 +1944,12 @@ def test_linreg():
 #    vary = None
     vary = ( 0.3*_np.mean(y)*_np.random.normal(0.0, 1.0, len(y)) )**2.0
 
-    a, b, Var_a, Var_b = linreg(x, y, verbose=True, varY=vary, varX=None, cov=False, plotit=True)
-    print(a-af[0], b-af[1] )
-
-    a, b, Var_a, Var_b = linreg_bs(x, y, verbose=True, varY=vary, varX=None, cov=False, plotit=True)
-    print(a-af[0], b-af[1] )
+    aout, bout, Var_a, Var_b = linreg(x, y, verbose=True, varY=vary, varX=None, cov=False, plotit=True)
+    aout1, bout1, Var_a, Var_b = linreg_bs(x, y, verbose=True, varY=vary, varX=None, cov=False, plotit=True, Method='boot', weightit=True)
+    aout2, bout2, Var_a, Var_b = linreg_bs(x, y, verbose=True, varY=vary, varX=None, cov=False, plotit=True, Method='jack', weightit=True)
+    print(100*(aout-af[0])/af[0],  100*(bout-af[1])/af[0] )
+    print(100*(aout1-af[0])/af[0], 100*(bout1-af[1])/af[0] )
+    print(100*(aout2-af[0])/af[0], 100*(bout2-af[1])/af[0] )
 
 def test_derivatives():
 
