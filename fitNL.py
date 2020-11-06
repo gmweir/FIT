@@ -103,7 +103,7 @@ def _default_mpfit_kwargs(**kwargs):
 #    kwargs.setdefault('rescale', 0
 #    kwargs.setdefault('autoderivative', 1)
     kwargs.setdefault('autoderivative', 0)
-    kwargs.setdefault('quiet', 1)
+    kwargs.setdefault('quiet', True)
 #    kwargs.setdefault('diag', None)
 #    kwargs.setdefault('epsfcn', max((_np.nanmean(_np.diff(x.copy())),1e-2))) #5e-4) #1e-3
 #    kwargs.pop('epsfcn')
@@ -587,7 +587,7 @@ def resamplefit(fitter, xdat, ydat, ey, XX, func, fkwargs={}, nmonti=30, **kwarg
     MCerr = kwargs.setdefault('MCerr', False)
     weightit = kwargs.setdefault('weightit', False)
     verbose = kwargs.setdefault('verbose', True)
-    plotit = kwargs.pop('plotit', True)
+    plotit = kwargs.pop('plotit', False)
 
     # save the input data that we wiggle around
     vary = ey*ey
