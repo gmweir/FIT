@@ -1775,13 +1775,13 @@ def sort_fitdict(dictdat):
     else:                   species='e'
     isort = _np.argsort(_np.abs(dictdat['roa']).squeeze())
     dictdat['roa'] = _np.abs(dictdat['roa'][isort])
-    dictdat['T%s'(species,)] = dictdat['T%s'(species,)][isort]
+    dictdat['T%s'%(species,)] = dictdat['T%s'%(species,)][isort]
     if 'varTL' in dictdat:
         dictdat['varTL'] = dictdat['varTL'][isort]
         dictdat['varTH'] = dictdat['varTH'][isort]
     else:
-        dictdat['T%sL'(species,)] = dictdat['T%sL'(species,)][isort]
-        dictdat['T%sH'(species,)] = dictdat['T%sH'(species,)][isort]
+        dictdat['T%sL'%(species,)] = dictdat['T%sL'%(species,)][isort]
+        dictdat['T%sH'%(species,)] = dictdat['T%sH'%(species,)][isort]
     # end if
     if 'varRL' in dictdat:
         dictdat['varRL'] = dictdat['varRL'][isort]
