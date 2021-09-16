@@ -588,13 +588,33 @@ def expdecay_fit(tt,sig_in,param):
 # ======================================================================== #
 
 
-def gaussian_peak_width(tt,sig_in,param):
-    #
-    # param contains intitial guesses for fitting gaussians,
-    # (Amplitude, x value, sigma):
-    # param = [[50,40,5],[50,110,5],[100,160,5],[100,220,5],
-    #      [50,250,5],[100,260,5],[100,320,5], [100,400,5],
-    #      [30,300,150]]  # this last one is our noise estimate
+def gaussian_peak_width(tt, sig_in, param, **kwargs):
+    """
+    simple code for fitting multiple guassians to an input signal
+
+    inputs:
+        tt - time (same units as output shift res[1])
+        sig_in - input signal (same units as output scaling res[0])
+        param - initial guesses for fitting parameters
+                capable of handling multiple peaks (depending on len of param)
+
+     param contains intitial guesses for fitting gaussians,
+     (Amplitude, x value, sigma):
+         ex //
+            param = [[50,40,5],[50,110,5],[100,160,5],[100,220,5],
+                 [50,250,5],[100,260,5],[100,320,5], [100,400,5],
+                 [30,300,150]]  # this last one is our noise estimate
+
+    outputs:
+        results - array of results.
+            # rows = number of peaks
+            col 0 - amplitude
+            col 1 - gaussian shift
+            col 2 - gaussian "width"  (s. model_spec.gaussian or gaussian)
+    """
+
+    #param = kwargs.get( 'param', [50, 40, 5])
+    verbose = kwargs.get( 'verbose', False )
 
     # Define a function that returns the magnitude of stuff under a gaussian
     # peak (with support for multiple peaks)
