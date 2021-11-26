@@ -371,7 +371,7 @@ class ModelLine(ModelClass):
         covin = _np.copy(covin)
         covout = _np.copy(covin)
         ys = kwargs.setdefault('ys', self.slope)
-        yo = kwargs.setdefault('yo', self.offset) # analysis:ignore unnec. for cov
+        # yo = kwargs.setdefault('yo', self.offset) # analysis:ignore unnec. for cov
         xs = kwargs.setdefault('xs', self.xslope)
         xo = kwargs.setdefault('xo', self.xoffset)
 
