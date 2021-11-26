@@ -37,30 +37,623 @@ def divide(num, den):
     return _np.divide(num, den)
 
 
-class FD(Struct):
+# ========================================================================== #
+
+class __ModelClass__(Struct):
     """
-    Designed for analytic functions
+    Container class for methods overwritten by the Model in model_spec.py if
+    they are implemented there
+    """
+
+    def _model(*args, **kwargs):
+        NotImplementedError()
+
+    def _partial(*args, **kwargs):
+        NotImplementedError()
+
+    def _deriv(*args, **kwargs):
+        NotImplementedError()
+
+    def _partial_deriv(*args, **kwargs):
+        NotImplementedError()
+
+    def _deriv2(*args, **kwargs):
+        NotImplementedError()
+
+    def _partial_deriv2(*args, **kwargs):
+        NotImplementedError()
+
+    def _hessian(*args, **kwargs):
+        NotImplementedError()
+
+    # def
+    #     NotImplementedError()
+
+class __ModelClass(__ModelClass__):
+    """
+    Wrapper model class for fitting, derivatives, jacobians and hessians
+        - Base model class: not including numerics
+        - Designed for analytic functions in model_spec.py
 
     model is a function that takes the form:
+        self._model(XX, aa=None, **kwargs)
+    """
 
-    self._model(XX, aa=None, **kwargs)
+    def __init__(self, XX=None, af=None, **kwargs):
+        LB, UB, fixed = self.defaults(**kwargs)
+        if af is None:   af = _np.copy(self.aa)    # end if
+        self.af = _np.copy(af)
+        self.Lbounds = _np.copy(LB)
+        self.Ubounds = _np.copy(UB)
+        self.fixed = _np.copy(fixed)
+
+        kwargs.setdefault('analytic', True) # default to analytic derivatives/jacob. etc.
+        # kwargs.setdefault('analytic', False) # default to analytic derivatives/jacob. etc.
+
+        self.__dict__.update(kwargs)
+        self.kwargs = kwargs
+        if XX is not None:
+            self.update(XX=XX)
+    # end def __init__
+
+        # self._model = model
+        # self.__dict__.update(kwargs)
+        # self.kwargs = kwargs
+
+    def model(*args, **kwargs):
+        return self._model(*args, **kwargs)
+
+    def jacobian(*args, **kwargs):
+        return self._partial(*args, **kwargs)
+
+    def derivative(*args, **kwargs):
+        return self._deriv(*args, **kwargs)
+
+    def derivative_jacobian(*args, **kwargs):
+        return self._partial_deriv(*args, **kwargs)
+
+    def second_derivative(*args, **kwargs):
+        return self._deriv2(*args, **kwargs)
+
+    def second_derivative_jacobian(*args, **kwargs):
+        return self._partial_deriv2(*args, **kwargs)
+
+    def hessian(*args, **kwargs):
+        return self._hessian(*args, **kwargs)
+
+
+
+    # ============================================================= #
+    # ============================================================= #
+
+
+    def defaults(self, **kwargs):
+        if 'Lbounds' in kwargs:
+            LB = kwargs.setdefault('Lbounds', self._LB)
+            UB = kwargs.setdefault('Ubounds', self._UB)
+        else:
+            LB = kwargs.setdefault('LB', self._LB)
+            UB = kwargs.setdefault('UB', self._UB)
+        fixed = kwargs.setdefault('fixed', self._fixed)
+        return LB, UB, fixed
+
+
+    def update(self, XX=None, af=None, **kwargs):
+        self.XX = XX
+        self.af = af
+        self.kwargs = kwargs
+        self.prof = self.model(XX, aa=af, **kwargs)
+        self.gvec = self.jacobian(XX, aa=af, **kwargs)
+        self.dprofdx = self.derivative(XX, aa=af, **kwargs)
+        self.dgdx = self.derivative_jacobian(XX, aa=af, **kwargs)
+        self.d2profdx2 = self.second_derivative(XX, aa=af, **kwargs)
+        self.d2gdx2 = self.second_derivative_jacobian(XX, aa=af, **kwargs)
+        # add line for hessian
+#        self.updatevar(**kwargs)
+        return self.prof, self.gvec, self.dprofdx, self.dgdx
+    # end def
+
+
+    def update_minimal(self, XX, af, **kwargs):
+        self.XX = XX
+        self.af = af
+        self.prof = self.model(XX, aa=af, **kwargs)
+        self.gvec = self.jacobian(XX, aa=af, **kwargs)
+        return self.prof, self.gvec
+
+
+    def updatevar(self, **kwargs):
+        if 'covmat' in kwargs:
+            self.covmat = kwargs['covmat']
+        if hasattr(self, 'covmat'):
+            self.varprof = self.properror(self.XX, self.covmat, self.gvec)
+            self.vardprofdx = self.properror(self.XX, self.covmat, self.dgdx)
+        # end if
+    # end def
+
+
+    @staticmethod
+    def properror(XX, covmat, gvec):
+        return _ut.properror(XX, covmat, gvec)
+
+    # Parameters and magic methods
+
+    # @property
+    # def XX(self):
+    #     return self._x
+    # @xx.setter
+    # def XX(self, value):
+    #     self._x = _np.asarray(value)
+    #     # self.__dx__()
+    #     self.
+    # @xx.deleter
+    # def XX(self):
+    #     del self._x
+
+    @property
+    def XX(self):
+        return self._x
+    @XX.setter
+    def XX(self, value):
+        # value = _np.copy(value)
+        self._x = _np.asarray(value)
+        # self.__dx__()
+    @XX.deleter
+    def XX(self):
+        del self._x
+
+    @property
+    def af(self):
+        return self._af
+    @af.setter
+    def af(self, value):
+        # value = _np.copy(value)
+        self._af = _np.asarray(value)
+    @af.deleter
+    def af(self):
+        del self._af
+
+    @property
+    def prof(self):
+        return self._y
+    @prof.setter
+    def prof(self, value):
+        # value = _np.copy(value)
+        self._y = _np.asarray(value)
+    @prof.deleter
+    def prof(self):
+        del self._y
+
+    @property
+    def gvec(self):
+        return self._jac
+    @gvec.setter
+    def gvec(self, value):
+        # value = _np.copy(value)
+        self._jac = _np.asarray(value)
+    @gvec.deleter
+    def gvec(self):
+        del self._jac
+
+    # @property
+    # def dprofdx(self):
+    #     return self._dydx
+    # @dprofdx.setter
+    # def dprofdx(self, value):
+    #     # value = _np.copy(value)
+    #     self._dydx = _np.asarray(value)
+    # @dprofdx.deleter
+    # def dprofdx(self):
+    #     del self._dydx
+
+    # @property
+    # def dgdx(self):
+    #     return self._dJdx
+    # @dgdx.setter
+    # def dgdx(self, value):
+    #     # value = _np.copy(value)
+    #     self._dJdx = _np.asarray(value)
+    # @dgdx.deleter
+    # def dgdx(self):
+    #     del self._dJdx
+
+    # @property
+    # def d2profdx2(self):
+    #     return self._d2ydx2
+    # @d2profdx2.setter
+    # def d2profdx2(self, value):
+    #     # value = _np.copy(value)
+    #     self._d2ydx2 = _np.asarray(value)
+    # @d2profdx2.deleter
+    # def d2profdx2(self):
+    #     del self._d2ydx2
+
+    # @property
+    # def d2gdx2(self):
+    #     return self._d2Jdx2
+    # @d2gdx2.setter
+    # def d2gdx2(self, value):
+    #     # value = _np.copy(value)
+    #     self._d2Jdx2 = _np.asarray(value)
+    # @d2gdx2.deleter
+    # def d2gdx2(self):
+    #     del self._d2Jdx2
+
+    # ====================================================== #
+    # ====================================================== #
+
+#    def checkbounds(self, dat, ain, mag=None):
+#        LB = _np.copy(self.Lbounds)
+#        UB = _np.copy(self.Ubounds)
+#        ain = _checkbounds(ain, LB=LB, UB=UB)
+#        return dat, ain
+
+    # ============================= #
+
+    def scalings(self, xdat, ydat, **kwargs):
+        self.xdat, self.ydat = _np.copy(xdat), _np.copy(ydat)
+        if not hasattr(self, 'xoffset'):
+            self.xoffset = _np.nanmin(xdat)
+        if not hasattr(self, 'xslope'):
+            self.xslope = _np.nanmax(xdat) - _np.nanmin(xdat)
+            if self.xslope == 0.0:     self.xslope = 1.0   # end if
+        if not hasattr(self, 'offset'):
+            self.offset = _np.nanmin(ydat)
+        if not hasattr(self, 'slope'):
+            self.slope = _np.nanmax(ydat)-_np.nanmin(ydat)
+            if self.slope == 0.0:     self.slope = 1.0   # end if
+
+        tt, itt = _ut.translation_matrix([self.xoffset, self.offset])
+        ss, iss = _ut.scale_matrix([self.xslope, self.slope])
+        self._transform = _np.dot(ss, tt)
+        self._invtransform = _np.dot(itt, iss)
+    # end def
+
+    def scaledat(self, xdat, ydat, vdat, vxdat=None, **kwargs):
+        """
+        When fitting problems it is convenient to scale it to order 1:
+            slope = _np.nanmax(pdat)-_np.nanmin(pdat)
+            offset = _np.nanmin(pdat)
+
+            pdat = (pdat-offset)/slope
+            vdat = vdat/slope**2.0
+
+        In general we cannot scale both x- and y-data due to non-linearities.
+        Return scalings on all data by default, but overwrite in each model with NL
+        (x-xmin)/(xmax-xmin) = (x-xoffset)/xslope
+        """
+        self.scalings(xdat, ydat, **kwargs)
+        self.xdat = (xdat-self.xoffset)/self.xslope
+        self.ydat = (ydat-self.offset)/self.slope
+        self.vdat = vdat/(self.slope*self.slope)
+        self.scaled = True
+        out = []
+        out.append(self.xdat)
+        out.append(self.ydat)
+        out.append(self.vdat)
+        if hasattr(self, 'XX') and self._analytic_xscaling:
+            self.XX = (self.XX-self.xoffset)/self.xslope
+        if vxdat is None:   self.vxdat = None
+        else:
+            self.vxdat = _np.copy(vxdat)/(self.xslope*self.xslope)
+            out.append(self.vxdat)
+        return tuple(out)
+        # end if
+    # end def
+
+    def unscaledat(self, **kwargs):
+        """
+        After fitting, then the algebra necessary to unscale the problem to original
+        units is:
+            prof = slope*prof+offset
+            varp = varp*slope**2.0
+
+            dprofdx = (slope*dprofdx)
+            vardprofdx = slope**2.0 * vardprofdx
+
+        Note that when scaling the problem, it is best to propagate errors from
+        covariance / gvec / dgdx before rescaling because that is arbitrarily complex
+
+        In general we cannot scale both x- and y-data due to non-linearities.
+        Return scalings on all data by default, but overwrite in each model with NL
+        (x-xmin)/(xmax-xmin) = (x-xoffset)/xslope
+        """
+        if self.scaled:
+            # Fitted data
+            self.xdat = self.xdat*self.xslope+self.xoffset
+            self.ydat = self.ydat*self.slope+self.offset
+            self.vdat = self.vdat*self.slope*self.slope
+            if hasattr(self, 'vxdat') and self.vxdat is not None:
+                self.vxdat = self.vxdat*self.xslope*self.xslope
+            # end if
+            if hasattr(self, 'XX') and self.XX is not None:
+                self.XX = self.XX*self.xslope + self.xoffset
+
+            # Calculated quantities  (if covmat already exists, this was done
+            # in update through propper error propagation)
+            if hasattr(self, 'varprof') and hasattr(self, 'vardprofdx'):
+#            if not hasattr(self, 'covmat'):
+                self.varprof *= self.slope*self.slope
+                self.vardprofdx *= (self.slope*self.slope)/(self.xslope*self.xslope)
+            # end if
+            self.scaled = False
+       # end if
+        if hasattr(self, 'vxdat') and self.vxdat is not None:
+            return self.xdat, self.ydat, self.vdat, self.vxdat
+        else:
+            return self.xdat, self.ydat, self.vdat
+        # end if
+    # end def
+
+#    @staticmethod
+#    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
+#        ain = _np.copy(ain)
+#        aout = _np.copy(ain)
+#        print('Unscaling model parameters not supported: \n'+
+#              '   Either not implemented in model or \n'+
+#              '   there is a nonlinearity in the analytic model that precludes analytic scaling!')
+    def unscaleaf(self, ain):
+        return NotImplementedError
+    # end def
+
+#    def unscalecov(self, covin):
+#        return NotImplementedError
+
+    # ================================== #
+
+    @classmethod
+    def test_scaling(cls, **kwargs):
+        num = kwargs.pop('num', 21)
+        start = kwargs.pop('start', -0.1)
+        stop = kwargs.pop('stop', 1.3)
+        endpoint = kwargs.pop('endpoint', True)
+        dtyp = kwargs.pop('dtype', None)
+        XX = kwargs.pop('XX', _np.linspace(start=start, stop=stop, num=int(num), endpoint=endpoint, dtype=dtyp))
+
+        # ============================================= #
+
+        # call an analytic version
+        modanal = cls(XX, **kwargs)
+
+        if hasattr(cls, '_default_plot'):
+            modanal._default_plot()
+        else:
+            _plt.figure()
+            _plt.plot(XX, modanal._y)
+        # end if
+
+        asave = _np.copy(modanal.af)
+
+        # Make fake data
+        xdat = kwargs.pop('xdat', _np.linspace(start=start, stop=stop, num=int(num//2), endpoint=endpoint, dtype=dtyp))
+        ydat = cls._model(xdat, modanal.af, **kwargs)
+        vdat = _np.power(0.1*_np.abs(_np.nanmax(ydat)-_np.nanmin(ydat)), 2.0)
+        vdat = vdat*_np.ones_like(vdat)
+
+        # Determine scalings on fake data
+        modanal.scaledat(xdat, ydat, vdat)
+
+        # ============================================= #
+
+        # Call a version that will be numerically scaled
+        modscal = cls(XX, modanal.af, **kwargs)
+        modscal.slope = _np.copy(modanal.slope)
+        modscal.offset = _np.copy(modanal.offset)
+        modscal.xslope = _np.copy(modanal.xslope)
+        modscal.xoffset = _np.copy(modanal.xoffset)
+
+#        modscal.slope = _np.nanmax(ydat)-_np.nanmin(ydat)
+#        modscal.offset = _np.nanmin(ydat)
+#        modscal.xslope = _np.nanmax(xdat)-_np.nanmin(xdat)
+#        modscal.xoffset = _np.nanmin(xdat)
+#
+#        if modscal.xslope == 0.0:     modscal.xslope = 1.0   # end if
+#        if modscal.slope == 0.0:     modscal.slope = 1.0   # end if
+#
+        assert (modscal.af == modanal.af).all()
+        assert modscal.offset == modanal.offset
+        assert modscal.slope == modanal.slope
+        assert modscal.xoffset == modanal.xoffset
+        assert modscal.xslope == modanal.xslope
+
+        # =================================================================== #
+
+        # scale one result analytically
+        modanal.af = modanal.scaleaf(modanal.af)
+        modanal.update()
+
+        #  Now manually scale one result non-analytically
+        modscal.XX = (modscal.XX-modscal.xoffset)/modscal.xslope
+        modscal.prof= (modscal.prof-modscal.offset)/modscal.slope
+
+        # chain-rule: if the problem is linear in x and y, then this will work
+        # dy'/dx' = dydx*(dy'/dy)*(dx/dx') = dprofdx*xs/ys
+        modscal.dprofdx= modscal.dprofdx*modscal.xslope/modscal.slope
+
+        # if the problem is too nonlinear in x and y this will break
+        # d2y'/dx'2 =
+        modscal.d2profdx2= modscal.d2profdx2*_np.power(modscal.xslope, 2.0)/modscal.slope
+
+        # Now save the profile, derivative, and 2nd derivative of each model for plotting
+        aXX = _np.copy(modanal.XX)
+        aprof = _np.copy(modanal.prof)
+        adprofdx = _np.copy(modanal.dprofdx)
+        ad2profdx2 = _np.copy(modanal.d2profdx2)
+
+        sXX = _np.copy(modscal.XX)
+        sprof = _np.copy(modscal.prof)
+        sdprofdx = _np.copy(modscal.dprofdx)
+        sd2profdx2 = _np.copy(modscal.d2profdx2)
+
+        # Then unscale the data analytically and compare it to the original data
+        modanal.unscaledat()
+        modanal.af = modanal.unscaleaf(modanal.af)
+        modanal.update()
+
+        # And unscale the data non-analytically and compare it to the original data
+        modscal.XX = modscal.XX*modscal.xslope+modscal.xoffset
+        modscal.prof = modscal.prof*modscal.slope+modscal.offset
+        modscal.dprofdx = modscal.dprofdx*modscal.slope/modscal.xslope
+        modscal.d2profdx2 = modscal.d2profdx2*modscal.slope/_np.power(modscal.xslope, 2.0)
+
+        # =================================================================== #
+
+        # plot the model and its derivatives from both forms.  It should match.
+
+        def getylims(func1, func2, _ax):
+            ylims = _ax.get_ylim()
+            mn = _np.min((_np.nanmin(func1.flatten()), _np.nanmin(func2.flatten()), ylims[0]))
+            mx = _np.max((_np.nanmax(func1.flatten()), _np.nanmax(func2.flatten()), ylims[1]))
+            if mn == 0:     mn = -0.1*(ylims[1]-ylims[0])   # end if
+            if mx == 0:     mx = 0.1*(ylims[1]-ylims[0])    # end if
+            ylims = (_np.nanmin((0.8*mn, 1.2*mn)), _np.nanmax((0.8*mx, 1.2*mx)))
+            return ylims
+
+        fignum_base = cls.__name__
+        if hasattr(modanal, 'npoly'):
+            fignum_base += '_npoly%i'%(modanal.npoly,)
+        fignum, ii = fignum_base, 0
+        while _plt.fignum_exists(fignum) and ii<10:
+            fignum = fignum_base+'_%i'%(ii,)
+            ii += 1
+
+        _plt.figure(fignum)
+        _ax1 = _plt.subplot(3,2,1)
+        if not _np.isnan(modscal.prof).all():
+            _ax1.plot(modscal.XX, modscal.prof, '.-')
+        _ax1.plot(modanal.XX, modanal.prof, '.')
+        _ax1.errorbar(xdat, ydat, yerr=_np.sqrt(vdat), fmt='ko')
+        ylims = getylims(modscal.prof, modanal.prof, _ax1)
+        _ax1.set_ylim(ylims)
+        _ax1.set_title('model')
+
+        _ax2 = _plt.subplot(3,2,2)
+        if not _np.isnan(sprof).all():
+            _ax2.plot(sXX, sprof, '-')
+        _ax2.plot(aXX, aprof, '.')
+        ylims = getylims(sprof, aprof, _ax2)
+        _ax2.set_ylim(ylims)
+        _ax2.set_title('scaled')
+
+        _ax3 = _plt.subplot(3,2,3, sharex=_ax1)
+        if not _np.isnan(modscal.dprofdx).all():
+            _ax3.plot(modscal.XX, modscal.dprofdx, '-')
+        _ax3.plot(modanal.XX, modanal.dprofdx, '.')
+        ylims = getylims(modscal.dprofdx, modanal.dprofdx, _ax3)
+        _ax3.set_ylim(ylims)
+#        _ax3.set_title('derivative')
+        _ax3.set_ylabel('deriv')
+
+        _ax4 = _plt.subplot(3,2,4, sharex=_ax2)
+        if not _np.isnan(sdprofdx).all():
+            _ax4.plot(sXX, sdprofdx, '-')
+        _ax4.plot(aXX, adprofdx, '.')
+        ylims = getylims(sdprofdx, adprofdx, _ax4)
+        _ax4.set_ylim(ylims)
+#        _ax4.set_title('deriv jacobian')
+
+        _ax5 = _plt.subplot(3,2,5, sharex=_ax1)
+        if not _np.isnan(modscal.d2profdx2).all():
+            _ax5.plot(modscal.XX, modscal.d2profdx2, '-')
+        _ax5.plot(modanal.XX, modanal.d2profdx2, '.')
+        ylims = getylims(modscal.d2profdx2, modanal.d2profdx2, _ax5)
+        _ax5.set_ylim(ylims)
+        _ax5.set_ylabel('2nd deriv')
+
+        _ax6 = _plt.subplot(3,2,6, sharex=_ax2)
+        if not _np.isnan(sd2profdx2).all():
+            _ax6.plot(sXX, sd2profdx2, '-')
+        _ax6.plot(aXX, ad2profdx2, '.')
+        ylims = getylims(sd2profdx2, ad2profdx2, _ax6)
+        _ax6.set_ylim(ylims)
+#        _ax6.set_title('2nd deriv jacobian')
+
+        _plt.tight_layout()
+
+        # ======= #
+        rtol, atol = (1e-5, 1e-8)
+        try:
+            aerr = _np.nanmax(_np.abs(modscal.af - asave))
+            rerr = 1.0-_np.nanmax(_np.abs(divide(modscal.af, asave)))
+#            assert (modscal.af == asave).all()
+            assert _ut.allclose(modscal.af, asave, rtol=rtol, atol=atol, equal_nan=True)  # same functions, this has to be true
+        except:
+            print('Numerical scaling / unscaling failed')
+            for ii in range(len(asave)):
+                print('parameter %i: %f - %f.   Abs. Err: %f     Rel. Err: %f'%(
+                ii,modscal.af[ii],asave[ii],modscal.af[ii] - asave[ii], modscal.af[ii]/asave[ii]))
+            # end for
+            print('Scale testing failed \n abs. err. level %e\n rel. err. level %e'%(aerr, rerr))
+            raise
+        # end try:
+        try:
+            aerr = _np.nanmax(_np.abs(modanal.af - asave))
+            rerr = 1.0-_np.nanmax(_np.abs(divide(modanal.af, asave)))
+#            assert (modanal.af == asave).all()
+            assert _ut.allclose(modanal.af, asave, rtol=rtol, atol=atol, equal_nan=True)  # same functions, this has to be true
+        except:
+            print('Analytic scaling / unscaling failed')
+            for ii in range(len(asave)):
+                print('parameter %i: %f - %f.   Abs. Err: %f     Rel. Err: %f'%(
+                ii,modanal.af[ii],asave[ii],modanal.af[ii] - asave[ii], modanal.af[ii]/asave[ii]))
+            # end for
+            print('Scale testing failed \n abs. err. level %e\n rel. err. level %e'%(aerr, rerr))
+            raise
+        # end try:
+
+        try:
+            # Check the maximum error between quantities
+            rtol, atol = (1e-5, 1e-8)
+#            rtol, atol = (1e-5, _np.max((1e-8, _np.nanmax(1e-8*modanal.prof))))
+            aerr = _np.nanmax(modscal.prof - modanal.prof)
+            rerr = 1.0-_np.nanmax(divide(modscal.prof, modanal.prof))
+            assert _ut.allclose(modscal.prof, modanal.prof, rtol=rtol, atol=atol, equal_nan=True)  # same functions, this has to be true
+            aerr = _np.nanmax(sprof -aprof)
+            rerr = 1.0-_np.nanmax(divide(sprof, aprof))
+            assert _ut.allclose(sprof, aprof, rtol=rtol, atol=atol, equal_nan=True)  # same functions, this has to be true
+
+#            rtol, atol = (1e-5, _np.max((1e-8, _np.nanmax(1e-8*modanal.dprofdx))))
+            aerr = _np.nanmax(modscal.dprofdx - modanal.dprofdx)
+            rerr = 1.0-_np.nanmax(divide(modscal.dprofdx, modanal.dprofdx))
+            assert _ut.allclose(modscal.dprofdx, modanal.dprofdx, rtol=rtol, atol=atol, equal_nan=True)  # derivative of model
+            aerr = _np.nanmax(sdprofdx - adprofdx)
+            rerr = 1.0-_np.nanmax(divide(sdprofdx, adprofdx))
+            assert _ut.allclose(sdprofdx, adprofdx, rtol=rtol, atol=atol, equal_nan=True)  # derivative of model
+
+#            rtol, atol = (1e-5, _np.max((1e-8, _np.nanmax(1e-8*modanal.d2profdx2))))
+            aerr = _np.nanmax(modscal.d2profdx2 - modanal.d2profdx2)
+            rerr = 1.0-_np.nanmax(divide(modscal.d2profdx2, modanal.d2profdx2))
+            assert _ut.allclose(modscal.d2profdx2, modanal.d2profdx2, rtol=rtol, atol=atol, equal_nan=True)  # model second derivative
+            aerr = _np.nanmax(sd2profdx2 - ad2profdx2)
+            rerr = 1.0-_np.nanmax(divide(sd2profdx2, ad2profdx2))
+            assert _ut.allclose(sd2profdx2, ad2profdx2, rtol=rtol, atol=atol, equal_nan=True)  # model second derivative
+
+        except:
+            print('Scale testing failed \n abs. err. level %e\n rel. err. level %e'%(aerr, rerr))
+            print('Successful inversion of scaling, but unsuccessful scaling')
+            raise
+        # end try
+    # end def test scaling
+# end class
+
+# ========================================================================== #
+
+
+# def _modelnumeric(cls, model, **kwargs):
+    # cls.
+
+class FD(__ModelClass):
+    """
+    Adds numerical methods for finite-differencing to the base Model class
     """
     machine_epsilon = (_np.finfo(_np.float64).eps)
 
-    def __init__(self, model, **kwargs):
-        self._model = model
-        self.__dict__.update(kwargs)
-        self.kwargs = kwargs
-    # end def
+    # def __init__(self, model, **kwargs):
+    #     self._model = model
+    #     self.__dict__.update(kwargs)
+    #     self.kwargs = kwargs
+    # # end def
 
-    def parse_in(self, XX, aa, **kwargs):
-        if aa is None: aa = _np.copy(self.af)  # end if
-        if XX is None: XX = _np.copy(self.XX)  # end if
-        XX = _np.copy(XX)
-        aa = _np.copy(aa)
-        if len(kwargs.keys()) == 0:
-            kwargs = self.kwargs
-        return XX, aa, kwargs
 
 #    def boundaryconditions(self, **kwargs):
 #
@@ -75,7 +668,26 @@ class FD(Struct):
 #        # end if
 #    # end def boundary conditions
 
-    def __step_size(self, model, XX, aa, deriv_order=1, order=8, **kwargs):
+    def parse_in(self, XX, aa, **kwargs):
+        if aa is None:
+            aa = _np.copy(self.aa)
+        # end if
+        if XX is None: XX = _np.copy(self.XX)  # end if
+        XX = _np.copy(XX)
+        aa = _np.copy(aa)
+        if len(kwargs.keys()) == 0:
+            kwargs = self.kwargs
+        return XX, aa, kwargs
+
+    def __step_size(self, model, *args, deriv_order=1, order=8, **kwargs):
+        if len(args)>3:          order = args.pop[4]
+        else:                    order = kwargs.pop('order', 8)
+
+        if len(args)>2:          deriv_order = args.pop[3]
+        else:                    deriv_order = kwargs.pop('deriv_order', 1)
+
+        XX, aa, kwargs = self.parse_in(*args, **kwargs)
+
         deriv_in = kwargs.pop('deriv_in', 'x')
 
         if 'hh' not in kwargs:
@@ -117,6 +729,11 @@ class FD(Struct):
             kwargs.setdefault('hh', hh)
         # end if
         return hh, kwargs
+
+    def model(self, *args, **kwargs):
+        XX, aa, kwargs = self.parse_in(*args, **kwargs)
+        return super(FD, self).model(XX, aa, **kwargs)
+
 
     def derivative(self, XX, aa=None, **kwargs):
         """
@@ -421,7 +1038,7 @@ class FD(Struct):
     # ============================================================= #
 
     @staticmethod
-    def centered_coeffs(deriv_order, order):
+    def centered_coeffs(deriv_order, order, verbose=False):
 
         if deriv_order == 1:
             if order<3:
@@ -474,11 +1091,16 @@ class FD(Struct):
             # end if
         # end if
         if len(num_coeffs) == 0:
-            print('Calculating coefficients by matrix inversion')
+            if verbose:
+                print('Calculating coefficients by matrix inversion')
+            # end if
 #            if deriv_order % 2:
 #               stencil=_np.linspace(start=-(order+2//2), stop=(order+2)//2, num=order+2, endpoint=True, dtype=int)
             num_coeffs, order_accuracy = FD.__coeff_generator(deriv_order, order,
                       stencil=None, centered=True)
+            if verbose:
+                print('Derivative order: %i; Finite-difference order: %i; Accuracy: %4.3f'%(deriv_order, order, order_accuracy,))
+            # end if
         # end if
         return num_coeffs, den_coeffs
 
@@ -1193,301 +1815,7 @@ class FD(Struct):
 
     # ============================================================= #
     # ============================================================= #
-# end def class
 
-
-# ========================================================================== #
-
-
-# ========================================================================== #
-
-
-class ModelClass(FD):
-    def __init__(self, XX=None, af=None, **kwargs):
-        LB, UB, fixed = self.defaults(**kwargs)
-        if af is None:   af = _np.copy(self._af)    # end if
-        self.af = _np.copy(af)
-        self.Lbounds = _np.copy(LB)
-        self.Ubounds = _np.copy(UB)
-        self.fixed = _np.copy(fixed)
-        kwargs.setdefault('analytic', True) # default to analytic derivatives/jacob. etc.
-#        kwargs.setdefault('analytic', False) # default to analytic derivatives/jacob. etc.
-        self.__dict__.update(kwargs)
-        self.kwargs = kwargs
-        if XX is not None:
-            self.update(XX=XX)
-    # end def __init__
-
-
-    def model(self, XX, aa=None, **kwargs):
-        """
-        Returns the model.
-            f(x) = f(x, a, b, c, ...)
-            out: f(x)
-        """
-        XX, aa, kwargs = self.parse_in(XX, aa, **kwargs)
-        return self._model(XX, aa, **kwargs)
-
-    def derivative(self, XX, aa=None, **kwargs):
-        """
-        Returns the derivative of the model.
-            f(x) = f(x, a, b, c, ...)
-            out: dfdx
-
-        Leave it to the user to define the method '_deriv' with an analytic derivative.
-        otherwise, calculate the derivative numerically by finite-differencing the model.
-        """
-        XX, aa, kwargs = self.parse_in(XX, aa, **kwargs)
-        if hasattr(self, '_deriv') and self.analytic:
-            return self._deriv(XX, aa, **kwargs)
-        return super(ModelClass, self).derivative(XX, aa, **kwargs)
-        # end if
-    # end def derivative
-
-    def jacobian(self, XX, aa=None, **kwargs):
-        """
-        Returns the jacobian of the model.
-            f(x) = f(x, a, b, c)
-            out: [dfda(x), dfdb(x), dfdc(x), ...]
-
-        Leave it to the user to define the method '_partial' with an analytic Jacobian.
-        Otherwise, calculate the jacobian numerically by finite-differencing the model.
-        """
-        XX, aa, kwargs = self.parse_in(XX, aa, **kwargs)
-        if hasattr(self, '_partial') and self.analytic:
-            return self._partial(XX, aa, **kwargs)
-        return super(ModelClass, self).jacobian(XX, aa, **kwargs)
-
-    def derivative_jacobian(self, XX, aa=None, **kwargs):
-        """
-        Returns the jacobian of the derivative of the model.
-            f(x) = f(x, a, b, c)
-            out: [d2fdxda(x), d2fdxdb(x), d2fdxdc(x), ...]
-
-        Leave it to the user to define the method '_partial_deriv' with an analytic Jacobian of the derivative.
-        Otherwise, calculate the jacobian of the derivative numerically by finite-differencing the model derivative.
-        """
-        XX, aa, kwargs = self.parse_in(XX, aa, **kwargs)
-        if hasattr(self, '_partial_deriv') and self.analytic:
-            return self._partial_deriv(XX, aa, **kwargs)
-        return super(ModelClass, self).derivative_jacobian(XX, aa, **kwargs)
-
-    def second_derivative(self, XX, aa=None, **kwargs):
-        """
-        Returns the 2nd derivative of the model.
-            f(x) = f(x, a, b, c, ...)
-            out: d2fdx2
-
-        Leave it to the user to define the method '_deriv2' with an analytic 2nd derivative.
-        otherwise, calculate the derivative numerically by finite-differencing the model.
-        """
-        XX, aa, kwargs = self.parse_in(XX, aa, **kwargs)
-        if hasattr(self, '_deriv2') and self.analytic:
-            return self._deriv2(XX, aa, **kwargs)
-        return super(ModelClass, self).second_derivative(XX, aa, **kwargs)
-
-    def second_derivative_jacobian(self, XX, aa=None, **kwargs):
-        """
-        Returns the jacobian of the second derivative of the model.
-            f(x) = f(x, a, b, c)
-            out: [d3fdx2da(x), d3fdx2db(x), d3fdx2dc(x), ...]
-
-        Leave it to the user to define the method '_partial_deriv2' with an analytic Jacobian of the 2nd derivative.
-        Otherwise, calculate the jacobian of the 2nd derivative numerically by finite-differencing the model derivative.
-        """
-        XX, aa, kwargs = self.parse_in(XX, aa, **kwargs)
-        if hasattr(self, '_partial_deriv2') and self.analytic:
-            return self._partial_deriv2(XX, aa, **kwargs)
-        return super(ModelClass, self).second_derivative_jacobian(XX, aa, **kwargs)
-
-    def hessian(self, XX, aa=None, **kwargs):
-        """
-        Returns the hessian of the model
-            f(x) = f(x, a, b, c)
-            out: [[d2fda2(x), d2fdbda(x), d2fdcda(x), ...]
-                  [d2fdadb(x), d2fdb2(x), d2fdcdb(x), ...]
-                  [               ...                    ] ]
-
-        Leave it to the user to define the method '_hessian' with an analytic Hessian.
-        Otherwise, calculate the hessian numerically by finite-differencing the jacobian.
-        """
-        XX, aa, kwargs = self.parse_in(XX, aa, **kwargs)
-        if hasattr(self, '_hessian') and self.analytic:
-            return self._hessian(XX, aa, **kwargs)
-        return super(ModelClass, self).hessian(XX, aa, **kwargs)
-    # end def
-
-
-    # ============================================================= #
-    # ============================================================= #
-
-
-    def update_minimal(self, XX, af, **kwargs):
-        XX, af, kwargs = self.parse_in(XX, af, **kwargs)
-        self.prof = self.model(XX, aa=af, **kwargs)
-        self.gvec = self.jacobian(XX, aa=af, **kwargs)
-        return self.prof, self.gvec
-
-    def update(self, XX=None, af=None, **kwargs):
-        XX, af, kwargs = self.parse_in(XX, af, **kwargs)
-        self.XX = _np.copy(XX)
-        self.af = _np.copy(af)
-        self.kwargs = kwargs
-        self.prof = self.model(XX, aa=af, **kwargs)
-        self.gvec = self.jacobian(XX, aa=af, **kwargs)
-        self.dprofdx = self.derivative(XX, aa=af, **kwargs)
-        self.dgdx = self.derivative_jacobian(XX, aa=af, **kwargs)
-        self.d2profdx2 = self.second_derivative(XX, aa=af, **kwargs)
-        self.d2gdx2 = self.second_derivative_jacobian(XX, aa=af, **kwargs)
-#        self.updatevar(**kwargs)
-        return self.prof, self.gvec, self.dprofdx, self.dgdx
-    # end def
-
-    def updatevar(self, **kwargs):
-        if 'covmat' in kwargs:
-            self.covmat = kwargs['covmat']
-        if hasattr(self, 'covmat'):
-            self.varprof = self.properror(self.XX, self.covmat, self.gvec)
-            self.vardprofdx = self.properror(self.XX, self.covmat, self.dgdx)
-        # end if
-    # end def
-
-    @staticmethod
-    def properror(XX, covmat, gvec):
-        return _ut.properror(XX, covmat, gvec)
-
-
-    def defaults(self, **kwargs):
-        if 'Lbounds' in kwargs:
-            LB = kwargs.setdefault('Lbounds', self._LB)
-            UB = kwargs.setdefault('Ubounds', self._UB)
-        else:
-            LB = kwargs.setdefault('LB', self._LB)
-            UB = kwargs.setdefault('UB', self._UB)
-        fixed = kwargs.setdefault('fixed', self._fixed)
-        return LB, UB, fixed
-
-    # ====================================================== #
-    # ====================================================== #
-
-#    def checkbounds(self, dat, ain, mag=None):
-#        LB = _np.copy(self.Lbounds)
-#        UB = _np.copy(self.Ubounds)
-#        ain = _checkbounds(ain, LB=LB, UB=UB)
-#        return dat, ain
-
-    # ============================= #
-
-    def scalings(self, xdat, ydat, **kwargs):
-        self.xdat, self.ydat = _np.copy(xdat), _np.copy(ydat)
-        if not hasattr(self, 'xoffset'):
-            self.xoffset = _np.nanmin(xdat)
-        if not hasattr(self, 'xslope'):
-            self.xslope = _np.nanmax(xdat) - _np.nanmin(xdat)
-            if self.xslope == 0.0:     self.xslope = 1.0   # end if
-        if not hasattr(self, 'offset'):
-            self.offset = _np.nanmin(ydat)
-        if not hasattr(self, 'slope'):
-            self.slope = _np.nanmax(ydat)-_np.nanmin(ydat)
-            if self.slope == 0.0:     self.slope = 1.0   # end if
-
-        tt, itt = _ut.translation_matrix([self.xoffset, self.offset])
-        ss, iss = _ut.scale_matrix([self.xslope, self.slope])
-        self._transform = _np.dot(ss, tt)
-        self._invtransform = _np.dot(itt, iss)
-    # end def
-
-    def scaledat(self, xdat, ydat, vdat, vxdat=None, **kwargs):
-        """
-        When fitting problems it is convenient to scale it to order 1:
-            slope = _np.nanmax(pdat)-_np.nanmin(pdat)
-            offset = _np.nanmin(pdat)
-
-            pdat = (pdat-offset)/slope
-            vdat = vdat/slope**2.0
-
-        In general we cannot scale both x- and y-data due to non-linearities.
-        Return scalings on all data by default, but overwrite in each model with NL
-        (x-xmin)/(xmax-xmin) = (x-xoffset)/xslope
-        """
-        self.scalings(xdat, ydat, **kwargs)
-        self.xdat = (xdat-self.xoffset)/self.xslope
-        self.ydat = (ydat-self.offset)/self.slope
-        self.vdat = vdat/(self.slope*self.slope)
-        self.scaled = True
-        out = []
-        out.append(self.xdat)
-        out.append(self.ydat)
-        out.append(self.vdat)
-        if hasattr(self, 'XX') and self._analytic_xscaling:
-            self.XX = (self.XX-self.xoffset)/self.xslope
-        if vxdat is None:   self.vxdat = None
-        else:
-            self.vxdat = _np.copy(vxdat)/(self.xslope*self.xslope)
-            out.append(self.vxdat)
-        return tuple(out)
-        # end if
-    # end def
-
-    def unscaledat(self, **kwargs):
-        """
-        After fitting, then the algebra necessary to unscale the problem to original
-        units is:
-            prof = slope*prof+offset
-            varp = varp*slope**2.0
-
-            dprofdx = (slope*dprofdx)
-            vardprofdx = slope**2.0 * vardprofdx
-
-        Note that when scaling the problem, it is best to propagate errors from
-        covariance / gvec / dgdx before rescaling because that is arbitrarily complex
-
-        In general we cannot scale both x- and y-data due to non-linearities.
-        Return scalings on all data by default, but overwrite in each model with NL
-        (x-xmin)/(xmax-xmin) = (x-xoffset)/xslope
-        """
-        if self.scaled:
-            # Fitted data
-            self.xdat = self.xdat*self.xslope+self.xoffset
-            self.ydat = self.ydat*self.slope+self.offset
-            self.vdat = self.vdat*self.slope*self.slope
-            if hasattr(self, 'vxdat') and self.vxdat is not None:
-                self.vxdat = self.vxdat*self.xslope*self.xslope
-            # end if
-            if hasattr(self, 'XX') and self.XX is not None:
-                self.XX = self.XX*self.xslope + self.xoffset
-
-            # Calculated quantities  (if covmat already exists, this was done
-            # in update through propper error propagation)
-            if hasattr(self, 'varprof') and hasattr(self, 'vardprofdx'):
-#            if not hasattr(self, 'covmat'):
-                self.varprof *= self.slope*self.slope
-                self.vardprofdx *= (self.slope*self.slope)/(self.xslope*self.xslope)
-            # end if
-            self.scaled = False
-       # end if
-        if hasattr(self, 'vxdat') and self.vxdat is not None:
-            return self.xdat, self.ydat, self.vdat, self.vxdat
-        else:
-            return self.xdat, self.ydat, self.vdat
-        # end if
-    # end def
-
-#    @staticmethod
-#    def unscaleaf(ain, slope, offset=0.0, xslope=1.0, xoffset=0.0):
-#        ain = _np.copy(ain)
-#        aout = _np.copy(ain)
-#        print('Unscaling model parameters not supported: \n'+
-#              '   Either not implemented in model or \n'+
-#              '   there is a nonlinearity in the analytic model that precludes analytic scaling!')
-    def unscaleaf(self, ain):
-        return NotImplementedError
-    # end def
-
-#    def unscalecov(self, covin):
-#        return NotImplementedError
-
-    # ========================================================= #
 
     @classmethod
     def test_numerics(cls, **kwargs):
@@ -1636,232 +1964,133 @@ class ModelClass(FD):
         # end try
     # end def test numerics
 
-    @classmethod
-    def test_scaling(cls, **kwargs):
-        num = kwargs.pop('num', 21)
-        start = kwargs.pop('start', -0.1)
-        stop = kwargs.pop('stop', 1.3)
-        endpoint = kwargs.pop('endpoint', True)
-        dtyp = kwargs.pop('dtype', None)
-        XX = kwargs.pop('XX', _np.linspace(start=start, stop=stop, num=int(num), endpoint=endpoint, dtype=dtyp))
+    # ============================================================= #
 
-        # ============================================= #
+# end def class
 
-        # call an analytic version
-        modanal = cls(XX, **kwargs)
+# ========================================================================== #
 
-        asave = _np.copy(modanal.af)
 
-        # Make fake data
-        xdat = kwargs.pop('xdat', _np.linspace(start=start, stop=stop, num=int(num//2), endpoint=endpoint, dtype=dtyp))
-        ydat = cls._model(xdat, modanal.af, **kwargs)
-        vdat = _np.power(0.1*_np.abs(_np.nanmax(ydat)-_np.nanmin(ydat)), 2.0)
-        vdat = vdat*_np.ones_like(vdat)
+class ModelClass(FD):
+    """
+    Base model class including numerics
+    """
 
-        # Determine scalings on fake data
-        modanal.scaledat(xdat, ydat, vdat)
 
-        # ============================================= #
+    def update(self, XX=None, af=None, **kwargs):
+        XX, af, kwargs = self.parse_in(XX, af, **kwargs)
+        super(ModelClass, self).update(XX=XX, af=af, **kwargs)
 
-        # Call a version that will be numerically scaled
-        modscal = cls(XX, modanal.af, **kwargs)
-        modscal.slope = _np.copy(modanal.slope)
-        modscal.offset = _np.copy(modanal.offset)
-        modscal.xslope = _np.copy(modanal.xslope)
-        modscal.xoffset = _np.copy(modanal.xoffset)
 
-#        modscal.slope = _np.nanmax(ydat)-_np.nanmin(ydat)
-#        modscal.offset = _np.nanmin(ydat)
-#        modscal.xslope = _np.nanmax(xdat)-_np.nanmin(xdat)
-#        modscal.xoffset = _np.nanmin(xdat)
-#
-#        if modscal.xslope == 0.0:     modscal.xslope = 1.0   # end if
-#        if modscal.slope == 0.0:     modscal.slope = 1.0   # end if
-#
-        assert (modscal.af == modanal.af).all()
-        assert modscal.offset == modanal.offset
-        assert modscal.slope == modanal.slope
-        assert modscal.xoffset == modanal.xoffset
-        assert modscal.xslope == modanal.xslope
+    def update_minimal(self, XX=None, af=None, **kwargs):
+        XX, af, kwargs = self.parse_in(XX, af, **kwargs)
+        super(ModelClass, self).update_minimal(XX=XX, af=af, **kwargs)
 
-        # =================================================================== #
 
-        # scale one result analytically
-        modanal.af = modanal.scaleaf(modanal.af)
-        modanal.update()
+    def model(self, XX, aa=None, **kwargs):
+        """
+        Returns the model.
+            f(x) = f(x, a, b, c, ...)
+            out: f(x)
+        """
+        XX, aa, kwargs = self.parse_in(XX, aa, **kwargs)
+        return self._model(XX, aa, **kwargs)
 
-        #  Now manually scale one result non-analytically
-        modscal.XX = (modscal.XX-modscal.xoffset)/modscal.xslope
-        modscal.prof= (modscal.prof-modscal.offset)/modscal.slope
 
-        # chain-rule: if the problem is linear in x and y, then this will work
-        # dy'/dx' = dydx*(dy'/dy)*(dx/dx') = dprofdx*xs/ys
-        modscal.dprofdx= modscal.dprofdx*modscal.xslope/modscal.slope
+    def derivative(self, XX, aa=None, **kwargs):
+        """
+        Returns the derivative of the model.
+            f(x) = f(x, a, b, c, ...)
+            out: dfdx
 
-        # if the problem is too nonlinear in x and y this will break
-        # d2y'/dx'2 =
-        modscal.d2profdx2= modscal.d2profdx2*_np.power(modscal.xslope, 2.0)/modscal.slope
+        Leave it to the user to define the method '_deriv' with an analytic derivative.
+        otherwise, calculate the derivative numerically by finite-differencing the model.
+        """
+        XX, aa, kwargs = self.parse_in(XX, aa, **kwargs)
+        if hasattr(self, '_deriv') and self.analytic:
+            return self._deriv(XX, aa, **kwargs)
+        return super(ModelClass, self).derivative(XX, aa, **kwargs)
+        # end if
+    # end def derivative
 
-        # Now save the profile, derivative, and 2nd derivative of each model for plotting
-        aXX = _np.copy(modanal.XX)
-        aprof = _np.copy(modanal.prof)
-        adprofdx = _np.copy(modanal.dprofdx)
-        ad2profdx2 = _np.copy(modanal.d2profdx2)
 
-        sXX = _np.copy(modscal.XX)
-        sprof = _np.copy(modscal.prof)
-        sdprofdx = _np.copy(modscal.dprofdx)
-        sd2profdx2 = _np.copy(modscal.d2profdx2)
+    def jacobian(self, XX, aa=None, **kwargs):
+        """
+        Returns the jacobian of the model.
+            f(x) = f(x, a, b, c)
+            out: [dfda(x), dfdb(x), dfdc(x), ...]
 
-        # Then unscale the data analytically and compare it to the original data
-        modanal.unscaledat()
-        modanal.af = modanal.unscaleaf(modanal.af)
-        modanal.update()
+        Leave it to the user to define the method '_partial' with an analytic Jacobian.
+        Otherwise, calculate the jacobian numerically by finite-differencing the model.
+        """
+        XX, aa, kwargs = self.parse_in(XX, aa, **kwargs)
+        if hasattr(self, '_partial') and self.analytic:
+            return self._partial(XX, aa, **kwargs)
+        return super(ModelClass, self).jacobian(XX, aa, **kwargs)
 
-        # And unscale the data non-analytically and compare it to the original data
-        modscal.XX = modscal.XX*modscal.xslope+modscal.xoffset
-        modscal.prof = modscal.prof*modscal.slope+modscal.offset
-        modscal.dprofdx = modscal.dprofdx*modscal.slope/modscal.xslope
-        modscal.d2profdx2 = modscal.d2profdx2*modscal.slope/_np.power(modscal.xslope, 2.0)
 
-        # =================================================================== #
+    def derivative_jacobian(self, XX, aa=None, **kwargs):
+        """
+        Returns the jacobian of the derivative of the model.
+            f(x) = f(x, a, b, c)
+            out: [d2fdxda(x), d2fdxdb(x), d2fdxdc(x), ...]
 
-        # plot the model and its derivatives from both forms.  It should match.
+        Leave it to the user to define the method '_partial_deriv' with an analytic Jacobian of the derivative.
+        Otherwise, calculate the jacobian of the derivative numerically by finite-differencing the model derivative.
+        """
+        XX, aa, kwargs = self.parse_in(XX, aa, **kwargs)
+        if hasattr(self, '_partial_deriv') and self.analytic:
+            return self._partial_deriv(XX, aa, **kwargs)
+        return super(ModelClass, self).derivative_jacobian(XX, aa, **kwargs)
 
-        def getylims(func1, func2, _ax):
-            ylims = _ax.get_ylim()
-            mn = _np.min((_np.nanmin(func1.flatten()), _np.nanmin(func2.flatten()), ylims[0]))
-            mx = _np.max((_np.nanmax(func1.flatten()), _np.nanmax(func2.flatten()), ylims[1]))
-            if mn == 0:     mn = -0.1*(ylims[1]-ylims[0])   # end if
-            if mx == 0:     mx = 0.1*(ylims[1]-ylims[0])    # end if
-            ylims = (_np.nanmin((0.8*mn, 1.2*mn)), _np.nanmax((0.8*mx, 1.2*mx)))
-            return ylims
 
-        fignum_base = cls.__name__
-        if hasattr(modanal, 'npoly'):
-            fignum_base += '_npoly%i'%(modanal.npoly,)
-        fignum, ii = fignum_base, 0
-        while _plt.fignum_exists(fignum) and ii<10:
-            fignum = fignum_base+'_%i'%(ii,)
-            ii += 1
+    def second_derivative(self, XX, aa=None, **kwargs):
+        """
+        Returns the 2nd derivative of the model.
+            f(x) = f(x, a, b, c, ...)
+            out: d2fdx2
 
-        _plt.figure(fignum)
-        _ax1 = _plt.subplot(3,2,1)
-        if not _np.isnan(modscal.prof).all():
-            _ax1.plot(modscal.XX, modscal.prof, '.-')
-        _ax1.plot(modanal.XX, modanal.prof, '.')
-        _ax1.errorbar(xdat, ydat, yerr=_np.sqrt(vdat), fmt='ko')
-        ylims = getylims(modscal.prof, modanal.prof, _ax1)
-        _ax1.set_ylim(ylims)
-        _ax1.set_title('model')
+        Leave it to the user to define the method '_deriv2' with an analytic 2nd derivative.
+        otherwise, calculate the derivative numerically by finite-differencing the model.
+        """
+        XX, aa, kwargs = self.parse_in(XX, aa, **kwargs)
+        if hasattr(self, '_deriv2') and self.analytic:
+            return self._deriv2(XX, aa, **kwargs)
+        return super(ModelClass, self).second_derivative(XX, aa, **kwargs)
 
-        _ax2 = _plt.subplot(3,2,2)
-        if not _np.isnan(sprof).all():
-            _ax2.plot(sXX, sprof, '-')
-        _ax2.plot(aXX, aprof, '.')
-        ylims = getylims(sprof, aprof, _ax2)
-        _ax2.set_ylim(ylims)
-        _ax2.set_title('scaled')
+    def second_derivative_jacobian(self, XX, aa=None, **kwargs):
+        """
+        Returns the jacobian of the second derivative of the model.
+            f(x) = f(x, a, b, c)
+            out: [d3fdx2da(x), d3fdx2db(x), d3fdx2dc(x), ...]
 
-        _ax3 = _plt.subplot(3,2,3, sharex=_ax1)
-        if not _np.isnan(modscal.dprofdx).all():
-            _ax3.plot(modscal.XX, modscal.dprofdx, '-')
-        _ax3.plot(modanal.XX, modanal.dprofdx, '.')
-        ylims = getylims(modscal.dprofdx, modanal.dprofdx, _ax3)
-        _ax3.set_ylim(ylims)
-#        _ax3.set_title('derivative')
-        _ax3.set_ylabel('deriv')
+        Leave it to the user to define the method '_partial_deriv2' with an analytic Jacobian of the 2nd derivative.
+        Otherwise, calculate the jacobian of the 2nd derivative numerically by finite-differencing the model derivative.
+        """
+        XX, aa, kwargs = self.parse_in(XX, aa, **kwargs)
+        if hasattr(self, '_partial_deriv2') and self.analytic:
+            return self._partial_deriv2(XX, aa, **kwargs)
+        return super(ModelClass, self).second_derivative_jacobian(XX, aa, **kwargs)
 
-        _ax4 = _plt.subplot(3,2,4, sharex=_ax2)
-        if not _np.isnan(sdprofdx).all():
-            _ax4.plot(sXX, sdprofdx, '-')
-        _ax4.plot(aXX, adprofdx, '.')
-        ylims = getylims(sdprofdx, adprofdx, _ax4)
-        _ax4.set_ylim(ylims)
-#        _ax4.set_title('deriv jacobian')
 
-        _ax5 = _plt.subplot(3,2,5, sharex=_ax1)
-        if not _np.isnan(modscal.d2profdx2).all():
-            _ax5.plot(modscal.XX, modscal.d2profdx2, '-')
-        _ax5.plot(modanal.XX, modanal.d2profdx2, '.')
-        ylims = getylims(modscal.d2profdx2, modanal.d2profdx2, _ax5)
-        _ax5.set_ylim(ylims)
-        _ax5.set_ylabel('2nd deriv')
+    def hessian(self, XX, aa=None, **kwargs):
+        """
+        Returns the hessian of the model
+            f(x) = f(x, a, b, c)
+            out: [[d2fda2(x), d2fdbda(x), d2fdcda(x), ...]
+                  [d2fdadb(x), d2fdb2(x), d2fdcdb(x), ...]
+                  [               ...                    ] ]
 
-        _ax6 = _plt.subplot(3,2,6, sharex=_ax2)
-        if not _np.isnan(sd2profdx2).all():
-            _ax6.plot(sXX, sd2profdx2, '-')
-        _ax6.plot(aXX, ad2profdx2, '.')
-        ylims = getylims(sd2profdx2, ad2profdx2, _ax6)
-        _ax6.set_ylim(ylims)
-#        _ax6.set_title('2nd deriv jacobian')
+        Leave it to the user to define the method '_hessian' with an analytic Hessian.
+        Otherwise, calculate the hessian numerically by finite-differencing the jacobian.
+        """
+        XX, aa, kwargs = self.parse_in(XX, aa, **kwargs)
+        if hasattr(self, '_hessian') and self.analytic:
+            return self._hessian(XX, aa, **kwargs)
+        return super(ModelClass, self).hessian(XX, aa, **kwargs)
+    # end def
 
-        _plt.tight_layout()
 
-        # ======= #
-        rtol, atol = (1e-5, 1e-8)
-        try:
-            aerr = _np.nanmax(_np.abs(modscal.af - asave))
-            rerr = 1.0-_np.nanmax(_np.abs(divide(modscal.af, asave)))
-#            assert (modscal.af == asave).all()
-            assert _ut.allclose(modscal.af, asave, rtol=rtol, atol=atol, equal_nan=True)  # same functions, this has to be true
-        except:
-            print('Numerical scaling / unscaling failed')
-            for ii in range(len(asave)):
-                print('parameter %i: %f - %f.   Abs. Err: %f     Rel. Err: %f'%(
-                ii,modscal.af[ii],asave[ii],modscal.af[ii] - asave[ii], modscal.af[ii]/asave[ii]))
-            # end for
-            print('Scale testing failed \n abs. err. level %e\n rel. err. level %e'%(aerr, rerr))
-            raise
-        # end try:
-        try:
-            aerr = _np.nanmax(_np.abs(modanal.af - asave))
-            rerr = 1.0-_np.nanmax(_np.abs(divide(modanal.af, asave)))
-#            assert (modanal.af == asave).all()
-            assert _ut.allclose(modanal.af, asave, rtol=rtol, atol=atol, equal_nan=True)  # same functions, this has to be true
-        except:
-            print('Analytic scaling / unscaling failed')
-            for ii in range(len(asave)):
-                print('parameter %i: %f - %f.   Abs. Err: %f     Rel. Err: %f'%(
-                ii,modanal.af[ii],asave[ii],modanal.af[ii] - asave[ii], modanal.af[ii]/asave[ii]))
-            # end for
-            print('Scale testing failed \n abs. err. level %e\n rel. err. level %e'%(aerr, rerr))
-            raise
-        # end try:
-
-        try:
-            # Check the maximum error between quantities
-            rtol, atol = (1e-5, 1e-8)
-#            rtol, atol = (1e-5, _np.max((1e-8, _np.nanmax(1e-8*modanal.prof))))
-            aerr = _np.nanmax(modscal.prof - modanal.prof)
-            rerr = 1.0-_np.nanmax(divide(modscal.prof, modanal.prof))
-            assert _ut.allclose(modscal.prof, modanal.prof, rtol=rtol, atol=atol, equal_nan=True)  # same functions, this has to be true
-            aerr = _np.nanmax(sprof -aprof)
-            rerr = 1.0-_np.nanmax(divide(sprof, aprof))
-            assert _ut.allclose(sprof, aprof, rtol=rtol, atol=atol, equal_nan=True)  # same functions, this has to be true
-
-#            rtol, atol = (1e-5, _np.max((1e-8, _np.nanmax(1e-8*modanal.dprofdx))))
-            aerr = _np.nanmax(modscal.dprofdx - modanal.dprofdx)
-            rerr = 1.0-_np.nanmax(divide(modscal.dprofdx, modanal.dprofdx))
-            assert _ut.allclose(modscal.dprofdx, modanal.dprofdx, rtol=rtol, atol=atol, equal_nan=True)  # derivative of model
-            aerr = _np.nanmax(sdprofdx - adprofdx)
-            rerr = 1.0-_np.nanmax(divide(sdprofdx, adprofdx))
-            assert _ut.allclose(sdprofdx, adprofdx, rtol=rtol, atol=atol, equal_nan=True)  # derivative of model
-
-#            rtol, atol = (1e-5, _np.max((1e-8, _np.nanmax(1e-8*modanal.d2profdx2))))
-            aerr = _np.nanmax(modscal.d2profdx2 - modanal.d2profdx2)
-            rerr = 1.0-_np.nanmax(divide(modscal.d2profdx2, modanal.d2profdx2))
-            assert _ut.allclose(modscal.d2profdx2, modanal.d2profdx2, rtol=rtol, atol=atol, equal_nan=True)  # model second derivative
-            aerr = _np.nanmax(sd2profdx2 - ad2profdx2)
-            rerr = 1.0-_np.nanmax(divide(sd2profdx2, ad2profdx2))
-            assert _ut.allclose(sd2profdx2, ad2profdx2, rtol=rtol, atol=atol, equal_nan=True)  # model second derivative
-
-        except:
-            print('Scale testing failed \n abs. err. level %e\n rel. err. level %e'%(aerr, rerr))
-            print('Successful inversion of scaling, but unsuccessful scaling')
-            raise
-        # end try
-    # end def test scaling
 
 # end def class
 
