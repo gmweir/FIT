@@ -176,7 +176,12 @@ def model_line(XX=None, af=None, **kwargs):
     """
     return _model(ModelLine, XX, af, **kwargs)
 
-
+def factory(numerics=False):
+    if numerics is False:
+        return ModelLine
+def ModelLine(numerics=False):
+    if numerics is False:
+        return
 # ========================================================================== #
 
 
@@ -407,6 +412,11 @@ class ModelSines(ModelClass):
     """
     Fourier series in the sine-phase form:
         f = 0.5*ao + sum_ii a_ii *sin((2pi*f_ii)*XX+p_ii) ii>=1
+
+    default: DC offset: 0,
+             amplitude: 1
+             frequency: 33 Hertz
+             phase: pi/3
     """
     _af = _np.asarray([0.0]+[1.0, 33.0, _np.pi/3], dtype=_np.float64)
     _LB = _np.asarray([-_np.inf]+[-_np.inf,   1e-18, -_np.pi], dtype=_np.float64)
@@ -420,7 +430,7 @@ class ModelSines(ModelClass):
         if af is not None:
             self.nfreqs = self.getnfreqs(af)
         else:
-            # default to a square wave
+            # default to a sine wave
             self.nfreqs = kwargs.setdefault('nfreqs', 1)
             self.fmod = kwargs.setdefault('fmod', self._af[2])
             self._af[2] = _np.copy(self.fmod)
