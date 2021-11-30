@@ -19,10 +19,19 @@ import matplotlib.pyplot as _plt
 from pybaseutils.Struct import Struct
 from pybaseutils import utils as _ut
 
+
+# For abstract methods
+from abc import ABC, abstractmethod
+
+
 # ========================================================================== #
 # ========================================================================== #
 
 def divide(num, den):
+    """
+    make a Taylor series expansion about the denominator where the denominator equals 0
+    to avoid divide by zero
+    """
     if len(_np.atleast_1d(num))<len(_np.atleast_1d(den)):
         num = num*_np.ones_like(den)
     if len(_np.atleast_1d(den))<len(_np.atleast_1d(num)):
@@ -39,32 +48,54 @@ def divide(num, den):
 
 # ========================================================================== #
 
-class __ModelClass__(Struct):
+
+class __ModelClass__(ABC, Struct):
     """
     Container class for methods overwritten by the Model in model_spec.py if
     they are implemented there
+
+        Abstract class for model functions
+        decorate model class required methods with @abstractmethod
+
+    For the FIT package. A model really only needs the _model and _partial functions
+
+    The others are just gravy to have
     """
 
+    @abstractmethod
     def _model(*args, **kwargs):
-        NotImplementedError()
+        # NotImplementedError()
+        pass
 
+    @abstractmethod
     def _partial(*args, **kwargs):
-        NotImplementedError()
+        # NotImplementedError()
+        pass
 
+    # @abstractmethod
     def _deriv(*args, **kwargs):
         NotImplementedError()
+        # pass
 
+    # @abstractmethod
     def _partial_deriv(*args, **kwargs):
         NotImplementedError()
+        # pass
 
+    # @abstractmethod
     def _deriv2(*args, **kwargs):
         NotImplementedError()
+        # pass
 
+    # @abstractmethod
     def _partial_deriv2(*args, **kwargs):
         NotImplementedError()
+        # pass
 
+    # @abstractmethod
     def _hessian(*args, **kwargs):
         NotImplementedError()
+        # pass
 
     # def
     #     NotImplementedError()
@@ -81,7 +112,8 @@ class __ModelClass(__ModelClass__):
 
     def __init__(self, XX=None, af=None, **kwargs):
         LB, UB, fixed = self.defaults(**kwargs)
-        if af is None:   af = _np.copy(self.aa)    # end if
+        if af is None:   af = _np.copy(self.af)    # end if
+        # if af is None:   af = _np.copy(self.aa)    # end if
         self.af = _np.copy(af)
         self.Lbounds = _np.copy(LB)
         self.Ubounds = _np.copy(UB)
@@ -417,7 +449,7 @@ class __ModelClass(__ModelClass__):
 
         if hasattr(cls, '_default_plot'):
             modanal._default_plot()
-        else:
+        elif 0:
             _plt.figure()
             _plt.plot(XX, modanal._y)
         # end if
@@ -431,7 +463,7 @@ class __ModelClass(__ModelClass__):
         vdat = vdat*_np.ones_like(vdat)
 
         # Determine scalings on fake data
-        modanal.scaledat(xdat, ydat, vdat)
+        modanal.scaledat(_np.copy(xdat), _np.copy(ydat), _np.copy(vdat))
 
         # ============================================= #
 
@@ -647,6 +679,8 @@ class FD(__ModelClass):
     Adds numerical methods for finite-differencing to the base Model class
     """
     machine_epsilon = (_np.finfo(_np.float64).eps)
+    _hh = 0.01 # old
+    # _hh = 0.001
 
     # def __init__(self, model, **kwargs):
     #     self._model = model
@@ -670,7 +704,8 @@ class FD(__ModelClass):
 
     def parse_in(self, XX, aa, **kwargs):
         if aa is None:
-            aa = _np.copy(self.aa)
+            # aa = _np.copy(self.aa)
+            aa = _np.copy(self.af)
         # end if
         if XX is None: XX = _np.copy(self.XX)  # end if
         XX = _np.copy(XX)
@@ -690,45 +725,89 @@ class FD(__ModelClass):
 
         deriv_in = kwargs.pop('deriv_in', 'x')
 
+        deriv_order_a = kwargs.pop('deriv_order_a', 0)
+        deriv_order_x = kwargs.pop('deriv_order_x', deriv_order)
+
+        etaj = _np.power(self.machine_epsilon, 1.0/(deriv_order_x+deriv_order_a+1.0))
         if 'hh' not in kwargs:
             aa = _np.asarray(aa)
 
             if deriv_in.lower().find('x')>-1:
-                tst = self.centered_fd(model, XX=XX, hh=0.01, aa=aa,
-                        deriv_order=deriv_order, order=order, msk=None, **kwargs)
-                dmax = _np.abs(tst).max()
+                # for uneven spacing, use the actual data points
+                Xmid = _np.abs(_np.nanmax(XX)-_np.nanmin(XX))/len(_np.atleast_1d(XX))
+                hh = (1.0+Xmid)*etaj
             else:
-                numfit = _np.size(aa)
-                tst = _np.zeros((numfit, _np.size(XX)), dtype=_np.float64)
-                for ii in range(numfit):
-                    msk = _np.zeros(aa.shape, dtype=bool)
-                    msk[ii] = True
-                    tst[ii, :] = self.centered_fd(model, XX=aa, hh=0.01, aa=XX,
-                        deriv_order=deriv_order, order=order, msk=msk, **kwargs)
-                # end for
-                dmax = _np.max(_np.abs(tst), axis=1)
+                if hasattr(self, 'Lbounds') and hasattr(self, 'Ubounds'):
+                    hh_temp = _np.abs( 0.5*(self.Ubounds-self.Lbounds) )
+                else:
+                    hh_temp = _np.abs(aa)
+                # end
+                if _np.isinf(hh_temp).any() or _np.isnan(hh_temp).any():
+                    ireplace = _np.isinf(hh_temp).any() or _np.isnan(hh_temp).any()
+                    hh_temp[ireplace] = _np.abs(aa[ireplace])
+                # end if
+                hh = (1.0+hh_temp)*etaj
             # end if
+        # end if
+        # if 'hh' not in kwargs:
+        #     aa = _np.asarray(aa)
 
-#            dmax = _np.max((tst.max()/0.2, 5.0))
-#            dmax = _np.max((_np.max(_np.abs(aa))/0.2, dmax))   # maximum derivative, arbitraily say 10/0.2
-            if len(_np.shape(dmax))>0:
-                dmax = _np.max(dmax)
-            if dmax == 0 or _np.isinf(dmax):
-                hh = 0.01
-            else:
-                hh = _np.divide(6.0*self.machine_epsilon, dmax, out=_np.atleast_1d(1e-6), where=(dmax==0))
-                hh = _ut.cbrt(hh)
-            # end if
+        #     if deriv_in.lower().find('x')>-1:
+        #         # hh_temp = self._hh
+        #         # hh_temp = self._hh*_np.abs(XX[2]-XX[1])
+        #         hh_temp = self._hh*_np.abs(_np.nanmax(XX)-_np.nanmin(XX))
 
-            if deriv_order == 2:
-                hh = _np.power(hh, 0.5)
-            elif deriv_order == 3:
-                hh = _np.power(hh, 1.0/3.0)
-            # end if
+        #         tst = self.centered_fd(model, XX=_np.copy(XX), hh=hh_temp, aa=aa,
+        #                 deriv_order=deriv_order, order=order, msk=None, **kwargs)
+        #         dmax = _np.abs(tst).max()
+        #     else:
+        #         if hasattr(self, 'Lbounds') and hasattr(self, 'Ubounds'):
+        #             hh_temp = self._hh * _np.abs( 0.5*(self.Ubounds-self.Lbounds) )
+        #         else:
+        #             hh_temp = self._hh*_np.abs(aa)
+        #         # end
+        #         if _np.isinf(hh_temp).any() or _np.isnan(hh_temp).any():
+        #             ireplace = _np.isinf(hh_temp).any() or _np.isnan(hh_temp).any()
+        #             hh_temp[ireplace] = self._hh*_np.abs(aa[ireplace])
+        #         # end if
+
+        #         # hh_temp = self._hh
+
+        #         numfit = _np.size(aa)
+        #         tst = _np.zeros((numfit, _np.size(XX)), dtype=_np.float64)
+        #         for ii in range(numfit):
+        #             msk = _np.zeros(aa.shape, dtype=bool)
+        #             msk[ii] = True
+        #             if hh_temp[ii] == 0:
+        #                 hh_temp[ii] = self._hh
+        #             tst[ii, :] = self.centered_fd(model, XX=_np.copy(aa), hh=hh_temp, aa=_np.copy(XX),
+        #                 deriv_order=deriv_order, order=order, msk=msk, **kwargs)
+        #         # end for
+        #         dmax = _np.max(_np.abs(tst), axis=1)
+        #     # end if
+
+        #     # if len(_np.shape(dmax))>0:      # allow multi-dimensional?  TODO! vectorizing derivatives
+        #         # dmax = _np.max(dmax)
+        #     # if dmax == 0 or _np.isinf(dmax):
+        #         # hh = hh_temp
+        #     # else:
+        #     # was auto-setting to 1e-6 before, now hh_temp
+        #     hh = _np.divide(6.0*self.machine_epsilon, dmax, out=_np.atleast_1d(hh_temp), where=(dmax!=0)+(~_np.isinf(dmax)))
+        #     hh = _ut.cbrt(hh)
+
+        #     if (hh == 0).any():
+        #         hh[hh==0] = hh_temp[hh==0]
+        #     # end if
+
+        #     if deriv_order == 2:
+        #         hh = _np.power(hh, 0.5)
+        #     elif deriv_order == 3:
+        #         hh = _np.power(hh, 1.0/3.0)
+        #     # end if
 
             kwargs.setdefault('hh', hh)
         # end if
-        return hh, kwargs
+        return kwargs['hh'], kwargs
 
     def model(self, *args, **kwargs):
         XX, aa, kwargs = self.parse_in(*args, **kwargs)
@@ -745,11 +824,21 @@ class FD(__ModelClass):
         otherwise, calculate the derivative numerically by finite-differencing the model.
         """
         XX, aa, kwargs = self.parse_in(XX, aa, **kwargs)
-        hh, kwargs = self.__step_size(self.model, XX, aa, deriv_order=1, **kwargs)
+        # hh, kwargs = self.__step_size(self.model, XX, aa, deriv_order=1, **kwargs)
 
         # check the model for boundary conditions (non-negative, etc.)
         order = kwargs.setdefault('order', 6)
+        deriv_order = 1
         kwargs.setdefault('deriv_order', 1)
+
+        hh = _np.power(self.machine_epsilon, 1.0/(deriv_order+1.0))
+        hh = _np.sqrt(hh)
+        hh *= (1.0+_np.nanmean(_np.abs(XX)))
+
+        # hh = _np.power(self.machine_epsilon, 1.0/(2.0))*(1.0+_np.abs(_np.nanmean(XX)))
+        kwargs.setdefault('hh', hh)
+
+
 
         dydx = self.centered_fd(self.model, XX=XX, aa=aa, **kwargs)
 
@@ -763,7 +852,6 @@ class FD(__ModelClass):
             dydx[iright] = self.backward_fd(self.model, XX=XX[iright], aa=aa, **kwargs)
         # end if
         return dydx
-        # end if
     # end def derivative
 
     # ============================================================= #
@@ -778,29 +866,37 @@ class FD(__ModelClass):
         otherwise, calculate the derivative numerically by finite-differencing the model.
         """
         XX, aa, kwargs = self.parse_in(XX, aa, **kwargs)
-        hh, kwargs = self.__step_size(self.model, XX, aa, deriv_order=2, **kwargs)
+        # hh, kwargs = self.__step_size(self.model, XX, aa, deriv_order=2, **kwargs)
 
         # 2nd order accurate will not pass standard numpy assertion test: atol=1e-5, rtol=1e-8
         # 4th order accurate passes standard numpy assertion test: atol=1e-5, rtol=1e-8
         # 6th order and 8th order also passes
-        order = kwargs.setdefault('order', 8)
-        kwargs.setdefault('deriv_order', 2)
+        order = kwargs.setdefault('order', 6)
+        deriv_order = 2
+        kwargs['deriv_order'] = deriv_order
+
+        hh = _np.power(self.machine_epsilon, 1.0/(deriv_order+1.0))
+        hh = _np.sqrt(hh)
+        hh *= (1.0+_np.nanmean(_np.abs(XX)))
+
+        # hh = _np.power(self.machine_epsilon, 1.0/(3.0))*(1.0+_np.abs(_np.nanmean(XX)))
+        # hh = _np.power(hh, 1.0/3.0)
+        kwargs.setdefault('hh', hh)
 
         d2ydx2 = self.centered_fd(self.model, XX=XX, aa=aa, **kwargs)
 
-#        kwargs.pop('order')
-#        order = kwargs.setdefault('order', 5) # order>5 is broken in forward/backward difference currently on 2nd derivative
-        if hasattr(self, 'leftboundary') and (XX - 2*hh*order<self.leftboundary).any():
+        if hasattr(self, 'leftboundary') and (XX - 2*hh*order*2<self.leftboundary).any():
             ileft = _np.where(XX - 2*hh*order<self.leftboundary)[0]
             d2ydx2[ileft] = self.forward_fd(self.model, XX=XX[ileft], aa=aa, **kwargs)
         # end if
-        if hasattr(self, 'rightboundary') and (XX + 2*hh*order>self.rightboundary).any():
+        if hasattr(self, 'rightboundary') and (XX + 2*hh*order*2>self.rightboundary).any():
             iright = _np.where(XX + 2*hh*order>self.rightboundary)[0]
             d2ydx2[iright] = self.backward_fd(self.model, XX=XX[iright], aa=aa, **kwargs)
         # end if
         return d2ydx2
 
     # ============================================================= #
+
 
     def jacobian(self, XX, aa=None, **kwargs):
         """
@@ -816,36 +912,34 @@ class FD(__ModelClass):
 
         XX, aa, kwargs = self.parse_in(XX, aa, **kwargs)
 
-        ha, kwargs = self.__step_size(func, XX=XX, aa=aa, deriv_order=1, deriv_in='a', **kwargs)
-#        kwargs['hh'] = kwargs['hh']*_np.ones_like(aa)
-        kwargs.setdefault('order', 6)
-        kwargs.setdefault('deriv_order', 1)
+        # ha, kwargs = self.__step_size(func, XX=XX, aa=aa, deriv_order=1, deriv_in='a', **kwargs)
+        order = kwargs.setdefault('order', 6)
+        deriv_order = 1
+        kwargs['deriv_order'] = deriv_order
+
+        ha = _np.power(self.machine_epsilon, 1.0/(deriv_order+1.0))
+        ha = _np.sqrt(ha)
+        ha *= (1.0+_np.abs(aa))
+        # ha = _np.power(self.machine_epsilon, 1.0/(2.0))*(1.0+_np.abs(aa))
+        kwargs.setdefault('hh', ha)
 
         numfit = _np.size(aa)
         gvec = _np.zeros((numfit, _np.size(XX)), dtype=_np.float64)
         for ii in range(numfit):
             msk = _np.zeros(aa.shape, dtype=bool)
             msk[ii] = True
-            gvec[ii, :] = self.centered_fd(func, XX=aa, aa=XX, msk=msk, **kwargs)
-#        # end for
 
-#        order = kwargs['order']
-#        if hasattr(self, 'leftboundary') and (aa - 2*hh*order<self.leftboundary).any():
-#            ileft = _np.where(XX - 2*hh*order<self.leftboundary)[0]
-#            for ii in range(numfit):
-#                msk = _np.zeros(aa.shape, dtype=bool)
-#                msk[ii] = True
-#                gvec[ii, ileft] = self.forward_fd(func, XX=aa, aa=XX[ileft], msk=msk, **kwargs)
-#            # end for
-#        # end if
-#        if hasattr(self, 'rightboundary') and (XX + 2*hh*order>self.rightboundary).any():
-#            iright = _np.where(XX + 2*hh*order>self.rightboundary)[0]
-#            for ii in range(numfit):
-#                msk = _np.zeros(aa.shape, dtype=bool)
-#                msk[ii] = True
-#                gvec[ii, iright] = self.backward_fd(func, XX=aa, aa=XX[iright], msk=msk, **kwargs)
-#            # end for
-#        # end if
+            if hasattr(self, 'Lbounds') and (aa[ii] - 2*ha[ii]*order<self.Lbounds[ii]):
+                # Lower boundary
+                gvec[ii, :] = self.forward_fd(func, XX=_np.copy(aa), aa=_np.copy(XX), msk=msk, **kwargs)
+            elif hasattr(self, 'Ubounds') and (aa[ii] + 2*ha[ii]*order>self.Ubounds[ii]):
+                # Upper boundary
+                gvec[ii, :] = self.backward_fd(func, XX=_np.copy(aa), aa=_np.copy(XX), msk=msk, **kwargs)
+            else:
+                # Everywhere else
+                gvec[ii, :] = self.centered_fd(func, XX=_np.copy(aa), aa=_np.copy(XX), msk=msk, **kwargs)
+            # end if
+        # end for
         return gvec
 
     # ============================================================= #
@@ -860,17 +954,31 @@ class FD(__ModelClass):
         Otherwise, calculate the jacobian of the derivative numerically by finite-differencing the model derivative.
         """
         def func(ai, xi, **kwargs):
-            return self.derivative(xi, ai, **kwargs)
+            # return self.derivative(xi, ai, **kwargs)
+            return self.model(xi, ai, **kwargs)
 
         XX, aa, kwargs = self.parse_in(XX, aa, **kwargs)
 
         order = kwargs.setdefault('order_x', 6)
-        kwargs['deriv_order_x'] = 1
-        hx, _ = self.__step_size(self.model, XX, aa, deriv_order=kwargs['deriv_order_x'], deriv_in='x',  **kwargs)
+        deriv_order_x = 1
+        kwargs['deriv_order_x'] = deriv_order_x
+        # hx, _ = self.__step_size(self.model, XX, aa, deriv_order=kwargs['deriv_order_x'], deriv_in='x',  **kwargs)
 
-        kwargs.setdefault('order_a', 6)
-        kwargs['deriv_order_a'] = 1
-        ha, _ = self.__step_size(func, XX, aa, deriv_order=kwargs['deriv_order_a'], deriv_in='a', **kwargs)
+        order_a = kwargs.setdefault('order_a', 6)
+        deriv_order_a = 1
+        kwargs['deriv_order_a'] = deriv_order_a
+        # ha, _ = self.__step_size(func, XX, aa, deriv_order=kwargs['deriv_order_a'], deriv_in='a', **kwargs)
+
+        hx = _np.power(self.machine_epsilon, 1.0/(deriv_order_x+1.0))
+        hx = _np.sqrt(hx)
+        hx *= (1.0+_np.abs(_np.nanmean(XX)))
+
+        ha = _np.power(self.machine_epsilon, 1.0/(deriv_order_a+1.0))
+        ha = _np.sqrt(ha)
+        ha *= (1.0+_np.abs(aa))
+
+        # hx = 0.01*_np.ones_like(hx)
+        # ha = 0.01*_np.ones_like(ha)
 
         # Set optimized step sizes
         kwargs.setdefault('hx', hx)
@@ -883,27 +991,43 @@ class FD(__ModelClass):
             for ii in range(numfit):
                 msk = _np.zeros(aa.shape, dtype=bool)
                 msk[ii] = True
-                dgdx[ii, :] = self.centered_mixed_fd(self.model, XX=XX, aa=aa, msk=msk, **kwargs)
-            # end for
 
-#            order = 6
-#            kwargs['order_x'] = order
-            if hasattr(self, 'leftboundary') and (XX - 2*hx*order<self.leftboundary).any():
-                ileft = _np.where(XX - 2*hx*order<self.leftboundary)[0]
-                for ii in range(numfit):
-                    msk = _np.zeros(aa.shape, dtype=bool)
-                    msk[ii] = True
-                    dgdx[ii, ileft] = self.forward_mixed_fd(self.model, XX=XX[ileft], aa=aa, msk=msk, **kwargs)
-                # end for
-            # end if
-            if hasattr(self, 'rightboundary') and (XX + 2*hx*order>self.rightboundary).any():
-                iright = _np.where(XX + 2*hx*order>self.rightboundary)[0]
-                for ii in range(numfit):
-                    msk = _np.zeros(aa.shape, dtype=bool)
-                    msk[ii] = True
-                    dgdx[ii, iright] = self.backward_mixed_fd(self.model, XX=XX[iright], aa=aa, msk=msk, **kwargs)
-                # end for
-            # end if
+                scheme_in_x = 'centered'
+                if hasattr(self, 'Lbounds') and (aa[ii] - 2*ha[ii]*order_a*deriv_order_a<self.Lbounds[ii]):
+                    scheme_in_a = 'forward'
+                elif hasattr(self, 'Ubounds') and (aa[ii] + 2*ha[ii]*order_a*deriv_order_a>self.Ubounds[ii]):
+                    scheme_in_a = 'backward'
+                else:
+                    scheme_in_a = 'centered'
+                # end if
+
+                # Everywhere else
+                # dgdx[ii, :] = self.centered_mixed_fd(self.model, XX=XX, aa=aa, msk=msk, **kwargs)
+                dgdx[ii, :] = self.general_mixed_fd(self.model, XX=XX, aa=aa,
+                                msk=msk, scheme_in_x=scheme_in_x, scheme_in_a=scheme_in_a, **kwargs)
+
+                replace = False
+                if hasattr(self, 'leftboundary') and (XX - 2*hx*order*deriv_order_x<self.leftboundary).any():
+                    replace = True
+                    scheme_in_x = 'forward'
+                    ireplace = _np.where(XX - 2*hx*order*deriv_order<self.leftboundary)[0]
+
+                    dgdx[ii, ireplace] = self.general_mixed_fd(self.model, XX=XX[ireplace], aa=aa,
+                                msk=msk, scheme_in_x=scheme_in_x, scheme_in_a=scheme_in_a, **kwargs)
+                if hasattr(self, 'rightboundary') and (XX + 2*hx*order*deriv_order_x>self.rightboundary).any():
+                    replace = True
+                    scheme_in_x = 'forward'
+                    ireplace = _np.where(XX + 2*hx*order*deriv_order>self.rightboundary)[0]
+
+                    dgdx[ii, ireplace] = self.general_mixed_fd(self.model, XX=XX[ireplace], aa=aa,
+                                msk=msk, scheme_in_x=scheme_in_x, scheme_in_a=scheme_in_a, **kwargs)
+                # end if
+
+                # if replace:
+                #     dgdx[ii, ireplace] = self.general_mixed_fd(self.model, XX=XX[ireplace], aa=aa,
+                #                 msk=msk, scheme_in_x=scheme_in_x, scheme_in_a=scheme_in_a, **kwargs)
+                # # end if
+            # end for
         else:
             # Numerically unstable to take derivative of a numerical derivative
             # this is only for testing!
@@ -938,23 +1062,39 @@ class FD(__ModelClass):
         Otherwise, calculate the jacobian of the 2nd derivative numerically by finite-differencing the model derivative.
         """
         def func(ai, xi, **kwargs):
-            return self.second_derivative(xi, ai, **kwargs)
+            return self.model(xi, ai, **kwargs)
+            # return self.second_derivative(xi, ai, **kwargs)
+            # return self.derivative_jacobian(xi, ai, **kwargs) ## testing
 
         XX, aa, kwargs = self.parse_in(XX, aa, **kwargs)
 
         order = kwargs.setdefault('order_x', 6)
-        kwargs['deriv_order_x'] = 2
-        hx, _ = self.__step_size(self.model, XX, aa, deriv_in='x', deriv_order=kwargs['deriv_order_x'], **kwargs)
+        deriv_order_x = 2
+        kwargs['deriv_order_x'] = deriv_order_x
+        # hx, _ = self.__step_size(self.model, XX, aa, deriv_in='x', deriv_order=kwargs['deriv_order_x'], **kwargs)
 
-        kwargs.setdefault('order_a', 6)
-        kwargs['deriv_order_a'] = 1
-        ha, _ = self.__step_size(func, XX, aa, deriv_in='a', deriv_order=kwargs['deriv_order_a'], **kwargs)
-#        ha = 0.1*ha
+        order_a = kwargs.setdefault('order_a', 6)
+        deriv_order_a = 1
+        kwargs['deriv_order_a'] = deriv_order_a
+        # ha, _ = self.__step_size(func, XX, aa, deriv_in='a', deriv_order=kwargs['deriv_order_a'], **kwargs)
 
+        hx = _np.power(self.machine_epsilon, 1.0/(deriv_order_x+1.0))
+        hx = _np.sqrt(hx)
+        hx *= (1.0+_np.abs(_np.nanmean(XX)))
+
+        ha = _np.power(self.machine_epsilon, 1.0/(deriv_order_a+1.0))
+        ha = _np.sqrt(ha)
+        ha *= (1.0+_np.abs(aa))
+
+        # hx = _np.power(self.machine_epsilon, 1.0/(deriv_order_x+1.0))*(1.0+_np.abs(_np.nanmean(XX)))
+        # ha = _np.power(self.machine_epsilon, 1.0/(deriv_order_a+1.0))*(1.0+_np.abs(aa))
+        # hx = _np.sqrt(hx)
+        # ha = _np.sqrt(ha)
+        # ha = 0.01*_np.ones_like(ha)
+        # hx = 0.01*_np.ones_like(hx)
         # set optimized step sizes
         kwargs.setdefault('hx', hx)
         kwargs.setdefault('ha', ha)
-#        kwargs.setdefault('ha', ha*_np.ones_like(aa))
 
         if 1:
             numfit = _np.size(aa)
@@ -962,40 +1102,54 @@ class FD(__ModelClass):
             for ii in range(numfit):
                 msk = _np.zeros(aa.shape, dtype=bool)
                 msk[ii] = True
-                d2gdx2[ii, :] = self.centered_mixed_fd(self.model, XX=XX, aa=aa, msk=msk, **kwargs)
-            # end for
+                # d2gdx2[ii, :] = self.centered_mixed_fd(self.model, XX=XX, aa=aa, msk=msk, **kwargs)
 
-#            order = 10
-#            kwargs['order_x'] = order
-            kwargs['backward_in'] = 'x'
-            kwargs['forward_in'] = 'x'
-            kwargs['order_x'] = 2
-            kwargs['order_a'] = 6
-            if hasattr(self, 'leftboundary') and (XX - 2*hx*order<self.leftboundary).any():
-                ileft = _np.where(XX - 2*hx*order<self.leftboundary)[0]
-                for ii in range(numfit):
-                    msk = _np.zeros(aa.shape, dtype=bool)
-                    msk[ii] = True
-                    d2gdx2[ii, ileft] = self.forward_mixed_fd(self.model, XX=XX[ileft], aa=aa, msk=msk, **kwargs)
-                # end for
-            # end if
-            if hasattr(self, 'rightboundary') and (XX + 2*hx*order>self.rightboundary).any():
-                iright = _np.where(XX + 2*hx*order>self.rightboundary)[0]
-                for ii in range(numfit):
-                    msk = _np.zeros(aa.shape, dtype=bool)
-                    msk[ii] = True
-                    d2gdx2[ii, iright] = self.backward_mixed_fd(self.model, XX=XX[iright], aa=aa, msk=msk, **kwargs)
-                # end for
-            # end if
+                scheme_in_x = 'centered'
+                if hasattr(self, 'Lbounds') and (aa[ii] - 2*ha[ii]*order_a*deriv_order_a<self.Lbounds[ii]):
+                    scheme_in_a = 'forward'
+                elif hasattr(self, 'Ubounds') and (aa[ii] + 2*ha[ii]*order_a*deriv_order_a>self.Ubounds[ii]):
+                    scheme_in_a = 'backward'
+                else:
+                    scheme_in_a = 'centered'
+                # end if
+
+                # Everywhere else
+                d2gdx2[ii, :] = self.general_mixed_fd(self.model, XX=XX, aa=aa,
+                                msk=msk, scheme_in_x=scheme_in_x, scheme_in_a=scheme_in_a, **kwargs)
+
+                replace = False
+                if hasattr(self, 'leftboundary') and (XX - 2*hx*order*deriv_order_x<self.leftboundary).any():
+                    replace = True
+                    scheme_in_x = 'forward'
+                    ireplace = _np.where(XX - 2*hx*order*deriv_order<self.leftboundary)[0]
+
+                    d2gdx2[ii, ireplace] = self.general_mixed_fd(self.model, XX=XX[ireplace], aa=aa,
+                                msk=msk, scheme_in_x=scheme_in_x, scheme_in_a=scheme_in_a, **kwargs)
+                if hasattr(self, 'rightboundary') and (XX + 2*hx*order*deriv_order_x>self.rightboundary).any():
+                    replace = True
+                    scheme_in_x = 'forward'
+                    ireplace = _np.where(XX + 2*hx*order*deriv_order>self.rightboundary)[0]
+
+                    d2gdx2[ii, ireplace] = self.general_mixed_fd(self.model, XX=XX[ireplace], aa=aa,
+                                msk=msk, scheme_in_x=scheme_in_x, scheme_in_a=scheme_in_a, **kwargs)
+                # end if
+
+                # if replace:
+                #     d2gdx2[ii, ireplace] = self.general_mixed_fd(self.model, XX=XX[ireplace], aa=aa,
+                #                 msk=msk, scheme_in_x=scheme_in_x, scheme_in_a=scheme_in_a, **kwargs)
+                # # end if
+            # end for
         else:
             # Numerically unstable to take 2nd derivative of a numerical derivative
             # this is only for testing!
             if 'hh' not in kwargs:
-                hh, _ = self.__step_size(self.derivative_jacobian, XX, aa, deriv_order=2, **kwargs)
-                kwargs.setdefault('hx', hx)
+                # hh, _ = self.__step_size(self.derivative_jacobian, XX, aa, deriv_order=2, **kwargs)
+                hh = _np.power(self.machine_epsilon, 1.0/(deriv_order_x+1.0))*(1.0+_np.abs(_np.nanmean(XX)))
+                kwargs.setdefault('hx', hh)
             # end if
 #            d2gdx2 = self._2ndderiv_fd(self.jacobian, XX=XX, aa=aa, **kwargs)
-            d2gdx2 = self.centered_1stderiv(self.jacobian, XX=XX, aa=aa, **kwargs)
+            d2gdx2 = self.centered_1stderiv(self.derivative_jacobian, XX=XX, aa=aa, **kwargs)
+        # end if
         return d2gdx2
 
     # ============================================================= #
@@ -1013,8 +1167,11 @@ class FD(__ModelClass):
         """
         XX, aa, kwargs = self.parse_in(XX, aa, **kwargs)
 
-        hh, _ = self.__step_size(self.jacobian, XX, aa, deriv_order=1, **kwargs)
+        # hh, _ = self.__step_size(self.jacobian, XX, aa, deriv_order=1, **kwargs)
         kwargs.setdefault('hh', hh*_np.ones_like(hh))
+
+        # hx = _np.power(self.machine_epsilon, 1.0/(derive_order_x+1.0))*(1.0+_np.abs(_np.nanmean(XX)))
+        # ha = _np.power(self.machine_epsilon, 1.0/(derive_order_a+1.0))*(1.0+_np.abs(aa))
 
 #        hx, _ = self.__step_size(self.jacobian, XX, aa, deriv_order=1, **kwargs)
 #        ha, _ = self.__step_size(self.jacobian, XX, aa, deriv_order=2, **kwargs)
@@ -1282,6 +1439,31 @@ class FD(__ModelClass):
         return coeffs[::-1], den_coeffs
 
     @staticmethod
+    def general_mixed_coeffs(deriv_order_x, order_x, deriv_order_a, order_a,
+                             scheme_in_x='centered', scheme_in_a='centered'):
+        if scheme_in_x.lower().find('for')>-1:
+            coefx, denx = FD.forward_coeffs(deriv_order_x, order_x)
+        elif scheme_in_x.lower().find('bac')>-1:
+            coefx, denx = FD.backward_coeffs(deriv_order_x, order_x)
+        else:
+            coefx, denx = FD.centered_coeffs(deriv_order_x, order_x)
+        # end if
+
+        if scheme_in_a.lower().find('for')>-1:
+            coefa, dena = FD.forward_coeffs(deriv_order_a, order_a)
+        elif scheme_in_a.lower().find('bac')>-1:
+            coefa, dena = FD.backward_coeffs(deriv_order_a, order_a)
+        else:
+            coefa, dena = FD.centered_coeffs(deriv_order_a, order_a)
+        # end if
+
+        coeff = []
+        for ii in range(len(coefx)):
+            for jj in range(len(coefa)):
+                coeff.append(coefx[ii]*coefa[jj])
+        return coeff, denx*dena, coefx, denx, coefa, dena
+
+    @staticmethod
     def centered_mixed_coeffs(deriv_order_x, order_x, deriv_order_a, order_a):
         coefx, denx =FD.centered_coeffs(deriv_order_x, order_x)
         coefa, dena = FD.centered_coeffs(deriv_order_a, order_a)
@@ -1421,6 +1603,56 @@ class FD(__ModelClass):
         dx = _np.copy(hx)
         hx = hx*_np.ones_like(XX)
         return tmp, msk, hx, ha, dx, da
+
+    @staticmethod
+    def general_mixed_fd(func, XX=None, hx=None, aa=None, ha=None, deriv_order=1, order=2, msk=None, **kwargs):
+        """
+        Note: the looping requires a stencil point be defined at 0
+        """
+        tmp, msk, hx, ha, dx, da = FD.parse_mixed_inputs(XX, hx, aa, ha, order, msk)
+
+        deriv_order_a = kwargs.pop("deriv_order_a", 1)
+        order_a = kwargs.pop("order_a", order)
+        deriv_order_x = kwargs.pop("deriv_order_x", deriv_order)
+        order_x = kwargs.pop("order_x", order)
+
+        scheme_in_x = kwargs.setdefault('scheme_in_x', 'centered')
+        scheme_in_a = kwargs.setdefault('scheme_in_a', 'centered')
+
+        coeff, denx, coefx, denx, coefa, dena = \
+            FD.general_mixed_coeffs(deriv_order_x, order_x, deriv_order_a, order_a,
+                                    scheme_in_x=scheme_in_x, scheme_in_a=scheme_in_a)
+
+        ncoefx = len(coefx)
+        if scheme_in_x.lower().find('for')>-1:
+            nxstencil = 0
+        elif scheme_in_x.lower().find('bac')>-1:
+            nxstencil = ncoefx
+        else:
+            nxstencil = ncoefx // 2
+        # end if
+
+        ncoefa = len(coefa)
+        if scheme_in_a.lower().find('for')>-1:
+            nastencil = 0
+        elif scheme_in_a.lower().find('bac')>-1:
+            nastencil = ncoefa
+        else:
+            nastencil = ncoefa // 2
+        # end if
+
+        istencil = lambda ii: -1.0*nxstencil+ii
+        jstencil = lambda jj: -1.0*nastencil+jj
+
+        ysum = 0.0
+        for ii in range(ncoefx):
+            istep = istencil(ii)
+            for jj in range(len(coefa)):
+                jstep = jstencil(jj)
+                ysum += coefx[ii]*coefa[jj]*func(XX+istep*hx, aa+jstep*ha*tmp, **kwargs)
+            # end for
+        # end for
+        return ysum / (denx*dena*_np.power(dx, deriv_order_x)*_np.power(da, deriv_order_a))
 
     @staticmethod
     def centered_mixed_fd(func, XX=None, hx=None, aa=None, ha=None, deriv_order=1, order=2, msk=None, **kwargs):
@@ -1834,10 +2066,16 @@ class FD(__ModelClass):
 #        na = len(modanal.af)
 
         # Manually call the second derivative because it is not calculated by default
-        modnum.d2profdx2 = modnum.second_derivative(XX)
         modanal.d2profdx2 = modanal.second_derivative(XX)
-        modnum.d2gdx2 = modnum.second_derivative_jacobian(XX)
         modanal.d2gdx2 = modanal.second_derivative_jacobian(XX)
+        #
+        # automatically selected step-sizes
+        modnum.d2profdx2 = modnum.second_derivative(XX)
+        modnum.d2gdx2 = modnum.second_derivative_jacobian(XX)
+        #
+        # use manually specified step-sizes:
+        # modnum.d2profdx2 = modnum.second_derivative(XX, hh=1e-2)
+        # modnum.d2gdx2 = modnum.second_derivative_jacobian(XX, hh=1e-2)
 
         # ======= #
 
@@ -1914,6 +2152,13 @@ class FD(__ModelClass):
         _plt.tight_layout()
 
         # ======= #
+        def getRELerr(num, ana):
+            if (ana==0).all():
+                return None
+            else:
+                return 1.0-_np.nanmax(divide(num, ana))
+            # end if
+        # end def
 
         try:
             ii = -1
@@ -1921,45 +2166,62 @@ class FD(__ModelClass):
     #        rtol, atol = (1e-5, 1e-8)
             rtol, atol = (1e-5, _np.max((1e-8, _np.nanmax(1e-8*modanal.prof))))
             aerr = _np.nanmax(modnum.prof - modanal.prof)
-            rerr = 1.0-_np.nanmax(divide(modnum.prof, modanal.prof))
+            rerr = getRELerr(modnum.prof, modanal.prof)
+            # rerr = 1.0-_np.nanmax(divide(modnum.prof, modanal.prof))
             assert _ut.allclose(modnum.prof, modanal.prof, rtol=rtol, atol=atol, equal_nan=True)  # same functions, this has to be true
     ##        assert _ut.allclose(modnum.gvec, modanal.gvec, rtol=rtol, atol=atol, equal_nan=True)  # jacobian of model
 
 #            rtol, atol = (1e-4, 1e-5)
-            rtol, atol = (1e-5, _np.max((1e-8, _np.nanmax(1e-8*modanal.dprofdx))))
+            rtol, atol = (1e-5, _np.max((1e-5, _np.nanmax(1e-5*modanal.dprofdx))))
             aerr = _np.nanmax(modnum.dprofdx - modanal.dprofdx)
-            rerr = 1.0-_np.nanmax(divide(modnum.dprofdx, modanal.dprofdx))
+            rerr = getRELerr(modnum.dprofdx, modanal.dprofdx)
+            # rerr = 1.0-_np.nanmax(divide(modnum.dprofdx, modanal.dprofdx))
             assert _ut.allclose(modnum.dprofdx, modanal.dprofdx, rtol=rtol, atol=atol, equal_nan=True)  # derivative of model
     ##        assert _ut.allclose(modnum.dgdx, modanal.dgdx, rtol=rtol, atol=atol, equal_nan=True)  # jacobian of the model derivative
 
-#            rtol, atol = (1e-3, 1e-4)
-            rtol, atol = (1e-5, _np.max((1e-5, _np.nanmax(1e-5*modanal.d2profdx2))))
-            aerr = _np.nanmax(modnum.d2profdx2 - modanal.d2profdx2)
-            rerr = 1.0-_np.nanmax(divide(modnum.d2profdx2, modanal.d2profdx2))
-            assert _ut.allclose(modnum.d2profdx2, modanal.d2profdx2, rtol=rtol, atol=atol, equal_nan=True)  # model second derivative
-    ##        assert _ut.allclose(modnum.d2gdx2, modanal.d2gdx2, rtol=rtol, atol=atol, equal_nan=True)  # jacobian of the model second derivative
+            if 1:
+    #            rtol, atol = (1e-3, 1e-4)
+                rtol, atol = (1e-3, _np.max((1e-3, _np.nanmax(1e-3*modanal.d2profdx2))))
+                aerr = _np.nanmax(modnum.d2profdx2 - modanal.d2profdx2)
+                rerr = getRELerr(modnum.d2profdx2, modanal.d2profdx2)
+                # rerr = 1.0-_np.nanmax(divide(modnum.d2profdx2, modanal.d2profdx2))
+                assert _ut.allclose(modnum.d2profdx2, modanal.d2profdx2, rtol=rtol, atol=atol, equal_nan=True)  # model second derivative
+        ##        assert _ut.allclose(modnum.d2gdx2, modanal.d2gdx2, rtol=rtol, atol=atol, equal_nan=True)  # jacobian of the model second derivative
+            else:
+                print('warning!!! the numerical second derivative (finite differences) might be screwy... giving a lot of noise')
+            # end if
 
             for ii in range(modanal.gvec.shape[0]):
 #                print(ii)
 #                rtol, atol = (1e-5, 1e-8)
-                rtol, atol = (1e-5, _np.max((1e-8, _np.nanmax(1e-8*modanal.gvec[ii,:]))))  # mixed 2nd deriv implemented up to 4th order
+                rtol, atol = (1e-4, _np.max((1e-4, _np.nanmax(1e-4*modanal.gvec[ii,:]))))  # mixed 2nd deriv implemented up to 4th order
                 aerr = _np.nanmax(modnum.gvec[ii,:] - modanal.gvec[ii,:])
-                rerr = 1.0-_np.nanmax(divide(modnum.gvec[ii,:], modanal.gvec[ii,:]))
+                rerr = getRELerr(modnum.gvec[ii,:], modanal.gvec[ii,:])
+                # rerr = 1.0-_np.nanmax(divide(modnum.gvec[ii,:], modanal.gvec[ii,:]))
                 assert _ut.allclose(modnum.gvec[ii,:], modanal.gvec[ii,:], rtol=rtol, atol=atol, equal_nan=True)  # jacobian of model
 
 #                rtol, atol = (1e-4, 1e-3)
                 rtol, atol = (1e-4, _np.max((1e-3, _np.nanmax(1e-3*modanal.dgdx[ii,:]))))  # mixed 2nd deriv implemented up to 4th order
-                rerr = 1.0-_np.nanmax(divide(modnum.dgdx[ii,:], modanal.dgdx[ii,:]))
+                rerr = getRELerr(modnum.dgdx[ii,:], modanal.dgdx[ii,:])
+                # rerr = 1.0-_np.nanmax(divide(modnum.dgdx[ii,:], modanal.dgdx[ii,:]))
                 aerr = 1.0-_np.nanmax(modnum.dgdx[ii,:] - modanal.dgdx[ii,:])
 #                _np.testing.assert_allclose(modnum.dgdx[ii,:], modanal.dgdx[ii,:], rtol=rtol)
                 assert _ut.allclose(modnum.dgdx[ii,:], modanal.dgdx[ii,:], rtol=rtol, atol=atol, equal_nan=True)  # jacobian of the model derivative
 
-                rtol, atol = (1e-3, _np.max((1e-3, _np.nanmax(1e-3*modanal.d2gdx2[ii,:])))) # mixed 3rd deriv. implemented only up to 2nd order
-                aerr = _np.nanmax(modnum.d2gdx2[ii,:] - modanal.d2gdx2[ii,:])
-                rerr = 1.0-_np.nanmax(divide(modnum.d2gdx2[ii,:], modanal.d2gdx2[ii,:]))
-                assert _ut.allclose(modnum.d2gdx2[ii,:], modanal.d2gdx2[ii,:], rtol=rtol, atol=atol, equal_nan=True)  # jacobian of the model second derivative
+                if 1:
+                    rtol, atol = (1e-3, _np.max((1e-3, _np.nanmax(1e-3*modanal.d2gdx2[ii,:])))) # mixed 3rd deriv. implemented only up to 2nd order
+                    aerr = _np.nanmax(modnum.d2gdx2[ii,:] - modanal.d2gdx2[ii,:])
+                    rerr = getRELerr(modnum.d2gdx2[ii,:], modanal.d2gdx2[ii,:])
+                    # rerr = 1.0-_np.nanmax(divide(modnum.d2gdx2[ii,:], modanal.d2gdx2[ii,:]))
+                    assert _ut.allclose(modnum.d2gdx2[ii,:], modanal.d2gdx2[ii,:], rtol=rtol, atol=atol, equal_nan=True)  # jacobian of the model second derivative
+                else:
+                    print('warning!!! the numerical second derivative of the jacobian might be screwy... giving a lot of noise')
+                # end if
         except:
-            print('Numerical testing failed at parameter %i \n abs. err. level %e\n rel. err. level %e'%(ii, aerr, rerr))
+            if rerr is None:
+                print('Numerical testing failed at parameter %i \n abs. err. level %e\n rel. err. not evaluated'%(ii, aerr,))
+            else:
+                print('Numerical testing failed at parameter %i \n abs. err. level %e\n rel. err. level %e'%(ii, aerr, rerr))
             raise
         # end try
     # end def test numerics

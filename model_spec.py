@@ -589,11 +589,12 @@ class ModelSines(ModelClass):
         XX = _np.copy(XX)
         XX = _np.atleast_2d(XX)                  # (1,len(XX))
         tmp = _np.ones_like(XX)  # (1,nx)
-        a = _np.atleast_2d(aa[1::3]).T   # amp (nfreq, nx)
+        a = _np.atleast_2d(aa[1::3]).T   # amp (nfreq, 1)
         f = _np.atleast_2d(aa[2::3]).T  # freq. (nfreq,1)
         w = 2.0*_np.pi*f # cyclic freq. (nfreq,1)
         p = _np.atleast_2d(aa[3::3]).T # phase (nfreq, nx)
-        return _np.sum( ModelSines.cosine(XX, (w*_np.ones_like(XX))*(a*tmp), f, p*tmp), axis=0)
+        return _np.sum( ModelSines.cosine(XX, (w*a)*tmp, f, p*tmp), axis=0)
+        # return _np.sum( ModelSines.cosine(XX, (w*_np.ones_like(XX))*(a*tmp), f, p*tmp), axis=0)
 #        return _np.sum( (w*_np.ones_like(XX))*(a*tmp)*_np.cos(w*XX+p*tmp), axis=0)
 
     @staticmethod
@@ -618,7 +619,7 @@ class ModelSines(ModelClass):
         gvec = _np.zeros( (len(aa), _np.size(XX)), dtype=_np.float64)
         gvec[0, :] = 0.5
         gvec[1::3, :] = ModelSines.sine(XX, 1.0, f, p*tmp)
-        gvec[2::3, :] = ModelSines.cosine(XX, (2.0*_np.pi*_np.ones_like(w)*XX)*(a*tmp), f, p*tmp)
+        gvec[2::3, :] = ModelSines.cosine(XX, (2.0*_np.pi*_np.ones_like(f)*XX)*(a*tmp), f, p*tmp)
         gvec[3::3, :] = ModelSines.cosine(XX, a*tmp, f, p*tmp)
 #        gvec[1::3, :] = _np.sin(w*XX+p*tmp)
 #        gvec[2::3, :] = (2.0*_np.pi*_np.ones_like(w)*XX)*(a*tmp)*_np.cos(w*XX+p*tmp)
@@ -640,6 +641,7 @@ class ModelSines(ModelClass):
                =  -1*sum_ii  a_ii * (2*pi*f_ii)^2 * sin((2pi*f_ii)*XX+p_ii)
 
         d2fdx2 = -1 * sum_ii (2*pi*f_ii)^2*a_ii *sin((2pi*f_ii)*XX+p_ii)
+
         """
         XX = _np.copy(XX)
         a = _np.copy(aa[1::3])
@@ -732,9 +734,13 @@ class ModelSines(ModelClass):
         d2gdx2 = _np.zeros( (len(aa), _np.size(XX)), dtype=_np.float64)
         d2gdx2[0, :] = 0.0
         d2gdx2[1::3, :] = ModelSines.sine(XX, -1*(power(w, 2.0)*tmp), f, p*tmp)
-        d2gdx2[2::3, :] = ( ModelSines.sine(XX, -2.0*power(2.0*_np.pi, 2.0)*((f*a)*tmp), f, p*tmp)
-                          - ModelSines.cosine(XX, (power(w, 2.0)*a)*(2.0*_np.pi*XX), f, p*tmp))
+        d2gdx2[2::3, :] = -8.0*_np.pi*_np.pi*(
+                ModelSines.sine(XX, (f*a)*tmp, f, p*tmp)
+              + ModelSines.cosine(XX, (_np.pi*f*f*a)*XX, f, p*tmp))
+        # d2gdx2[2::3, :] = ( ModelSines.sine(XX, -2.0*power(2.0*_np.pi, 2.0)*((f*a)*tmp), f, p*tmp)
+        #                   - ModelSines.cosine(XX, (power(w, 2.0)*a)*(2.0*_np.pi*XX), f, p*tmp))
         d2gdx2[3::3, :] = ModelSines.cosine(XX, -1*(power(w, 2.0)*a)*tmp, f, p*tmp)
+
         return d2gdx2
 
     # ====================================== #
@@ -9852,15 +9858,15 @@ if __name__ == '__main__':
 #    f_scale = 1.0
 #    loss_function = construct_loss_function(m, loss, f_scale)
 #    loss_function(2)
-#    funcs = [ModelLine, ModelSines, ModelPoly, ModelProdExp, ModelEvenPoly,
-#            ModelParabolic, ModelExpEdge, _ModelTwoPower, ModelTwoPower,
-#            ModelGaussian, ModelOffsetGaussian, ModelNormal, ModelOffsetNormal,
-#            ModelLogGaussian, ModelLorentzian, ModelPseudoVoigt, ModelDoppler,
-#            ModelLogDoppler, ModelLogLorentzian, ModelQuasiParabolic, ModelPowerLaw,
-#            ModelExponential, ModelExp, ModelFlattop, ModelSlopetop]
+    # funcs = [ModelLine, ModelSines, ModelPoly, ModelProdExp, ModelEvenPoly,
+    #         ModelParabolic, ModelExpEdge, _ModelTwoPower, ModelTwoPower,
+    #         ModelGaussian, ModelOffsetGaussian, ModelNormal, ModelOffsetNormal,
+    #         ModelLogGaussian, ModelLorentzian, ModelPseudoVoigt, ModelDoppler,
+    #         ModelLogDoppler, ModelLogLorentzian, ModelQuasiParabolic, ModelPowerLaw,
+    #         ModelExponential, ModelExp, ModelFlattop, ModelSlopetop]
 #    funcs = [ModelPieceWise]
-#    funcs = [ModelLine, ModelPoly]
-    funcs = [ModelEvenPoly]
+    funcs = [ModelLine, ModelPoly]
+    # funcs = [ModelEvenPoly]
     for func in funcs:
         tmp = func(None)
         tmp.af = tmp._af
@@ -9874,123 +9880,130 @@ if __name__ == '__main__':
 
     # Numerical testing for errors in models
     # Analytic testing for errors in forward/reverse scalings
-    mod = ModelLine().test_numerics(num=10)   # checked
-    mod = ModelLine().test_scaling(num=10)   # checked
+    # mod = ModelLine().test_numerics(num=10)   # checked
+    # mod = ModelLine().test_scaling(num=10)   # checked
 #
-#    mod = ModelSines().test_numerics(num=int((6.0/33.0-0.0)*5.0e2), start=-3.5/33.0, stop=6.0/33.0, fmod=33.0)   # checked
-#    mod = ModelSines().test_scaling(num=int((6.0/33.0-0.0)*5.0e2), start=-3.0/33.0, stop=6.0/33.0, fmod=33.0)   #
-#
-#    mod = ModelSines().test_numerics(nfreqs=2, num=int((6.0/33.0-0.0)*5.0e2), start=-1.0/33.0, stop=6.0/33.0, fmod=33.0)   # checked
-#    mod = ModelSines().test_scaling(nfreqs=2, num=int((6.0/33.0-0.0)*5.0e2), start=-1.0/33.0, stop=6.0/33.0, fmod=33.0)   # checked
-#
-#    mod = ModelSines().test_numerics(nfreqs=5, num=int((6.0/33.0-0.0)*5.0e3), start=0.0, stop=6.0/33.0, fmod=33.0) # checked
-#    mod = ModelSines().test_scaling(nfreqs=5, num=int((6.0/33.0-0.0)*5.0e3), start=0.0, stop=6.0/33.0, fmod=33.0) # checked
-#
-#    mod = ModelSines().test_numerics(nfreqs=7, num=int((6.0/33.0)*5.0e3), start=-0.5*6.0/33.0, stop=6.0/33.0,
-#                                     shape='square', duty=0.50, fmod=5.0) # checked
-#    mod = ModelSines().test_scaling(nfreqs=7, num=int((6.0/33.0)*5.0e3), start=-0.5*6.0/33.0, stop=6.0/33.0,
-#                                     shape='square', duty=0.50, fmod=5.0) # checked
-#    mod = ModelSines().test_numerics(nfreqs=15, num=int((6.0/33.0)*5.0e3), start=-0.5*6.0/33.0, stop=6.0/33.0,
-#                                    shape='square', duty=0.67, fmod=5.0) # checked
-#    mod = ModelSines().test_scaling(nfreqs=15, num=int((6.0/33.0)*5.0e3), start=-0.5*6.0/33.0, stop=6.0/33.0,
-#                                    shape='square', duty=0.67, fmod=5.0) # checked
-##    mod = ModelFourier().test_numerics(num=int((6.0/33.0-0.0)*5.0e2), start=0.0, stop=6.0/33.0) # TODO!: problem with conversion between Sine/Fourier models
-##    mod = ModelFourier.test_numerics(nfreqs=5, num=20*int((6.0/33.0-0.0)*5.0e2), start=0.0, stop=6.0/33.0,
-##                                     shape='square', duty=0.40, fmod=33.0)  # TODO!: problem with conversion between Sine/Fourier models
-#
-#    mod = ModelPoly.test_numerics(npoly=1) # checked
-#    mod = ModelPoly.test_numerics(npoly=2) # checked
-#    mod = ModelPoly.test_numerics(npoly=5)  # checked
-#    mod = ModelPoly.test_numerics(npoly=12)  # checked
-#    mod = ModelPoly.test_scaling(npoly=1)  # checked
-#    mod = ModelPoly.test_scaling(npoly=2)  # checked
-#    mod = ModelPoly.test_scaling(npoly=5)  # checked
-#    mod = ModelPoly.test_scaling(npoly=12)  # checked
+    # Npts = 5.0e1   # works for model, but not derivative
+    # mod = ModelSines().test_numerics(num=int((6.0/33.0-0.0)*Npts), start=-3.5/33.0, stop=6.0/33.0, fmod=33.0)   # checked
+    # mod = ModelSines().test_scaling(num=int((6.0/33.0-0.0)*Npts), start=-3.0/33.0, stop=6.0/33.0, fmod=33.0)   #
 
-#    mod = ModelProdExp.test_numerics(npoly=1) # checked
-#    mod = ModelProdExp.test_numerics(npoly=2) # checked
-#    mod = ModelProdExp.test_numerics(npoly=5) # checked
-#    mod = ModelProdExp.test_numerics(npoly=12) # checked
-#    mod = ModelProdExp.test_scaling(npoly=1) # checked
-#    mod = ModelProdExp.test_scaling(npoly=2) # checked
-#    mod = ModelProdExp.test_scaling(npoly=5) # checked
-#    mod = ModelProdExp.test_scaling(npoly=12) # checked
-#
-#    mod = ModelEvenPoly.test_numerics(npoly=1) # checked
-#    mod = ModelEvenPoly.test_numerics(npoly=2) # checked
-#    mod = ModelEvenPoly.test_numerics(npoly=3) # checked
-#    mod = ModelEvenPoly.test_numerics(npoly=4) # checked
-#    mod = ModelEvenPoly.test_numerics(npoly=6) # checked
-#    mod = ModelEvenPoly.test_numerics(npoly=8) # checked
-#    mod = ModelEvenPoly.test_scaling(npoly=1) # checked
-#    mod = ModelEvenPoly.test_scaling(npoly=2) # checked
-#    mod = ModelEvenPoly.test_scaling(npoly=3) # checked
-#    mod = ModelEvenPoly.test_scaling(npoly=4) # checked
-#    mod = ModelEvenPoly.test_scaling(npoly=6) # checked
-#    mod = ModelEvenPoly.test_scaling(npoly=8) # checked
-#
-#    mod = ModelParabolic.test_numerics() # checked
-#    mod = ModelParabolic.test_scaling() # checked
-#    mod = ModelExpEdge.test_numerics()  # checked
-#    mod = ModelExpEdge.test_scaling()  # checked
-#    mod = ModelTwoPower.test_numerics() # checked
-#    mod = ModelTwoPower.test_scaling() # checked
-#    mod = ModelTwoPower.test_numerics(num=100) # checked
-#
-#    mod = ModelGaussian.test_numerics() # checked
-#    mod = ModelOffsetGaussian.test_numerics()  # checked
-#    mod = ModelNormal.test_numerics()  # checked
-#    mod = ModelOffsetNormal.test_numerics() # checked
-#    mod = ModelLogGaussian.test_numerics()
-#    mod = ModelLorentzian.test_numerics(num=301)  # checked
-#    mod = ModelPseudoVoigt.test_numerics(num=301)  # checked
-#    mod = ModelLogLorentzian.test_numerics(num=301)  # checked
-#    mod = ModelDoppler.test_numerics(num=301)      # checked
-#    mod = ModelLogGaussian.test_numerics(num=301)  # checked
-#    mod = ModelLogDoppler.test_numerics(num=301) # checked
-#
-#    mod = ModelGaussian.test_scaling(start=-1.0, stop=1.0, num=301) # checked
-#    mod = ModelOffsetGaussian.test_scaling(start=-1.0, stop=1.0, num=301)  # checked
-#    mod = ModelNormal.test_scaling(start=-1.0, stop=1.0, num=301)  # checked
-#    mod = ModelOffsetNormal.test_scaling(start=-1.0, stop=1.0, num=301) # checked
-#    mod = ModelLorentzian.test_scaling(start=-1.0, stop=1.0, num=301)  # checked
-#    mod = ModelPseudoVoigt.test_scaling(start=-1.0, stop=1.0, num=301)  # checked
-#    mod = ModelDoppler.test_scaling(start=-1.0, stop=1.0, num=301)      # checked
-##     mod = ModelLogGaussian.test_scaling(start=-1.0, stop=1.0, num=301)  # TODO!: scaling broken
-##     mod = ModelLogLorentzian.test_scaling(start=-1.0, stop=1.0, num=301) # TODO!: scaling broken
-##     mod = ModelLogDoppler.test_scaling(start=-1.0, stop=1.0, num=301) # TODO!: scaling broken
-#
-#    # ----- Checked within bounds:
-#    mod = _ModelTwoPower.test_numerics(start=0.1, stop=0.9)   # checked
-##    mod = _ModelTwoPower.test_numerics(start=0.1, stop=1.3)   # TODO!: blows up outside of 1.0 (test wtih different initial conditions)
-#    mod = _ModelTwoPower.test_scaling() # checked
-#    mod = ModelQuasiParabolic.test_numerics(start=0.1, stop=0.9)  # checked
-#    mod = ModelQuasiParabolic.test_scaling()  # checked
-#    mod = ModelQuasiParabolic.test_scaling(start=0.1, stop=0.9)  # checked
-#    mod = ModelQuasiParabolic.test_scaling(start=0.1, stop=1.2)  # checked
-#
-#    mod = ModelPowerLaw.test_numerics(npoly=2, start=0.1, stop=0.9, num=100)
-#    mod = ModelPowerLaw.test_numerics(npoly=3, start=0.1, stop=0.9, num=100)
-#    mod = ModelPowerLaw.test_numerics(npoly=5, start=0.1, stop=0.9, num=100)
-#    mod = ModelPowerLaw.test_scaling(npoly=5, start=0.1, stop=0.9, num=10)
-#    mod = ModelPowerLaw.test_scaling(npoly=5, start=0.1, stop=1.1, num=10)
-#    mod = ModelPowerLaw.test_numerics(npoly=4, start=0.1, stop=0.9) # checked
-#    mod = ModelPowerLaw.test_numerics(npoly=8, start=0.1, stop=0.9) # checked
-#    mod = ModelExponential.test_numerics(start=0.1, stop=0.9) # checked
-#    mod = ModelExponential.test_numerics(start=0.1, stop=1.0) # checked
-#    mod = ModelExponential.test_scaling(start=0.1, stop=0.9) # checked
-#    mod = ModelExponential.test_scaling(start=0.1, stop=1.0) # checked
-#    mod = ModelFlattop.test_numerics(start=0.1, stop=1.0) # checked
-#    mod = ModelSlopetop.test_numerics(start=0.1, stop=1.0) # checked
-#    mod = ModelFlattop.test_scaling() # checked
-#    mod = ModelFlattop.test_numerics() # checked
-#    mod = ModelSlopetop.test_scaling() # checked
+    # mod = ModelSines().test_numerics(nfreqs=2, num=int((6.0/33.0-0.0)*Npts), start=-1.0/33.0, stop=6.0/33.0, fmod=33.0)   # checked
+    # mod = ModelSines().test_scaling(nfreqs=2, num=int((6.0/33.0-0.0)*Npts), start=-1.0/33.0, stop=6.0/33.0, fmod=33.0)   # checked
 
-#    mod = ModelExp.test_numerics(start=0.1, stop=0.9) # checked
-#    mod = ModelExp.test_numerics(start=0.1, stop=1.0) # checked
-#    mod = ModelExp.test_scaling(start=0.0, stop=1.0) # checked
-#    mod = ModelExp.test_scaling(start=0.0, stop=0.9) # checked
-#    mod = ModelExp.test_scaling(start=0.1, stop=1.0) # checked
+    # possible scaling issue with ModelSines
+    # Npts = 5.0e3
+    # mod = ModelSines().test_numerics(nfreqs=5, num=int((6.0/33.0-0.0)*Npts), start=0.0, stop=6.0/33.0, fmod=33.0) # checked
+    # mod = ModelSines().test_scaling(nfreqs=5, num=int((6.0/33.0-0.0)*Npts), start=0.0, stop=6.0/33.0, fmod=33.0) # checked
+#
+#     mod = ModelSines().test_numerics(nfreqs=7, num=int((6.0/33.0)*Npts), start=-0.5*6.0/33.0, stop=6.0/33.0,
+#                                     shape='square', duty=0.50, fmod=5.0) # checked
+#     mod = ModelSines().test_scaling(nfreqs=7, num=int((6.0/33.0)*Npts), start=-0.5*6.0/33.0, stop=6.0/33.0,
+#                                     shape='square', duty=0.50, fmod=5.0) # checked
+#     mod = ModelSines().test_numerics(nfreqs=15, num=int((6.0/33.0)*Npts), start=-0.5*6.0/33.0, stop=6.0/33.0,
+#                                     shape='square', duty=0.67, fmod=5.0) # checked
+#     mod = ModelSines().test_scaling(nfreqs=15, num=int((6.0/33.0)*Npts), start=-0.5*6.0/33.0, stop=6.0/33.0,
+#                                     shape='square', duty=0.67, fmod=5.0) # checked
+
+    # possible issue with converting between series representations
+    # mod = ModelFourier().test_numerics(num=int((6.0/33.0-0.0)*Npts), start=0.0, stop=6.0/33.0) # TODO!: problem with conversion between Sine/Fourier models
+    # mod = ModelFourier.test_numerics(nfreqs=5, num=20*int((6.0/33.0-0.0)*Npts), start=0.0, stop=6.0/33.0,
+    #                                 shape='square', duty=0.40, fmod=33.0)  # TODO!: problem with conversion between Sine/Fourier models
+
+    # mod = ModelPoly.test_numerics(npoly=1) # checked
+    # mod = ModelPoly.test_numerics(npoly=2) # checked
+    # mod = ModelPoly.test_numerics(npoly=5)  # checked
+    # mod = ModelPoly.test_numerics(npoly=12)  # checked
+    # mod = ModelPoly.test_scaling(npoly=1)  # checked
+    # mod = ModelPoly.test_scaling(npoly=2)  # checked
+    # mod = ModelPoly.test_scaling(npoly=5)  # checked
+    # mod = ModelPoly.test_scaling(npoly=12)  # checked
+
+    # mod = ModelProdExp.test_numerics(npoly=1) # checked
+    # mod = ModelProdExp.test_numerics(npoly=2) # checked
+    # mod = ModelProdExp.test_numerics(npoly=5) # checked
+    # mod = ModelProdExp.test_numerics(npoly=12) # checked
+    # mod = ModelProdExp.test_scaling(npoly=1) # checked
+    # mod = ModelProdExp.test_scaling(npoly=2) # checked
+    # mod = ModelProdExp.test_scaling(npoly=5) # checked
+    # mod = ModelProdExp.test_scaling(npoly=12) # checked
+
+    # mod = ModelEvenPoly.test_numerics(npoly=1) # checked
+    # mod = ModelEvenPoly.test_numerics(npoly=2) # checked
+    # mod = ModelEvenPoly.test_numerics(npoly=3) # checked
+    # mod = ModelEvenPoly.test_numerics(npoly=4) # checked
+    # mod = ModelEvenPoly.test_numerics(npoly=6) # checked
+    # mod = ModelEvenPoly.test_numerics(npoly=8) # checked
+    # mod = ModelEvenPoly.test_scaling(npoly=1) # checked
+    # mod = ModelEvenPoly.test_scaling(npoly=2) # checked
+    # mod = ModelEvenPoly.test_scaling(npoly=3) # checked
+    # mod = ModelEvenPoly.test_scaling(npoly=4) # checked
+    # mod = ModelEvenPoly.test_scaling(npoly=6) # checked
+    # mod = ModelEvenPoly.test_scaling(npoly=8) # checked
+
+    # mod = ModelParabolic.test_numerics() # checked
+    # mod = ModelParabolic.test_scaling() # checked
+    # mod = ModelExpEdge.test_numerics()  # checked
+    # mod = ModelExpEdge.test_scaling()  # checked
+    # mod = ModelTwoPower.test_numerics() # checked
+    # mod = ModelTwoPower.test_scaling() # checked
+    # mod = ModelTwoPower.test_numerics(num=100) # checked
+
+    # mod = ModelGaussian.test_numerics() # checked
+    # mod = ModelOffsetGaussian.test_numerics()  # checked
+    # mod = ModelNormal.test_numerics()  # checked
+    # mod = ModelOffsetNormal.test_numerics() # checked
+    # mod = ModelLogGaussian.test_numerics()
+    # mod = ModelLorentzian.test_numerics(num=301)  # checked
+    # mod = ModelPseudoVoigt.test_numerics(num=301)  # checked
+    # mod = ModelLogLorentzian.test_numerics(num=301)  # checked
+    # mod = ModelDoppler.test_numerics(num=301)      # checked
+    # mod = ModelLogGaussian.test_numerics(num=301)  # checked
+    # mod = ModelLogDoppler.test_numerics(num=301) # checked
+
+    # mod = ModelGaussian.test_scaling(start=-1.0, stop=1.0, num=301) # checked
+    # mod = ModelOffsetGaussian.test_scaling(start=-1.0, stop=1.0, num=301)  # checked
+    # mod = ModelNormal.test_scaling(start=-1.0, stop=1.0, num=301)  # checked
+    # mod = ModelOffsetNormal.test_scaling(start=-1.0, stop=1.0, num=301) # checked
+    # mod = ModelLorentzian.test_scaling(start=-1.0, stop=1.0, num=301)  # checked
+    # mod = ModelPseudoVoigt.test_scaling(start=-1.0, stop=1.0, num=301)  # checked
+    # mod = ModelDoppler.test_scaling(start=-1.0, stop=1.0, num=301)      # checked
+
+    # # scaling problems with these three
+    # mod = ModelLogGaussian.test_scaling(start=-1.0, stop=1.0, num=301)  # TODO!: scaling broken
+    # mod = ModelLogLorentzian.test_scaling(start=-1.0, stop=1.0, num=301) # TODO!: scaling broken
+    # mod = ModelLogDoppler.test_scaling(start=-1.0, stop=1.0, num=301) # TODO!: scaling broken
+
+    # ----- Checked within bounds:
+    # mod = _ModelTwoPower.test_numerics(start=0.1, stop=0.9)   # checked
+    # mod = _ModelTwoPower.test_numerics(start=0.1, stop=1.3)   # TODO!: blows up outside of 1.0 (test wtih different initial conditions)
+    # mod = _ModelTwoPower.test_scaling() # checked
+    # mod = ModelQuasiParabolic.test_numerics(start=0.1, stop=0.9)  # checked
+    # mod = ModelQuasiParabolic.test_scaling()  # checked
+    # mod = ModelQuasiParabolic.test_scaling(start=0.1, stop=0.9)  # checked
+    # mod = ModelQuasiParabolic.test_scaling(start=0.1, stop=1.2)  # checked
+
+    # mod = ModelPowerLaw.test_numerics(npoly=2, start=0.1, stop=0.9, num=100)
+    # mod = ModelPowerLaw.test_numerics(npoly=3, start=0.1, stop=0.9, num=100)
+    # mod = ModelPowerLaw.test_numerics(npoly=5, start=0.1, stop=0.9, num=100)
+    # mod = ModelPowerLaw.test_scaling(npoly=5, start=0.1, stop=0.9, num=10)
+    # mod = ModelPowerLaw.test_scaling(npoly=5, start=0.1, stop=1.1, num=10)
+    # mod = ModelPowerLaw.test_numerics(npoly=4, start=0.1, stop=0.9) # checked
+    # mod = ModelPowerLaw.test_numerics(npoly=8, start=0.1, stop=0.9) # checked
+    # mod = ModelExponential.test_numerics(start=0.1, stop=0.9) # checked
+    # mod = ModelExponential.test_numerics(start=0.1, stop=1.0) # checked
+    # mod = ModelExponential.test_scaling(start=0.1, stop=0.9) # checked
+    # mod = ModelExponential.test_scaling(start=0.1, stop=1.0) # checked
+    # mod = ModelFlattop.test_numerics(start=0.1, stop=1.0) # checked
+    # mod = ModelSlopetop.test_numerics(start=0.1, stop=1.0) # checked
+    # mod = ModelFlattop.test_scaling() # checked
+    # mod = ModelFlattop.test_numerics() # checked
+    # mod = ModelSlopetop.test_scaling() # checked
+
+    mod = ModelExp.test_numerics(start=0.1, stop=0.9) # checked
+    mod = ModelExp.test_numerics(start=0.1, stop=1.0) # checked
+    mod = ModelExp.test_scaling(start=0.0, stop=1.0) # checked
+    mod = ModelExp.test_scaling(start=0.0, stop=0.9) # checked
+    mod = ModelExp.test_scaling(start=0.1, stop=1.0) # checked
 
 #    Fs = 1.0
 #    XX = _np.linspace(-0.5, 0.5, num=int(1.5*10e-3*10.0e6/8))
