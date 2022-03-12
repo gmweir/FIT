@@ -63,6 +63,36 @@ def _derivative_inputcondition(xvar):
 # ======================================================================== #
 
 
+# def differentiateCSM(f, dx):
+#     """
+#     Calculate the derivative of a field using the complex step method
+#     f        is a matrix of the field
+#     dx       is the cell size
+#     returns the (matrix) derivative of f in the x-direction
+
+#     This  function uses a 2nd order accurate complex step formula for a
+#     real-valued function
+#         f(x) = f(xo) + dfdx
+#     """
+#     # directions for np.roll()
+#     R = -1   # right
+#     L = 1    # left
+#     return ( _np.roll(f,R,axis=0) - _np.roll(f,L,axis=0) ) / (2*dx)
+
+def getGradient(f, dx):
+    """
+    Calculate the gradients of a field
+    f        is a matrix of the field
+    dx       is the cell size
+    returns the (matrix) derivative of f in the x-direction
+
+    This  function uses a 2nd order centered finite difference formula
+    """
+    # directions for np.roll()
+    R = -1   # right
+    L = 1    # left
+    return ( _np.roll(f,R,axis=0) - _np.roll(f,L,axis=0) ) / (2*dx)
+
 def findiffnp(xvar, u, varu=None, order=1):
 
     # Input data formatting.  All of this is undone before output

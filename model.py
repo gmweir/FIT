@@ -132,25 +132,25 @@ class __ModelClass(__ModelClass__):
         # self.__dict__.update(kwargs)
         # self.kwargs = kwargs
 
-    def model(*args, **kwargs):
+    def model(self, *args, **kwargs):
         return self._model(*args, **kwargs)
 
-    def jacobian(*args, **kwargs):
+    def jacobian(self, *args, **kwargs):
         return self._partial(*args, **kwargs)
 
-    def derivative(*args, **kwargs):
+    def derivative(self, *args, **kwargs):
         return self._deriv(*args, **kwargs)
 
-    def derivative_jacobian(*args, **kwargs):
+    def derivative_jacobian(self, *args, **kwargs):
         return self._partial_deriv(*args, **kwargs)
 
-    def second_derivative(*args, **kwargs):
+    def second_derivative(self, *args, **kwargs):
         return self._deriv2(*args, **kwargs)
 
-    def second_derivative_jacobian(*args, **kwargs):
+    def second_derivative_jacobian(self, *args, **kwargs):
         return self._partial_deriv2(*args, **kwargs)
 
-    def hessian(*args, **kwargs):
+    def hessian(self, *args, **kwargs):
         return self._hessian(*args, **kwargs)
 
 
@@ -674,6 +674,7 @@ class __ModelClass(__ModelClass__):
 # def _modelnumeric(cls, model, **kwargs):
     # cls.
 
+
 class FD(__ModelClass):
     """
     Adds numerical methods for finite-differencing to the base Model class
@@ -1051,6 +1052,7 @@ class FD(__ModelClass):
         return dgdx
 
     # ============================================================= #
+
 
     def second_derivative_jacobian(self, XX, aa=None, **kwargs):
         """
@@ -2047,7 +2049,456 @@ class FD(__ModelClass):
 
     # ============================================================= #
     # ============================================================= #
+# end class FD
 
+
+# ================================================================ #
+# ================================================================ #
+
+
+class CS(FD):
+    """
+    Adds numerical methods for finite-differencing to the base Model class
+    using the Complex Step method
+
+    Forward complex step
+        f(x+ih) = f(x) + (i*h)*(df/dx) - (h^2/2!)*(d^2f)/(dx^2) - (i*h^3/3!)*(d^3f)/(dx^3) + (h^4/4!)*(d^4f)/(dx^4) …
+
+        Re{f(x+ih)}   = f(x) - (h^2/2!)*(d^2 f)/(dx^2 ) + (h^4/4!)*(d^4f)/(dx^4) …
+
+        i*Im{f(x+ih)} = (ih)*(df/dx) - (ih^3/3!)*(d^3f)/(dx^3) …
+
+    Backward complex step:
+        f(x-ih) = f(x) - (i*h)*(df/dx) - (h^2/2!)*(d^2f)/(dx^2) + (i*h^3/3!)*(d^3f)/(dx^3) + (h^4/4!)*(d^4f)/(dx^4) …
+
+        Re{f(x-ih)}   = f(x) - (h^2/2!)*(d^2 f)/(dx^2) + (h^4/4!)*(d^4 f)/(dx^4 )…
+
+        i*Im{f(x-ih)} = (-ih)*(df/dx) + (i*h^3/3!)*(d^3 f)/(dx^3 ) …
+
+    Forward and backward finite differences avoid truncation errors, and are 2nd order accurate,
+        df/dx (x) ≈  Im(f(x+ih))/h + o((h^3/3!)(d^3 f)/(dx^3 )),
+        df/dx (x) ≈ -Im(f(x-ih))/h + o((h^3/3!)(d^3 f)/(dx^3 )).
+
+    Forward and backward approximations of the second derivative do have truncation error, but they are 3rd order accurate,
+        (d^2 f)/(dx^2 ) ≈ (2!)*[f(x)-Re(f(x+ih))]/h^2 +o((h^4/4!)*(d^4 f)/(dx^4 ))
+        (d^2 f)/(dx^2 ) ≈ (2!)*[f(x)-Re(f(x-ih))]/h^2 +o((h^4/4!)*(d^4 f)/(dx^4 ))
+    """
+    # machine_epsilon = (_np.finfo(_np.float64).eps)
+    # _hh = 0.01
+    # # _hh = 0.001
+
+
+    @staticmethod
+    def forward_csm(func, XX, hh, aa, **kwargs):
+        """
+        Parameters
+        ----------
+        model : TYPE
+            DESCRIPTION.
+        XX : TYPE
+            DESCRIPTION.
+        aa : TYPE, optional
+            DESCRIPTION. The default is None.
+        **kwargs : TYPE
+            DESCRIPTION.
+
+            Forward finite differences avoid truncation errors, and are 2nd order accurate,
+            df/dx (x) ≈  Im(f(x+ih))/h + o((h^3/3!)(d^3 f)/(dx^3 )),
+        Returns
+        -------
+        None.
+        """
+        return _np.imag(func(XX+1j*hh, aa, **kwargs))/hh
+
+
+    @staticmethod
+    def backward_csm(func, XX, hh, aa, **kwargs):
+        """
+        Parameters
+        ----------
+        model : TYPE
+            DESCRIPTION.
+        XX : TYPE
+            DESCRIPTION.
+        aa : TYPE, optional
+            DESCRIPTION. The default is None.
+        **kwargs : TYPE
+            DESCRIPTION.
+
+            Backward finite differences avoid truncation errors, and are 2nd order accurate,
+            df/dx (x) ≈ -Im(f(x-ih))/h + o((h^3/3!)(d^3 f)/(dx^3 )).
+        Returns
+        -------
+        None.
+        """
+        return -_np.imag(func(XX-1j*hh, aa, **kwargs))/hh
+
+
+    @staticmethod
+    def forward_csm_aa(func, XX, hh, aa, msk, **kwargs):
+        """
+        Parameters
+        ----------
+        model : TYPE
+            DESCRIPTION.
+        XX : TYPE
+            DESCRIPTION.
+        aa : TYPE, optional
+            DESCRIPTION. The default is None.
+        **kwargs : TYPE
+            DESCRIPTION.
+
+           Forward finite differences avoid truncation errors, and are 2nd order accurate,
+            df/da (x) ≈  Im(f(a+ih))/h + o((h^3/3!)(d^3 f)/(da^3 )),
+        Returns
+        -------
+        None.
+        """
+        return _np.imag(func(XX, aa+1j*hh[msk], **kwargs))/(hh[msk])
+
+
+    @staticmethod
+    def backward_csm_aa(func, XX, hh, aa, msk, **kwargs):
+        """
+        Parameters
+        ----------
+        model : TYPE
+            DESCRIPTION.
+        XX : TYPE
+            DESCRIPTION.
+        aa : TYPE, optional
+            DESCRIPTION. The default is None.
+        **kwargs : TYPE
+            DESCRIPTION.
+
+            Backward finite differences avoid truncation errors, and are 2nd order accurate,
+            df/da (x) ≈ -Im(f(a-ih))/h + o((h^3/3!)(d^3 f)/(da^3 )).
+        Returns
+        -------
+        None.
+        """
+        return -_np.imag(func(XX, aa-1j*hh[msk], **kwargs))/(hh[msk])
+
+
+    # ===== #
+
+
+    @staticmethod
+    def forward_csm2(func, XX, hh, aa, **kwargs):
+        """
+        Parameters
+        ----------
+        model : TYPE
+            DESCRIPTION.
+        XX : TYPE
+            DESCRIPTION.
+        aa : TYPE, optional
+            DESCRIPTION. The default is None.
+        **kwargs : TYPE
+            DESCRIPTION.
+
+        Forward approximations of the second derivative do have truncation error, but they are 3rd order accurate,
+            (d^2 f)/(dx^2 ) ≈ (2!)*[f(x)-Re(f(x+ih))]/h^2 +o((h^4/4!)*(d^4 f)/(dx^4 ))
+
+        Returns
+        -------
+        None.
+        """
+        return 2.0*(func(XX, aa, **kwargs)-_np.real(func(XX+1j*hh, aa, **kwargs)))/(hh**2.0)
+
+
+    @staticmethod
+    def backward_csm2(func, XX, hh, aa, **kwargs):
+        """
+        Parameters
+        ----------
+        model : TYPE
+            DESCRIPTION.
+        XX : TYPE
+            DESCRIPTION.
+        aa : TYPE, optional
+            DESCRIPTION. The default is None.
+        **kwargs : TYPE
+            DESCRIPTION.
+
+        Backward approximations of the second derivative do have truncation error, but they are 3rd order accurate,
+            (d^2 f)/(dx^2 ) ≈ (2!)*[f(x)-Re(f(x-ih))]/h^2 +o((h^4/4!)*(d^4 f)/(dx^4 ))
+
+        Returns
+        -------
+        None.
+        """
+        return 2.0*(func(XX, aa, **kwargs)-_np.real(func(XX-1j*hh, aa, **kwargs)))/(hh**2.0)
+
+
+    @staticmethod
+    def forward_csm2_aa(func, XX, hh, aa, msk, **kwargs):
+        """
+        Parameters
+        ----------
+        model : TYPE
+            DESCRIPTION.
+        XX : TYPE
+            DESCRIPTION.
+        aa : TYPE, optional
+            DESCRIPTION. The default is None.
+        **kwargs : TYPE
+            DESCRIPTION.
+
+        Forward approximations of the second derivative do have truncation error, but they are 3rd order accurate,
+            (d^2 f)/(da^2 ) ≈ (2!)*[f(x)-Re(f(a+ih))]/h^2 +o((h^4/4!)*(d^4 f)/(da^4 ))
+
+        Returns
+        -------
+        None.
+        """
+        return 2.0*(func(XX, aa, **kwargs)-_np.real(func(XX, aa+1j*hh[msk], **kwargs)))/(hh[msk]**2.0)
+
+
+    @staticmethod
+    def backward_csm2_aa(func, XX, hh, aa, msk, **kwargs):
+        """
+        Parameters
+        ----------
+        model : TYPE
+            DESCRIPTION.
+        XX : TYPE
+            DESCRIPTION.
+        aa : TYPE, optional
+            DESCRIPTION. The default is None.
+        **kwargs : TYPE
+            DESCRIPTION.
+
+        Backward approximations of the second derivative do have truncation error, but they are 3rd order accurate,
+            (d^2 f)/(da^2 ) ≈ (2!)*[f(x)-Re(f(a-ih))]/h^2 +o((h^4/4!)*(d^4 f)/(da^4 ))
+
+        Returns
+        -------
+        None.
+        """
+        return 2.0*(func(XX, aa, **kwargs)-_np.real(func(XX, aa-1j*hh[msk], **kwargs)))/(hh[msk]**2.0)
+
+
+    # ==== #
+
+    def derivative(self, XX, aa=None, **kwargs):
+        """
+        Returns the derivative of the model.
+            f(x) = f(x, a, b, c, ...)
+            out: dfdx
+
+        Leave it to the user to define the method '_deriv' with an analytic derivative.
+        otherwise, calculate the derivative numerically by finite-differencing the model.
+        """
+        XX, aa, kwargs = self.parse_in(XX, aa, **kwargs)
+
+        deriv_order = 1
+        kwargs.setdefault('deriv_order', 1)
+
+        hh = _np.power(self.machine_epsilon, 1.0/(deriv_order+1.0))
+        hh = _np.sqrt(hh)
+        hh *= (1.0+_np.nanmean(_np.abs(XX)))
+
+        # hh = _np.power(self.machine_epsilon, 1.0/(2.0))*(1.0+_np.abs(_np.nanmean(XX)))
+        kwargs.setdefault('hh', hh)
+
+        dydx = self.forward_csm(self.model, XX=XX, aa=aa, **kwargs)
+
+#        kwargs.setdefault('order', 8)
+        if hasattr(self, 'leftboundary') and (XX<self.leftboundary).any():
+            ileft = _np.where(XX<self.leftboundary)[0]
+            dydx[ileft] = self.forward_csm(self.model, XX=XX[ileft], aa=aa, **kwargs)
+        # end if
+        if hasattr(self, 'rightboundary') and (XX>self.rightboundary).any():
+            iright = _np.where((XX>self.rightboundary))[0]
+            dydx[iright] = self.backward_csm(self.model, XX=XX[iright], aa=aa, **kwargs)
+        # end if
+        return dydx
+    # end def derivative
+
+
+    def second_derivative(self, XX, aa=None, **kwargs):
+        """
+        Returns the 2nd derivative of the model.
+            f(x) = f(x, a, b, c, ...)
+            out: d2fdx2
+
+        Leave it to the user to define the method '_deriv2' with an analytic 2nd derivative.
+        otherwise, calculate the derivative numerically by finite-differencing the model.
+        """
+        XX, aa, kwargs = self.parse_in(XX, aa, **kwargs)
+
+        deriv_order = 2
+        kwargs['deriv_order'] = deriv_order
+
+        hh = _np.power(self.machine_epsilon, 1.0/(deriv_order+1.0))
+        hh = _np.sqrt(hh)
+        hh *= (1.0+_np.nanmean(_np.abs(XX)))
+
+        # hh = _np.power(self.machine_epsilon, 1.0/(3.0))*(1.0+_np.abs(_np.nanmean(XX)))
+        # hh = _np.power(hh, 1.0/3.0)
+        kwargs.setdefault('hh', hh)
+
+        d2ydx2 = self.forward_csm2(self.model, XX=XX, aa=aa, **kwargs)
+
+        if hasattr(self, 'leftboundary') and (XX<self.leftboundary).any():
+            ileft = _np.where(XX<self.leftboundary)[0]
+            d2ydx2[ileft] = self.forward_csm2(self.model, XX=XX[ileft], aa=aa, **kwargs)
+        # end if
+        if hasattr(self, 'rightboundary') and (XX>self.rightboundary).any():
+            iright = _np.where(XX>self.rightboundary)[0]
+            d2ydx2[iright] = self.backward_csm2(self.model, XX=XX[iright], aa=aa, **kwargs)
+        # end if
+        return d2ydx2
+
+    # ============================================================= #
+
+
+    def jacobian(self, XX, aa=None, **kwargs):
+        """
+        Returns the jacobian of the model.
+            f(x) = f(x, a, b, c)
+            out: [dfda(x), dfdb(x), dfdc(x), ...]
+
+        Leave it to the user to define the method '_partial' with an analytic Jacobian.
+        Otherwise, calculate the jacobian numerically by finite-differencing the model.
+        """
+        # def func(ai, xi, **kwargs):
+            # return self.model(xi, ai, **kwargs)
+
+        XX, aa, kwargs = self.parse_in(XX, aa, **kwargs)
+
+        # ha, kwargs = self.__step_size(func, XX=XX, aa=aa, deriv_order=1, deriv_in='a', **kwargs)
+        order = kwargs.setdefault('order', 6)
+        deriv_order = 1
+        kwargs['deriv_order'] = deriv_order
+
+        ha = _np.power(self.machine_epsilon, 1.0/(deriv_order+1.0))
+        ha = _np.sqrt(ha)
+        ha *= (1.0+_np.abs(aa))
+        # ha = _np.power(self.machine_epsilon, 1.0/(2.0))*(1.0+_np.abs(aa))
+        hh = kwargs.setdefault('hh', ha)
+
+        numfit = _np.size(aa)
+        gvec = _np.zeros((numfit, _np.size(XX)), dtype=_np.float64)
+        for ii in range(numfit):
+            msk = _np.zeros(aa.shape, dtype=bool)
+            msk[ii] = True
+
+            if hasattr(self, 'Lbounds') and (aa[ii]<self.Lbounds[ii]):
+                # Lower boundary
+                gvec[ii, :] = self.forward_csm_aa(self.model, XX=XX, aa=aa, msk=msk, **kwargs)
+            elif hasattr(self, 'Ubounds') and (aa[ii]>self.Ubounds[ii]):
+                # Upper boundary
+                gvec[ii, :] = self.backward_csm_aa(self.model, XX=XX, aa=aa, msk=msk, **kwargs)
+            else:
+                # Everywhere else
+                gvec[ii, :] = self.forward_csm_aa(self.model, XX=XX, aa=aa, msk=msk, **kwargs)
+            # end if
+        # end for
+        return gvec
+
+    # ============================================================= #
+
+
+#     def second_derivative_jacobian(self, XX, aa=None, **kwargs):
+#         """
+#         Returns the jacobian of the second derivative of the model.
+#             f(x) = f(x, a, b, c)
+#             out: [d3fdx2da(x), d3fdx2db(x), d3fdx2dc(x), ...]
+
+#         Leave it to the user to define the method '_partial_deriv2' with an analytic Jacobian of the 2nd derivative.
+#         Otherwise, calculate the jacobian of the 2nd derivative numerically by finite-differencing the model derivative.
+#         """
+#         XX, aa, kwargs = self.parse_in(XX, aa, **kwargs)
+
+#         deriv_order_x = 2
+#         kwargs['deriv_order_x'] = deriv_order_x
+
+#         order_a = kwargs.setdefault('order_a', 6)
+#         deriv_order_a = 1
+#         kwargs['deriv_order_a'] = deriv_order_a
+
+#         hx = _np.power(self.machine_epsilon, 1.0/(deriv_order_x+1.0))
+#         hx = _np.sqrt(hx)
+#         hx *= (1.0+_np.abs(_np.nanmean(XX)))
+
+#         ha = _np.power(self.machine_epsilon, 1.0/(deriv_order_a+1.0))
+#         ha = _np.sqrt(ha)
+#         ha *= (1.0+_np.abs(aa))
+
+#         kwargs.setdefault('hx', hx)
+#         kwargs.setdefault('ha', ha)
+
+#         if 1:
+#             numfit = _np.size(aa)
+#             d2gdx2 = _np.zeros((numfit, _np.size(XX)), dtype=_np.float64)
+#             for ii in range(numfit):
+#                 msk = _np.zeros(aa.shape, dtype=bool)
+#                 msk[ii] = True
+#                 # d2gdx2[ii, :] = self.centered_mixed_fd(self.model, XX=XX, aa=aa, msk=msk, **kwargs)
+
+#                 scheme_in_x = 'centered'
+#                 if hasattr(self, 'Lbounds') and (aa[ii] - 2*ha[ii]*order_a*deriv_order_a<self.Lbounds[ii]):
+#                     scheme_in_a = 'forward'
+#                 elif hasattr(self, 'Ubounds') and (aa[ii] + 2*ha[ii]*order_a*deriv_order_a>self.Ubounds[ii]):
+#                     scheme_in_a = 'backward'
+#                 else:
+#                     scheme_in_a = 'centered'
+#                 # end if
+
+#                 # Everywhere else
+#                 d2gdx2[ii, :] = self.general_mixed_fd(self.model, XX=XX, aa=aa,
+#                                 msk=msk, scheme_in_x=scheme_in_x, scheme_in_a=scheme_in_a, **kwargs)
+
+#                 replace = False
+#                 if hasattr(self, 'leftboundary') and (XX - 2*hx*order*deriv_order_x<self.leftboundary).any():
+#                     replace = True
+#                     scheme_in_x = 'forward'
+#                     ireplace = _np.where(XX - 2*hx*order*deriv_order<self.leftboundary)[0]
+
+#                     d2gdx2[ii, ireplace] = self.general_mixed_fd(self.model, XX=XX[ireplace], aa=aa,
+#                                 msk=msk, scheme_in_x=scheme_in_x, scheme_in_a=scheme_in_a, **kwargs)
+#                 if hasattr(self, 'rightboundary') and (XX + 2*hx*order*deriv_order_x>self.rightboundary).any():
+#                     replace = True
+#                     scheme_in_x = 'forward'
+#                     ireplace = _np.where(XX + 2*hx*order*deriv_order>self.rightboundary)[0]
+
+#                     d2gdx2[ii, ireplace] = self.general_mixed_fd(self.model, XX=XX[ireplace], aa=aa,
+#                                 msk=msk, scheme_in_x=scheme_in_x, scheme_in_a=scheme_in_a, **kwargs)
+#                 # end if
+
+#                 # if replace:
+#                 #     d2gdx2[ii, ireplace] = self.general_mixed_fd(self.model, XX=XX[ireplace], aa=aa,
+#                 #                 msk=msk, scheme_in_x=scheme_in_x, scheme_in_a=scheme_in_a, **kwargs)
+#                 # # end if
+#             # end for
+#         else:
+#             # Numerically unstable to take 2nd derivative of a numerical derivative
+#             # this is only for testing!
+#             if 'hh' not in kwargs:
+#                 # hh, _ = self.__step_size(self.derivative_jacobian, XX, aa, deriv_order=2, **kwargs)
+#                 hh = _np.power(self.machine_epsilon, 1.0/(deriv_order_x+1.0))*(1.0+_np.abs(_np.nanmean(XX)))
+#                 kwargs.setdefault('hx', hh)
+#             # end if
+# #            d2gdx2 = self._2ndderiv_fd(self.jacobian, XX=XX, aa=aa, **kwargs)
+#             d2gdx2 = self.centered_1stderiv(self.derivative_jacobian, XX=XX, aa=aa, **kwargs)
+#         # end if
+#         return d2gdx2
+
+    # ============================================================= #
+
+    # ============================================================= #
+
+# end class CS
+
+
+# ================================================================ #
+# ================================================================ #
+
+
+class ModelDiffClass(CS):
+# class ModelDiffClass(FD):
 
     @classmethod
     def test_numerics(cls, **kwargs):
@@ -2233,7 +2684,7 @@ class FD(__ModelClass):
 # ========================================================================== #
 
 
-class ModelClass(FD):
+class ModelClass(ModelDiffClass):
     """
     Base model class including numerics
     """
