@@ -8,7 +8,7 @@ Created on Thu Mar 22 20:23:49 2018
 # ======================================================================== #
 # ======================================================================== #
 
-from __future__ import absolute_import, with_statement, absolute_import, \
+from __future__ import absolute_import, with_statement, \
                        division, print_function, unicode_literals
 
 # ========================================================================== #
@@ -27,7 +27,7 @@ try:
     __mpfitonpath__ = True
     from mpfit import mpfit as LMFIT
 #    __mpfitonpath__ = True
-except:
+except ImportError:
     __mpfitonpath__ = False
 # end try
 
@@ -37,8 +37,38 @@ __metaclass__ = type
 # ======================================================================== #
 
 
+# User-defined exceptions
 class NaNinResidual(Exception):
-    pass
+    """Exception raised for errors in the residual function.
+
+    Attributes:
+        p -- fitting parameters which caused the error
+        message -- explanation of the error
+    """
+
+    def __init__(self, p, message="NaN in residual calculated by fitting function"):
+        self.p = p
+        self.message = message
+        super().__init__(self.message)
+    # end def
+# end class NaNinResidual
+
+class StatusErrorInSolver(Exception):
+    """Exception raised for status errors reported by the fitting function
+
+    Attributes:
+        status -- reported status which caused the error
+        message -- explanation of the error
+    """
+
+    def __init__(self, status, message="Error reported by mpfit in solver loop due to status event"):
+        self.status = status
+        self.message = message
+        super().__init__(self.message)
+    # end def
+# end class NaNinResidual
+
+
 
 def gen_random_init_conds(func, **fkwargs):
 #    af0 = fkwargs.pop('af0', None)
@@ -131,7 +161,244 @@ def _clean_mpfit_kwargs(kwargs):
     if 'debug' in kwargs:       mwargs['debug'] = kwargs['debug']   # end if
     return mwargs
 
+
+def _mpfit_limited(LB, UB):
+    #   'limited' is a pair of booleans in a list [Lower bound, Upper bound]:
+    #       ex//   [0, 0] -> no lower or upper bounds on parameter
+    #       ex//   [0, 1] -> no lower bound on parameter, but create an upper bound
+    #       ex//   [1, 1] -> lower and upper bounds on parameter
+    #   'limits' lower and upper bound values matching boolean mask in 'limited'
+    lower_limited =_np.asarray(_np.isfinite(LB), dtype=int)
+    upper_limited = _np.asarray(_np.isfinite(UB), dtype=int)
+    return [ [lower_limited[ii], upper_limited[ii]] for ii in range(len(LB))]
+
+
 # ========================================================================== #
+
+
+def minimal_mpfit(mymodel, x, y, ey, p0, fixed, LB, UB, **kwargs):
+    """
+    Minimal wrapper around MPFIT
+
+    inputs:
+        - mymodel - function handle that returns a dictionary at after each
+             fitting iteration with the required keys
+                 'status' and 'residual'
+            and optionally the key 'jacobian'
+            (otherwise the partial derivatives are calculated by finite differences)
+
+        - x - independent variablecorresponding to y (passed to mymodel)
+        - y - dependent variable to fit              (passed to mymodel)
+        - ey - error in dependent variable to fit (~ statistical standard deviation + systematic error)
+                                                     (passed to mymodel)
+              if mymodel uses these values to calcualte the weighted residual -> weighted least squares
+
+        - p0 - initial guess for fitting parameters  (passed to mymodel)
+
+        - fixed - boolean array, len(p0): 0 vary this parameter, 1 do not vary this parameter
+        - LB - lower bound for fitting parameter (nan or inf -> unlimited)
+        - UB - upper bound for fitting parameter (nan or inf -> unlimited)
+        - kwargs - keyword argumetns passed to solver,
+            see '_default_mpfit_kwargs' for an example
+            or MPFIT documentation
+
+
+    example model functions:
+
+        'mymodel' with user supplied jacobian
+        (user defined derivative of function with respect to fitting parameters)
+
+        def mymodel_ud(p, fjac=None, x=None, y=None, err=None):
+            # Parameter values are passed in "p"
+            # If FJAC!=None then partial derivatives must be supplied
+            # FJAC contains an array of len(p), where each entry
+            # is 1 if that parameter is free and 0 if it is fixed.
+
+            # Non-negative status value means MPFIT should continue, negative means
+            # stop the calculation.
+            status = 0
+            if _np.isnan(p).all():
+                status = -3
+            elif _np.isnan(p).any():
+                status = -2
+            # end if
+
+            chi2 = (func(p, x) - y) / _np.abs(err)
+            gvec = fjac(p, x)   # function handle for jacobian of model
+
+            pderiv = self.gvec.T   # pderiv[xx, pp]
+            pderiv /= _np.atleast_2d(err).T*_np.ones( (1,len(p)), dtype=fjac.dtype)
+
+            return {'status':status, 'residual':chi2, 'jacobian':pderiv}
+
+        'mymodel' with automatic jacobian calculation
+        (no user defined derivative of function with respect to fitting parameters)
+
+
+        def mymodel_ad(p, fjac=None, x=None, y=None, err=None):
+            # Non-negative status value means MPFIT should continue, negative means
+            # stop the calculation.
+            status = 0
+            if _np.isnan(p).all():
+                status = -3
+            elif _np.isnan(p).any():
+                status = -2
+            # end if
+
+            return {'status':status, 'residual':(func(p, x) - y) / _np.abs(err)}
+
+
+    """
+    # Only pass along keyword arguments that are compatible with mpfit
+    mpwargs = _clean_mpfit_kwargs(kwargs)
+
+    # Settings for each parameter of the fit.
+    #   'value' is the initial value that will be updated by mpfit
+    #   'fixed' is a boolean: 0 vary this parameter, 1 do not vary this parameter
+    #   'limited' is a pair of booleans in a list [Lower bound, Upper bound]:
+    #       ex//   [0, 0] -> no lower or upper bounds on parameter
+    #       ex//   [0, 1] -> no lower bound on parameter, but create an upper bound
+    #       ex//   [1, 1] -> lower and upper bounds on parameter
+    #   'limits' lower and upper bound values matching boolean mask in 'limited'
+    #   'mpside' is related to the order of finite differences used in the solver
+    limited = _mpfit_limited(LB, UB)
+    parinfo = [{'value':p0[ii],
+                'fixed':fixed[ii],
+                'limited':limited[ii],
+                'limits':[LB[ii],UB[ii]],
+                'mpside':[2]} for ii in range(len(p0))]
+
+    # Pass data into the solver through keywords
+    return LMFIT(mymodel, p0, parinfo=parinfo, residual_keywords={'x':x, 'y':y, 'err':ey}, **mpwargs)
+
+
+def fast_mpfit(p0, x, y, ey, XX, func, fkwargs={}, **kwargs):
+    """
+    This function is a wrapper around the mpfit module that aims at speed over accuracy
+
+    Fewer options and input conditioning included
+    - damping
+    - sigma_clipping
+    - perpendicular distance
+    """
+    fkwargs = kwargs.pop('fkwargs', {})
+    verbose = kwargs.pop('verbose', True) or not kwargs['quiet']
+
+    if ey is None:
+        def calc_chi2(*args, **fkwargs):
+            # ordineary least squares
+            p, x, y, _ = args
+            return func(x, p, **fkwargs) - y
+    else:
+        def calc_chi2(*args, **fkwargs):
+            # weighted least squares
+            p, x, y, err = args
+            return (func(x, p, **fkwargs) - y) / _np.abs(err)
+    # end if
+
+    # fitter kwargs
+    LB = kwargs.pop('LB', None)
+    UB = kwargs.pop('UB', None)
+    fixed = kwargs.pop('fixed', None)
+    jacobian = kwargs.pop('fjac', None)
+
+    numfit = len(p0)
+    if LB is None:        LB = [_np.nan for ii in range(numfit)]     # end if
+    if UB is None:        UB = [_np.nan for ii in range(numfit)]     # end if
+    if fixed is None:     fixed = [0 for ii in range(numfit)]    # end if
+
+    if jacobian is None:
+        kwargs['autoderivative'] = 1
+        def residual_model(p, fjac=None, x=None, y=None, err=None):
+            # Non-negative status value means MPFIT should continue, negative means
+            # stop the calculation.
+            status = 0
+            if _np.isnan(p).all():
+                status = -3
+            elif _np.isnan(p).any():
+                status = -2
+            # end if
+            return {'status':status, 'residual':calc_chi2(p, x, y, err)}
+    else:
+        kwargs['autoderivative'] = 0
+        def residual_model(p, fjac=None, x=None, y=None, err=None):
+            # Non-negative status value means MPFIT should continue, negative means
+            # stop the calculation.
+            status = 0
+            if _np.isnan(p).all():
+                status = -3
+            elif _np.isnan(p).any():
+                status = -2
+            # end if
+
+            # fjac is a mask that indicates which jacobian elements need to be
+            # calculated. The models in model_spec.py are designed to return
+            # all of the regardless, so we don't save anything by using the
+            # mask to determine which elements to calculate
+            # ... the mask indicates non-fixed indices
+            # the size of the returned array needs to be the same regardless
+
+            # in the solver, we define residuals as model - ydata
+            return {'status':status, 'residual':calc_chi2(p, x, y, err),
+                    'jacobian':jacobian(x, p, **fkwargs)/(_np.atleast_2d(err).T*_np.ones( (1,len(p)), dtype=y.dtype))}
+    # end if
+
+    kwargs = _default_mpfit_kwargs(**kwargs)
+
+    # test the residual model before fitting
+    # residual = residual_model(p0, fjac=None, x=x, y=y, err=ey)
+
+    sol = minimal_mpfit(residual_model, x, y, ey, p0, fixed, LB, UB, **kwargs)
+
+    #  sol - object
+    #   sol.status   - there are more than 12 return codes (see mpfit documentation)
+    #   sol.errmsg   - a string error or warning message
+    #   sol.fnorm    - value of final summed squared residuals
+    #   sol.covar    - covariance matrix
+    #           set to None if terminated abnormally
+    #   sol.nfev     - number of calls to fitting function
+    #   sol.niter    - number if iterations completed
+    #   sol.perror   - formal 1-sigma uncertainty for each parameter (0 if fixed or touching boundary)
+    #           .... only meaningful if the fit is weighted.  (errors given)
+    #   sol.params   - outputs!
+    # if verbose:
+    #     print(sol.statusString())
+    # # end if
+
+    # Store the optimization information / messages and a boolean indicating success
+    info = Struct()
+    info.mpfit = sol         # store the problem that was actually solved
+    info.success = True
+
+    if (info.mpfit.status <= 0):
+        info.success = False
+        info.chi2_reduced = _np.nan
+        if verbose:
+            print('error message = ', info.mpfit.errmsg)
+        raise StatusErrorInSolver(info.mpfit.status,
+            'The NL fitter failed to converge: see fit_mpfit/modelfit in fitNL'
+                         +  ' %s'%(info.mpfit.errmsg,))
+        return info
+    # end error checking
+
+    info.params = _np.copy(info.mpfit.params)
+    info.perror = _np.copy(info.mpfit.params)
+
+    # ===== #
+
+    info.residual = residual_model(info.params, fjac=None, x=x, y=y, err=ey)
+
+    # scaled uncertainties in fitting parameters
+    info.chi2_reduced = _np.nansum(info.residual['residual']*info.residual['residual'])/info.mpfit.dof
+    info.perror *= info.chi2_reduced
+
+    # Scaled covariance matrix
+    info.covmat = info.chi2_reduced * _np.copy(info.mpfit.covar)
+
+    # recalculate parameter errors based on scaled covariance
+    info.perror = _np.sqrt(_np.diagonal(info.covmat))
+
+    return info
 
 
 def fit_mpfit(x, y, ey, XX, func, fkwargs={}, **kwargs):
@@ -978,7 +1245,7 @@ class fitNL_base(Struct):
         #   - LB, UB - Lower and upper bounds on fitting parameters (af)
         self.solver_options = solver_options
         self.__dict__.update(**kwargs)
-        return kwargs
+        # return kwargs
     # end def __init__
 
     # ========================== #
@@ -1011,11 +1278,11 @@ class fitNL_base(Struct):
             # vertical distance
             self.chi2 = (self.func(af, self.xdat) - self.ydat)
             self.chi2 /= _np.sqrt(_np.abs(self.vary))
-#        except:
-#            pass
+        # end if
         if _np.isnan(self.chi2).any():
             raise Exception('Nan detected in chi2. Check model parameters and bounds \n %s'%(str(self.chi2),))
         return self.chi2
+
 
     def resampler(self, xvec=None, **kwargs):
 #        self.solver_options['nprint'] = 100    # debug info
@@ -1173,6 +1440,7 @@ class fitNL_base(Struct):
 
     # ========================== #
 
+
     def properror(self, xvec=None, gvec=None):  # (x-positions, gvec = dqparabda)
         if gvec is None: gvec = self.gvec.copy()  # endif
         if xvec is None: xvec = self.xx.copy()    # endif
@@ -1198,6 +1466,7 @@ class fitNL(fitNL_base):
         self.lmfit = self.__use_mpfit  # alias the fitter
     # end __init__
 
+
     def run(self):
         if not hasattr(self, 'solver_options'):  self.solver_options = {}  # end if
         self.solver_options = _default_mpfit_kwargs(**self.solver_options)
@@ -1209,6 +1478,7 @@ class fitNL(fitNL_base):
             print("oops! The least squares solver didn't find a solution")
         # endif
     # end def
+
 
     def __use_mpfit(self, **kwargs):
         """
@@ -1371,12 +1641,14 @@ def multimodel(x, y, ey, XX, funcs, fkwargs=[{}], **kwargs):
 #    weightit = kwargs.setdefault('weightit', True)
     weightit = kwargs.setdefault('weightit', False)
     kwargs.setdefault('MCerr', True)   # true uses only statistical error propagation on mean models within the resampler
+    kwargs.setdefault('verbose', False)
 
     nargout = kwargs.pop('nargout', 1)
     plotit = kwargs.pop('plotit', True)
     systvar = kwargs.pop('systvar', True)
     statvar = False if systvar or not kwargs.pop('statvar', False) else True
     kwargs['plotit'] = False
+
     chi2_min = kwargs.pop('chi2_min', 1e21)
 
     niterate = len(_np.atleast_1d(funcs))
@@ -2087,8 +2359,8 @@ def test_fit(func=_ms.model_qparab, **fkwargs):
     ax1.set_title(type(info1).__name__)
     xlims = ax1.get_xlim()
     ylims = ax1.get_ylim()
-    ax1.text(x=0.6*(xlims[1]-xlims[0])+xlims[0], y=0.6*(ylims[1]-ylims[0])+ylims[0],
-             s=r'\chi_\nu^2=%4.1f'%(info2.chi2_reduced,), fontsize=16)
+    ax1.text(x=0.7*(xlims[1]-xlims[0])+xlims[0], y=0.7*(ylims[1]-ylims[0])+ylims[0],
+             s=r'$\chi_\nu^2$=%4.1f'%(info2.chi2_reduced,), fontsize=16)
 #    ylims = ax1.get_ylim()
 #    xlims = ax1.get_xlim()
 #    print(ylims)
@@ -2120,7 +2392,135 @@ def test_fit(func=_ms.model_qparab, **fkwargs):
 # end
 
 
-def test_multifit(funcs=[_ms.model_poly], fkwargs=[{'npoly':6}], **mkwargs):
+def test_fast_mpfit(func=_ms.model_qparab, plotit=True, **fkwargs):
+    if 'Fs' in fkwargs:
+        Fs = fkwargs.pop('Fs', 10.0e3)
+        tstart, tend = tuple(fkwargs.pop('tbnds', [0.0, 6.0/33.0]))
+        numpts = fkwargs.pop('num', int((tend-tstart)*Fs))
+        xdat = _np.linspace(tstart, tend, num=numpts)
+        XX = _np.linspace(tstart, tend, num=numpts)
+    else:
+        numpts = 31
+        xdat = _np.linspace(-0.05, 1.25, numpts)
+#        XX = _np.linspace( -1.0, 1.3, 99)
+        XX = _np.linspace( 0.0, 1.3, 99)
+#        XX = _np.linspace( 1e-6, 1.0, 99)
+    # end if
+
+    # Model to fit
+    aa = gen_random_init_conds(func, **fkwargs)
+    yxx, _, temp = func(XX=XX, af=aa, **fkwargs)
+    aa =temp.af
+    ydat, _, _, _ = temp.update(xdat)
+
+    kwargs = temp.dict_from_class()
+    if 'XX' in kwargs:    kwargs.pop('XX')
+    if 'af' in kwargs:    kwargs.pop('af')
+
+    # Initial conditions for model
+    if 'shape' in fkwargs: fkwargs.pop('shape')
+
+    # ====================== #
+
+    def model(XX, aa, **fkwargs):
+        return temp._model(XX, aa, **fkwargs)
+
+    def jacobian(XX, aa, **fkwargs):
+        # analytic jacobian of the weighted residual function
+        return (temp._partial(XX, aa, **fkwargs)).T
+
+    # kwargs['fjac'] = jacobian  # user provided jacobian, ~540 ms total in profiler (without plotting)
+    kwargs['fjac'] = None  # finite differences jacobian in mpfit, ~365 ms total in profiler (without plotting)
+
+    # ====================== #
+
+    yerr = 0.1*(_np.nanmean(ydat*ydat) - _np.nanmean(ydat)*_np.nanmean(ydat))
+    yerr = yerr*_np.ones_like(ydat)
+    # yerr = 0.1*ydat
+    yerr = _np.where(0.1*ydat<yerr, yerr, 0.1*ydat)
+
+    p0 = _np.ones_like(aa)
+    info1 = fast_mpfit(p0, xdat, ydat, yerr, XX, model, fkwargs, **kwargs)
+#    assert _np.allclose(info1.params, aa)
+#    assert info.dof==len(xdat)-len(aa)
+
+    # ====================== #
+
+    _np.random.seed()
+#    ydat = ydat + 0.1*_np.nanmean(ydat)*_np.random.normal(0.0, 1.0, len(ydat))
+    ydat = ydat + yerr*_np.random.normal(0.0, 1.0, len(ydat))
+    info2 = fast_mpfit(p0, xdat, ydat, yerr, XX, model, fkwargs, **kwargs)
+
+
+    # ====== Error Propagation ====== #
+    # Propagate uncertainties in fitting parameters (scaled covariance) into
+    # the profile and it's derivative
+    info1.prof = model(XX=XX, aa=info1.params, **fkwargs)
+    info2.prof = model(XX=XX, aa=info2.params, **fkwargs)
+
+    if hasattr(temp, '_deriv'):
+        info1.dprofdx = temp._deriv(XX, aa=info1.params, **fkwargs)
+        info2.dprofdx = temp._deriv(XX, aa=info2.params, **fkwargs)
+    # end if
+
+    if hasattr(temp, '_partial'):
+        info1.varprof = _ut.properror(XX, info1.covmat,
+                                      temp._partial(XX, info1.params, **fkwargs))
+        info2.varprof = _ut.properror(XX, info2.covmat,
+                                      temp._partial(XX, info2.params, **fkwargs))
+    # end if
+
+    if hasattr(temp, '_partial_deriv'):
+        info1.vardprofdx = _ut.properror(XX, info1.covmat,
+                                      temp._partial(XX, info1.params, **fkwargs))
+        info2.vardprofdx = _ut.properror(XX, info2.covmat,
+                                      temp._partial(XX, info2.params, **fkwargs))
+     # endif
+
+    # ====================== #
+
+    if plotit:
+        _plt.figure()
+        ax1 = _plt.subplot(3, 1, 1)
+        if numpts<50:
+            ax1.errorbar(xdat, ydat, yerr=yerr, fmt='kx')
+        else:
+            ax1.plot(xdat, ydat, 'k-')
+        ax1.plot(XX, yxx, 'k-', linewidth=1.0)
+        ax1.plot(XX, info1.prof, 'b-')
+        ax1.plot(XX, info1.prof-_np.sqrt(info1.varprof), 'b--')
+        ax1.plot(XX, info1.prof+_np.sqrt(info1.varprof), 'b--')
+        ax1.plot(XX, info2.prof, 'r-')
+        ax1.plot(XX, info2.prof-_np.sqrt(info2.varprof), 'r--')
+        ax1.plot(XX, info2.prof+_np.sqrt(info2.varprof), 'r--')
+
+        ax1.set_title(type(info1).__name__)
+        xlims = ax1.get_xlim()
+        ylims = ax1.get_ylim()
+        ax1.text(x=0.6*(xlims[1]-xlims[0])+xlims[0], y=0.6*(ylims[1]-ylims[0])+ylims[0],
+                 s=r'$\chi_\nu^2$=%4.1f'%(info2.chi2_reduced,), fontsize=16)
+
+        ax2 = _plt.subplot(3, 1, 2, sharex=ax1)
+        if numpts<50:
+            ax2.plot(xdat, temp.dprofdx, 'kx')
+        else:
+            ax2.plot(xdat, temp.dprofdx, 'k-')
+        ax2.plot(XX, info1.dprofdx, 'b-')
+        ax2.plot(XX, info1.dprofdx-_np.sqrt(info1.vardprofdx), 'b--')
+        ax2.plot(XX, info1.dprofdx+_np.sqrt(info1.vardprofdx), 'b--')
+        ax2.plot(XX, info2.dprofdx, 'r-')
+        ax2.plot(XX, info2.dprofdx-_np.sqrt(info2.vardprofdx), 'r--')
+        ax2.plot(XX, info2.dprofdx+_np.sqrt(info2.vardprofdx), 'r--')
+
+        ax3 = _plt.subplot(3, 1, 3)
+        ax3.bar(x=_np.asarray(range(len(aa))), height=100.0*(1.0-info2.params/aa), width=1.0, align='center')
+        ax3.set_title('perc. diff.')
+        _plt.show()
+    # end if
+# end
+
+
+def test_multifit(funcs=[_ms.model_poly], fkwargs=[{'npoly':6}], plotit=True, verbose=False, **mkwargs):
     if 'Fs' in mkwargs:
         Fs = mkwargs.pop('Fs', 10.0e3)
         tstart, tend = tuple(mkwargs.pop('tbnds', [0.0, 6.0/33.0]))
@@ -2147,7 +2547,8 @@ def test_multifit(funcs=[_ms.model_poly], fkwargs=[{'npoly':6}], **mkwargs):
 #        yxx -= offset
 #    # end if
     kwargs = temp.dict_from_class()
-    kwargs.setdefault('plotit', True)
+    kwargs.setdefault('plotit', plotit)
+    kwargs.setdefault('verbose', verbose)
     kwargs.setdefault('perpchi2', False)
     kwargs.setdefault('errx', 0.00)
     kwargs.setdefault('systvar', True)  # add uncertainties from models systematically
@@ -2177,7 +2578,7 @@ def test_multifit(funcs=[_ms.model_poly], fkwargs=[{'npoly':6}], **mkwargs):
 
     yerr = 0.05*(_np.nanmean(ydat*ydat) - _np.nanmean(ydat)*_np.nanmean(ydat))
     yerr = yerr*_np.ones_like(ydat)
-#    yerr = 0.1*ydat
+    yerr += 0.1*_np.abs(ydat)
     yerr = _np.where(0.05*ydat<yerr, yerr, 0.05*ydat)
 
 #    kwargs['damp'] = 10.0*_np.nanmean(ydat/yerr)
@@ -2194,54 +2595,56 @@ def test_multifit(funcs=[_ms.model_poly], fkwargs=[{'npoly':6}], **mkwargs):
                       funcs=funcs, fkwargs=fkwargs, **kwargs)
 #                      chi2_min=10, scalex=True, scaley=True, **kwargs)
 
-    _plt.figure()
-    ax1 = _plt.subplot(2, 1, 1)
-    if numpts<50:
-        ax1.errorbar(xdat, ydat, yerr=yerr, fmt='kx')
-    else:
-        ax1.plot(xdat, ydat, 'k-')
-    ax1.plot(XX, yxx, 'k-', linewidth=1.0)
-    ax1.plot(XX, info1.prof, 'b-')
-    ax1.plot(XX, info1.prof-_np.sqrt(info1.varprof), 'b--')
-    ax1.plot(XX, info1.prof+_np.sqrt(info1.varprof), 'b--')
-    ax1.plot(XX, info2.prof, 'r-')
-    ax1.plot(XX, info2.prof-_np.sqrt(info2.varprof), 'r--')
-    ax1.plot(XX, info2.prof+_np.sqrt(info2.varprof), 'r--')
+    if plotit:
+        _plt.figure()
+        ax1 = _plt.subplot(2, 1, 1)
+        if numpts<50:
+            ax1.errorbar(xdat, ydat, yerr=yerr, fmt='kx')
+        else:
+            ax1.plot(xdat, ydat, 'k-')
+        ax1.plot(XX, yxx, 'k-', linewidth=1.0)
+        ax1.plot(XX, info1.prof, 'b-')
+        ax1.plot(XX, info1.prof-_np.sqrt(info1.varprof), 'b--')
+        ax1.plot(XX, info1.prof+_np.sqrt(info1.varprof), 'b--')
+        ax1.plot(XX, info2.prof, 'r-')
+        ax1.plot(XX, info2.prof-_np.sqrt(info2.varprof), 'r--')
+        ax1.plot(XX, info2.prof+_np.sqrt(info2.varprof), 'r--')
 
-    # ax1.fill_between(XX, info.prof-_np.sqrt(info.varprof))
-#    isolid = _np.where(yerr/ydat<0.3)[0]
-#    if len(isolid)>0:
-#        ax1.set_ylim((_np.nanmin(_np.append(0.0, _np.asarray([0.8,1.2])*_np.nanmin(ydat[isolid]-yerr[isolid]))),
-#                      _np.nanmax(_np.append(0.0, _np.asarray([0.8,1.2])*_np.nanmax(ydat[isolid]+yerr[isolid]))) ))
-    ax1.set_title(type(info1).__name__)
-    xlims = ax1.get_xlim()
-    ylims = ax1.get_ylim()
-    ax1.text(x=0.6*(xlims[1]-xlims[0])+xlims[0], y=0.6*(ylims[1]-ylims[0])+ylims[0],
-             s=r'\chi_\nu^2=%4.1f'%(info2.chi2_reduced,), fontsize=16)
-#    ylims = ax1.get_ylim()
-#    xlims = ax1.get_xlim()
-#    print(ylims)
+        # ax1.fill_between(XX, info.prof-_np.sqrt(info.varprof))
+    #    isolid = _np.where(yerr/ydat<0.3)[0]
+    #    if len(isolid)>0:
+    #        ax1.set_ylim((_np.nanmin(_np.append(0.0, _np.asarray([0.8,1.2])*_np.nanmin(ydat[isolid]-yerr[isolid]))),
+    #                      _np.nanmax(_np.append(0.0, _np.asarray([0.8,1.2])*_np.nanmax(ydat[isolid]+yerr[isolid]))) ))
+        ax1.set_title(type(info1).__name__)
+        xlims = ax1.get_xlim()
+        ylims = ax1.get_ylim()
+        ax1.text(x=0.6*(xlims[1]-xlims[0])+xlims[0], y=0.6*(ylims[1]-ylims[0])+ylims[0],
+                 s=r'$\chi_\nu^2$=%4.1f'%(info2.chi2_reduced,), fontsize=16)
+    #    ylims = ax1.get_ylim()
+    #    xlims = ax1.get_xlim()
+    #    print(ylims)
 
-    ax2 = _plt.subplot(2, 1, 2, sharex=ax1)
-    if numpts<50:
-        ax2.plot(xdat, temp.dprofdx, 'kx')
-    else:
-        ax2.plot(xdat, temp.dprofdx, 'k-')
-    ax2.plot(XX, info1.dprofdx, 'b-')
-    ax2.plot(XX, info1.dprofdx-_np.sqrt(info1.vardprofdx), 'b--')
-    ax2.plot(XX, info1.dprofdx+_np.sqrt(info1.vardprofdx), 'b--')
-    ax2.plot(XX, info2.dprofdx, 'r-')
-    ax2.plot(XX, info2.dprofdx-_np.sqrt(info2.vardprofdx), 'r--')
-    ax2.plot(XX, info2.dprofdx+_np.sqrt(info2.vardprofdx), 'r--')
-#    ax2.set_ylim((_np.min((0,1.2*_np.min(info.dprofdx))), 1.2*_np.max(info.dprofdx)))
-#    isolid = _np.where(_np.sqrt(info.vardprofdx)/info.dprofdx<0.3)[0]
-#    if len(isolid)>0:
-#        ax2.set_ylim((_np.nanmin(_np.append( 0.0, _np.asarray([0.8, 1.2])*_np.nanmin(info.dprofdx[isolid]-_np.sqrt(info.vardprofdx[isolid])) )),
-#                      _np.nanmax(_np.append( 0.0, _np.asarray([0.8, 1.2])*_np.nanmax(info.dprofdx[isolid]+_np.sqrt(info.vardprofdx[isolid])) )) ))
-#                  #, (_np.nanmax(ydat)-_np.nanmin(ydat))/(0.1*_np.diff(xlims))))))
-##    print(ax2.get_ylim())
+        ax2 = _plt.subplot(2, 1, 2, sharex=ax1)
+        if numpts<50:
+            ax2.plot(xdat, temp.dprofdx, 'kx')
+        else:
+            ax2.plot(xdat, temp.dprofdx, 'k-')
+        ax2.plot(XX, info1.dprofdx, 'b-')
+        ax2.plot(XX, info1.dprofdx-_np.sqrt(info1.vardprofdx), 'b--')
+        ax2.plot(XX, info1.dprofdx+_np.sqrt(info1.vardprofdx), 'b--')
+        ax2.plot(XX, info2.dprofdx, 'r-')
+        ax2.plot(XX, info2.dprofdx-_np.sqrt(info2.vardprofdx), 'r--')
+        ax2.plot(XX, info2.dprofdx+_np.sqrt(info2.vardprofdx), 'r--')
+    #    ax2.set_ylim((_np.min((0,1.2*_np.min(info.dprofdx))), 1.2*_np.max(info.dprofdx)))
+    #    isolid = _np.where(_np.sqrt(info.vardprofdx)/info.dprofdx<0.3)[0]
+    #    if len(isolid)>0:
+    #        ax2.set_ylim((_np.nanmin(_np.append( 0.0, _np.asarray([0.8, 1.2])*_np.nanmin(info.dprofdx[isolid]-_np.sqrt(info.vardprofdx[isolid])) )),
+    #                      _np.nanmax(_np.append( 0.0, _np.asarray([0.8, 1.2])*_np.nanmax(info.dprofdx[isolid]+_np.sqrt(info.vardprofdx[isolid])) )) ))
+    #                  #, (_np.nanmax(ydat)-_np.nanmin(ydat))/(0.1*_np.diff(xlims))))))
+    ##    print(ax2.get_ylim())
 
-#    print(ydat)
+    #    print(ydat)
+    # end if
 # end
 
 # ========================================================================== #
@@ -2326,7 +2729,7 @@ def test_profile_fit(func=_ms.model_qparab, **fkwargs):
     xlims = ax1.get_xlim()
     ylims = ax1.get_ylim()
     ax1.text(x=0.6*(xlims[1]-xlims[0])+xlims[0], y=0.6*(ylims[1]-ylims[0])+ylims[0],
-             s=r'\chi_\nu^2=%4.1f'%(info2.chi2_reduced,), fontsize=16)
+             s=r'$\chi_\nu^2$=%4.1f'%(info2.chi2_reduced,), fontsize=16)
 
     if numpts<50:
         ax2.plot(xdat, temp.dprofdx, 'kx')
@@ -2498,7 +2901,7 @@ def test_fourier_fit(func=_ms.model_sines, **fkwargs):
     xlims = ax1.get_xlim()
     ylims = ax1.get_ylim()
     ax1.text(x=0.6*(xlims[1]-xlims[0])+xlims[0], y=0.6*(ylims[1]-ylims[0])+ylims[0],
-             s=r'\chi_\nu^2=%4.1f'%(info2.chi2_reduced,), fontsize=16)
+             s=r'$\chi_\nu^2$=%4.1f'%(info2.chi2_reduced,), fontsize=16)
 #    ylims = ax1.get_ylim()
 #    xlims = ax1.get_xlim()
 #    print(ylims)
@@ -2821,7 +3224,7 @@ def test_fitNL(test_qparab=True, scale_by_data=False):
     vary += ( 0.05*_np.mean(y)*_np.random.normal(0.0, 1.0, len(y)) )**2.0
 
     if test_qparab:
-        import pybaseutils as _pyb   # TODO:  SORTING IS THIS ISSUE WITH HFS DATA STUFF, it isflipping upside down and backwards
+        # import pybaseutils as _pyb   # TODO:  SORTING IS THIS ISSUE WITH HFS DATA STUFF, it isflipping upside down and backwards
         isort = _np.argsort(_np.abs(x))
         x = _np.abs(x[isort])
 #        isort = _np.argsort(x)
@@ -3108,6 +3511,7 @@ if __name__=="__main__":
         # end if
     # end if
     test_multifit(funcs, fkwargs, **mkwargs)
+    # test_fast_mpfit()
 
 #    if 1:
 #    for ii in range(5):

@@ -2692,12 +2692,12 @@ class ModelClass(ModelDiffClass):
 
     def update(self, XX=None, af=None, **kwargs):
         XX, af, kwargs = self.parse_in(XX, af, **kwargs)
-        super(ModelClass, self).update(XX=XX, af=af, **kwargs)
+        return super(ModelClass, self).update(XX=XX, af=af, **kwargs)
 
 
     def update_minimal(self, XX=None, af=None, **kwargs):
         XX, af, kwargs = self.parse_in(XX, af, **kwargs)
-        super(ModelClass, self).update_minimal(XX=XX, af=af, **kwargs)
+        return super(ModelClass, self).update_minimal(XX=XX, af=af, **kwargs)
 
 
     def model(self, XX, aa=None, **kwargs):
