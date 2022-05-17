@@ -14,6 +14,7 @@ import matplotlib.pyplot as _plt
 import numpy as _np
 from pybaseutils import utils as _ut
 
+import scipy
 from scipy import interpolate as _int
 from scipy import ndimage as _ndimage
 from scipy.optimize import curve_fit, leastsq
@@ -31,12 +32,16 @@ except:
 
 # There are annoying differences in the context between scipy version of
 # leastsq and curve_fit, and the method least_squares doesn't exist before 0.17
-import scipy.version as _scipyversion
+# import scipy.version as _scipyversion
+
+from pybaseutils.utils import versiontuple  # analysis:ignore
+# if versiontuple(scipy.__version__) > versiontuple('0.17'):
 
 # Make a version flag for switching between least squares solvers and contexts
-_scipyversion = _scipyversion.version
-_scipyversion = _np.float(_scipyversion[0:4])
-if _scipyversion >= 0.17:
+# _scipyversion = _scipyversion.version
+# _scipyversion = _np.float(_scipyversion[0:4])
+# if _scipyversion >= 0.17:
+if versiontuple(scipy.__version__) >= versiontuple('0.17'): # >= 0.17:
 #    print("Using a new version of scipy")
     from scipy.optimize import least_squares
 #else:
@@ -279,9 +284,13 @@ def fit_curvefit(p0, xdat, ydat, func, yerr=None, **kwargs):
     """
 
     method = kwargs.get('lsqmethod','lm')
-    if (_scipyversion >= 0.17) and (yerr is not None):
+    epsfcn = kwargs.pop('epsfcn', None) #0.0001)
+    bounds = kwargs.pop('bounds', None)
+    if (versiontuple(scipy.__version__) >= versiontuple('0.17'))  and (yerr is not None): # >= 0.17:
+    # if (_scipyversion >= 0.17) and (yerr is not None):
         pfit, pcov = curve_fit(func, xdat, ydat, p0=p0, sigma=yerr,
-                               absolute_sigma = True, method=method)
+                               absolute_sigma = True, method=method,
+                               epsfcn=epsfcn, bounds=bounds)
     else:
         pfit, pcov = curve_fit(func, xdat, ydat, p0=p0, sigma=yerr, **kwargs)
 
@@ -673,7 +682,8 @@ def qparab_lsfit(xdata, ydata, vary=None, xx=None,
     # Alias to the fitting method that allows passing a static argument to the method.
     FitAlias = lambda *args: qparab_fit(args[0], args[1:], nohollow)
 
-    if _scipyversion < 0.17:
+    # if _scipyversion < 0.17:
+    if versiontuple(scipy.__version__) < versiontuple('0.17'):
         [af,pcov]=curve_fit( FitAlias, xdata, ydata, p0 = af, sigma = weights)
 
         af = _np.asarray(af, dtype=_np.float64)
@@ -1130,7 +1140,7 @@ class fitNL(fitNL_base):
 
         # 1) Least-squares, 2) leastsq, 3) Curve_fit
         self.lsqfitmethod = kwargs.get("lsqfitmethod", 'lm')
-        if _scipyversion >= 0.17:
+        if versiontuple(scipy.__version__) >= versiontuple('0.17'): # >= 0.17:
             self.lsqmethod = kwargs.get("lsqmethod", int(1))
         else:
             self.lsqmethod = kwargs.get("lsqmethod", int(2))
@@ -1192,7 +1202,7 @@ class fitNL(fitNL_base):
             return self.calc_chi2(af)
         # end def calcchi2
 
-        if _scipyversion >= 0.17:
+        if versiontuple(scipy.__version__) >= versiontuple('0.17'): # >= 0.17:
             pfit, pcov = \
                 curve_fit(calcchi2, self.xdat, self.ydat, p0=self.af0,
                           sigma=_np.sqrt(self.vary), epsfcn=0.0001,
@@ -1219,7 +1229,7 @@ class fitNL(fitNL_base):
         Wrapper for the leastsq function from scipy
         """
         lsqfitmethod = kwargs.get("lsqfitmethod", 'lm')
-        if _scipyversion >= 0.17:
+        if versiontuple(scipy.__version__) >= versiontuple('0.17'): # >= 0.17:
             pfit, pcov, infodict, errmsg, success = \
                 leastsq(self.calc_chi2, self.af0, full_output=1, ftol=1e-8,
                         xtol=1e-8, maxfev=1e3, epsfcn=0.0001,

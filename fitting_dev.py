@@ -10,6 +10,7 @@ Created on Thu Jun  2 15:21:45 2016
 from __future__ import absolute_import, with_statement, absolute_import, \
                        division, print_function, unicode_literals
 
+import scipy
 from scipy import interpolate as _int
 from scipy.optimize import curve_fit, leastsq
 import matplotlib.pyplot as _plt
@@ -17,6 +18,7 @@ import numpy as _np
 
 #from pybaseutils.Struct import Struct
 from pybaseutils import utils as _ut
+from pybaseutils.utils import versiontuple
 
 try:
     from FIT import model_spec as _ms
@@ -33,15 +35,15 @@ except:
 
 # There are annoying differences in the context between scipy version of
 # leastsq and curve_fit, and the method least_squares doesn't exist before 0.17
-import scipy.version as _scipyversion
+# import scipy.version as _scipyversion
 
-# Make a version flag for switching between least squares solvers and contexts
-_scipyversion = _scipyversion.version
-try:
-    _scipyversion = _np.float(_scipyversion[0:4])
-except:
-    _scipyversion = _np.float(_scipyversion[0:3])
-# end try
+# # Make a version flag for switching between least squares solvers and contexts
+# _scipyversion = _scipyversion.version
+# try:
+#     _scipyversion = _np.float(_scipyversion[0:4])
+# except:
+#     _scipyversion = _np.float(_scipyversion[0:3])
+# # end try
 
 __metaclass__ = type
 
@@ -53,7 +55,7 @@ __metaclass__ = type
 # =============================== #
 
 def linreg(X, Y, verbose=True, varY=None, varX=None, cov=False, plotit=False, chi2_out=False):
-    """
+    r"""
     Returns coefficients to the regression line "y=ax+b" from x[] and
     y[].  Basically, solves
         Sxx a + Sx b = Sxy
@@ -136,8 +138,8 @@ def linreg(X, Y, verbose=True, varY=None, varX=None, cov=False, plotit=False, ch
     if verbose:
         print("y=ax+b")
         print("N= %d" % N )
-        print("a= %g \\pm t_{%d;\\alpha/2} %g" % (a, N-2, _np.sqrt(Var_a)) )
-        print("b= %g \\pm t_{%d;\\alpha/2} %g" % (b, N-2, _np.sqrt(Var_b)) )
+        print(r"a= %g \\pm t_{%d;\\alpha/2} %g" % (a, N-2, _np.sqrt(Var_a)) )
+        print(r"b= %g \\pm t_{%d;\\alpha/2} %g" % (b, N-2, _np.sqrt(Var_b)) )
         print("R^2= %g" % RR)
         print("s^2= %g" % ss)
         print(r"$\chi^2_\nu$ = %g, $\nu$ = %g" % (chi2_nu, N-2))
@@ -750,7 +752,8 @@ def qparab_lsfit(xdata, ydata, vary=None, xx=None,
 
 #    bounds = (lowbounds,upbounds)
 #    method = 'trf'
-    if _scipyversion < 0.17:
+    # if _scipyversion < 0.17:
+    if versiontuple(scipy.__version__) < versiontuple('0.17'):
         [af,pcov]=curve_fit( FitAlias, xdata, ydata, p0 = af, sigma = weights)
 
         af = _np.asarray(af, dtype=_np.float64)
@@ -773,6 +776,7 @@ def qparab_lsfit(xdata, ydata, vary=None, xx=None,
 #    return af, vaf
 # end def qparab_lsfit
 
+
 def fit_curvefit(p0, xdat, ydat, func, yerr=None, **kwargs):
     """
     [pfit, pcov] = fit_curvefit(p0, xdat, ydat, func, yerr)
@@ -791,25 +795,39 @@ def fit_curvefit(p0, xdat, ydat, func, yerr=None, **kwargs):
         pcov - Estimate of the covariance in the fitting parameters
                 (scaled by residuals)
     """
+    nargout = kwargs.pop('nargout', 2)
 
-    method = kwargs.pop('lsqmethod','lm')
-    epsfcn = kwargs.pop('epsfcn', None) #0.0001)
-    bounds = kwargs.pop('bounds', None)
-    if (_scipyversion >= 0.17) and (yerr is not None):
-        pfit, pcov = curve_fit(func, xdat, ydat, p0=p0, sigma=yerr,
-                               absolute_sigma = True, method=method,
-                               epsfcn=epsfcn, bounds=bounds)
+    dict_options = {'bounds':kwargs.pop('bounds', None)}
+    if dict_options['bounds'] is None:
+        dict_options['method'] = kwargs.pop('lsqmethod','lm')
+        dict_options['epsfcn'] = kwargs.pop('epsfcn', None) #0.0001)
     else:
-        pfit, pcov = curve_fit(func, xdat, ydat, p0=p0, sigma=yerr, **kwargs)
+        dict_options['method'] = kwargs.pop('lsqmethod','trf')        # 'trf' or 'dogbox' for constrained problems
+        # dict_options['method'] = kwargs.pop('lsqmethod','dogbox')
+    # end if
 
+    if (versiontuple(scipy.__version__) >= versiontuple('0.18')): # >= 0.18:
+        dict_options['jac'] = kwargs.pop('jac', None)
+    if (versiontuple(scipy.__version__) >= versiontuple('0.18') and (yerr is not None)): # >= 0.18:
+        dict_options['absolute_sigma'] = True
+    # end if
+
+    pfit, pcov = curve_fit(func, xdat, ydat, p0=p0, sigma=yerr, **dict_options)
+
+    chi2_reduced = (((func(xdat, pfit)-ydat)**2).sum() / (len(ydat)-len(p0)))
+
+    if (versiontuple(scipy.__version__) < versiontuple('0.17'))  and (yerr is not None): # < 0.17:
+        # note:
+        # pcov(absolute_sigma=False) = pcov(absolute_sigma=True) * chisq(popt)/(M-N)
         if (len(ydat) > len(p0)) and (pcov is not None):
-            pcov = pcov *(((func(pfit, xdat, ydat)-ydat)**2).sum()
-                           / (len(ydat)-len(p0)))
+            pcov = pcov * chi2_reduced
         else:
+            chi2_reduced = _np.nan
             pcov = _np.inf
         # endif
     # endif
-
+    if nargout>2:
+        return pfit, pcov, chi2_reduced
     return pfit, pcov
     """
     The below uncertainty is not a real uncertainty.  It assumes that there
